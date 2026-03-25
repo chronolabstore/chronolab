@@ -43,4 +43,4 @@ npm run dev
 권장: Render(임시 도메인 빠른 확인) 또는 Railway.
 
 배포 상세 절차:
-- [DEPLOYMENT.md](/Users/heptalabs/Documents/New%20project/SJK/chrono-lab/DEPLOYMENT.md)
+- `DEPLOYMENT.md`
