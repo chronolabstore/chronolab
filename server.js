@@ -714,7 +714,8 @@ app.get('/admin/login', (req, res) => {
   if (req.user?.isAdmin) {
     return res.redirect('/admin');
   }
-  res.render('admin-login', { title: 'Admin Login' });
+  const showDefaultAdminHint = process.env.SHOW_DEFAULT_ADMIN_HINT === '1';
+  res.render('admin-login', { title: 'Admin Login', showDefaultAdminHint });
 });
 
 app.post('/admin/login', async (req, res) => {
@@ -740,6 +741,48 @@ app.post('/admin/login', async (req, res) => {
   req.session.isAdmin = true;
 
   res.redirect('/admin');
+});
+
+app.post('/admin/change-password', requireAdmin, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || '');
+  const newPassword = String(req.body.newPassword || '');
+  const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
+
+  if (!currentPassword || !newPassword || !newPasswordConfirm) {
+    setFlash(req, 'error', '현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.');
+    return res.redirect('/admin');
+  }
+
+  if (newPassword !== newPasswordConfirm) {
+    setFlash(req, 'error', '새 비밀번호 확인이 일치하지 않습니다.');
+    return res.redirect('/admin');
+  }
+
+  if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    setFlash(req, 'error', '새 비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
+    return res.redirect('/admin');
+  }
+
+  const admin = db
+    .prepare('SELECT id, password_hash FROM users WHERE id = ? AND is_admin = 1 LIMIT 1')
+    .get(req.user.id);
+
+  if (!admin) {
+    setFlash(req, 'error', '어드민 계정을 찾을 수 없습니다.');
+    return res.redirect('/admin');
+  }
+
+  const validCurrent = await bcrypt.compare(currentPassword, admin.password_hash);
+  if (!validCurrent) {
+    setFlash(req, 'error', '현재 비밀번호가 올바르지 않습니다.');
+    return res.redirect('/admin');
+  }
+
+  const nextHash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextHash, req.user.id);
+
+  setFlash(req, 'success', '어드민 비밀번호가 변경되었습니다.');
+  return res.redirect('/admin');
 });
 
 app.get('/admin/logout', (req, res) => {

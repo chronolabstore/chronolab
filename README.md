@@ -37,6 +37,8 @@ npm run dev
 - 브라우저: `http://localhost:3100/main`
 - 어드민 로그인: `http://localhost:3100/admin/login`
 - 초기 어드민 계정: `admin / Admin123!` (실서비스 전 반드시 변경)
+- 운영 보안: 어드민 대시보드의 `어드민 보안` 섹션에서 비밀번호 즉시 변경
+- 초기 계정 힌트 표시는 `SHOW_DEFAULT_ADMIN_HINT=1`일 때만 노출(기본 0)
 
 ## 배포 메모
 이 프로젝트는 서버가 필요한 구조(Express + SQLite)이므로 GitHub Pages 단독 배포는 불가합니다.

@@ -10,6 +10,22 @@
 
 <section class="admin-grid">
   <article class="block-card">
+    <h3>0) 어드민 보안</h3>
+    <form method="post" action="/admin/change-password" class="form-grid">
+      <label>현재 비밀번호
+        <input type="password" name="currentPassword" required />
+      </label>
+      <label>새 비밀번호 (영문/숫자 포함 8자 이상)
+        <input type="password" name="newPassword" required />
+      </label>
+      <label>새 비밀번호 확인
+        <input type="password" name="newPasswordConfirm" required />
+      </label>
+      <button type="submit" class="cta-main">비밀번호 변경</button>
+    </form>
+  </article>
+
+  <article class="block-card">
     <h3>1) 사이트 커스터마이징</h3>
     <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form-grid">
       <label>쇼핑몰 이름

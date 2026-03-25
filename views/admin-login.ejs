@@ -3,7 +3,9 @@
 <section class="auth-wrap">
   <div class="auth-card">
     <h2>Admin Login</h2>
-    <p class="muted-label">초기 계정: admin / Admin123!</p>
+    <% if (showDefaultAdminHint) { %>
+      <p class="muted-label">초기 계정: admin / Admin123!</p>
+    <% } %>
     <form method="post" action="/admin/login" class="form-grid">
       <label>아이디
         <input type="text" name="username" required />

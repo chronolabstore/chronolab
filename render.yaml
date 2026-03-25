@@ -14,3 +14,5 @@ services:
         generateValue: true
       - key: DB_PATH
         value: /tmp/chronolab.db
+      - key: SHOW_DEFAULT_ADMIN_HINT
+        value: "0"
