@@ -748,6 +748,28 @@ textarea {
   margin-bottom: 12px;
 }
 
+.section-head .inline-search {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.section-head .inline-search input {
+  min-width: 220px;
+}
+
+.strong-warning {
+  display: inline-block;
+  margin-top: 4px;
+  color: #b42318;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.order-status {
+  display: inline-block;
+  font-weight: 700;
+}
+
 .qc-grid,
 .review-grid {
   display: grid;
@@ -1105,6 +1127,16 @@ td {
 
   .footer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .section-head .inline-search {
+    width: 100%;
+  }
+
+  .section-head .inline-search input {
+    min-width: 0;
   }
 }
 

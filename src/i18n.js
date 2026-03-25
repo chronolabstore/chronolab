@@ -7,7 +7,7 @@ export const messages = {
     login: '로그인',
     logout: '로그아웃',
     signup: '회원가입',
-    myPage: '내 정보',
+    myPage: '마이페이지',
     admin: '어드민',
     goToShop: '쇼핑몰 바로가기',
     footerVisitorsToday: '오늘 방문자',

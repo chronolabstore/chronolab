@@ -2,13 +2,12 @@
 
 <section class="block-card">
   <div class="section-head">
-    <h2>뉴스</h2>
-    <span class="muted-label">블로그 형식 업데이트</span>
+    <h2><%= ctx.lang === 'en' ? 'News' : '뉴스' %></h2>
   </div>
 
   <div class="news-blog-list">
     <% if (newsPosts.length === 0) { %>
-      <p>등록된 뉴스가 없습니다.</p>
+      <p><%= ctx.lang === 'en' ? 'No news posts found.' : '등록된 뉴스가 없습니다.' %></p>
     <% } %>
 
     <% newsPosts.forEach((item) => { %>
@@ -23,7 +22,7 @@
           <p><%= item.content.length > 220 ? item.content.slice(0, 220) + '...' : item.content %></p>
           <div class="news-blog-meta">
             <span><%= item.created_at.slice(0, 10) %></span>
-            <a href="/news/<%= item.id %>" class="chip">자세히 보기</a>
+            <a href="/news/<%= item.id %>" class="chip"><%= ctx.lang === 'en' ? 'Read more' : '자세히 보기' %></a>
           </div>
         </div>
       </article>

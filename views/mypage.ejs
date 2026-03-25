@@ -1,0 +1,49 @@
+<%- include('partials/layout-start') %>
+
+<section class="block-card">
+  <div class="section-head">
+    <h2><%= ctx.lang === 'en' ? 'My Orders' : '내 주문내역' %></h2>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th><%= ctx.lang === 'en' ? 'Order No.' : '구매번호' %></th>
+          <th><%= ctx.lang === 'en' ? 'Product' : '상품' %></th>
+          <th><%= ctx.lang === 'en' ? 'My Info' : '주문자 정보' %></th>
+          <th><%= ctx.lang === 'en' ? 'Status' : '상태' %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (orders.length === 0) { %>
+          <tr>
+            <td colspan="4"><%= ctx.lang === 'en' ? 'No order history found.' : '주문 내역이 없습니다.' %></td>
+          </tr>
+        <% } %>
+        <% orders.forEach((item) => { %>
+          <tr>
+            <td><%= item.order_no %></td>
+            <td>
+              <strong><%= item.brand %> <%= item.model %></strong><br />
+              <small><%= item.sub_model || '-' %></small>
+            </td>
+            <td>
+              <strong><%= item.buyer_name %></strong><br />
+              <small><%= item.buyer_contact %></small><br />
+              <small><%= ctx.lang === 'en' ? 'Customs' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small>
+            </td>
+            <td>
+              <span class="order-status"><%= item.status_label %></span>
+              <% if (item.status_detail) { %>
+                <small class="muted-label"><%= item.status_detail %></small>
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

@@ -1,0 +1,45 @@
+<%- include('partials/layout-start') %>
+
+<section class="block-card narrow">
+  <h2><%= ctx.lang === 'en' ? 'Factory Purchase' : '공장제 구매 신청' %></h2>
+
+  <div class="line-list-box">
+    <p><%= ctx.lang === 'en' ? 'Product' : '상품' %>: <strong><%= product.brand %> <%= product.model %> <%= product.sub_model %></strong></p>
+    <p><%= ctx.lang === 'en' ? 'Price' : '가격' %>: <strong>₩<%= ctx.formatPrice(product.price) %></strong></p>
+    <p><%= ctx.lang === 'en' ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></p>
+  </div>
+
+  <form method="post" action="/shop/item/<%= product.id %>/purchase" class="form-grid">
+    <label><%= ctx.lang === 'en' ? 'Name' : '이름' %>
+      <input type="text" name="buyerName" value="<%= formData.buyerName || '' %>" required />
+      <small class="strong-warning">
+        <%= ctx.lang === 'en' ? 'Transfer must be made with this exact name.' : '반드시 이 이름으로 입금해 주세요.' %>
+      </small>
+    </label>
+
+    <label><%= ctx.lang === 'en' ? 'Contact' : '연락처' %>
+      <input type="text" name="buyerContact" value="<%= formData.buyerContact || '' %>" required />
+    </label>
+
+    <label><%= ctx.lang === 'en' ? 'Customs Clearance No.' : '통관번호' %>
+      <input type="text" name="customsClearanceNo" value="<%= formData.customsClearanceNo || '' %>" required />
+    </label>
+
+    <label><%= ctx.lang === 'en' ? 'Address' : '주소' %>
+      <textarea name="buyerAddress" rows="3" required><%= formData.buyerAddress || '' %></textarea>
+    </label>
+
+    <label><%= ctx.lang === 'en' ? 'Quantity' : '수량' %>
+      <input type="number" name="quantity" min="1" value="<%= formData.quantity || 1 %>" required />
+    </label>
+
+    <button type="submit" class="cta-main full"><%= ctx.lang === 'en' ? 'Submit Purchase' : '구매 신청하기' %></button>
+  </form>
+
+  <div class="notice-box">
+    <h4><%= ctx.lang === 'en' ? 'Bank Transfer Guide' : '계좌이체 안내' %></h4>
+    <p><%= ctx.settings.bankAccountInfo %></p>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

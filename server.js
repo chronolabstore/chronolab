@@ -31,6 +31,14 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/;
 const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,}$/;
 const DIGIT_PHONE_REGEX = /^[0-9]+$/;
+const CUSTOMS_NO_REGEX = /^[A-Za-z0-9-]{6,30}$/;
+
+const ORDER_STATUS = Object.freeze({
+  UNPAID: 'UNPAID',
+  PAID_PREPARING: 'PAID_PREPARING',
+  SHIPPING: 'SHIPPING',
+  DELIVERED: 'DELIVERED'
+});
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -143,6 +151,71 @@ function fileUrl(file) {
 
 function formatPrice(value) {
   return Number(value || 0).toLocaleString('ko-KR');
+}
+
+function normalizeOrderStatus(rawStatus = '') {
+  const status = String(rawStatus || '').trim().toUpperCase();
+
+  if (status === 'UNPAID' || status === 'PENDING_TRANSFER') return ORDER_STATUS.UNPAID;
+  if (status === 'PAID_PREPARING' || status === 'TRANSFER_CONFIRMED' || status === 'PREPARING') {
+    return ORDER_STATUS.PAID_PREPARING;
+  }
+  if (status === 'SHIPPING' || status === 'SHIPPED') return ORDER_STATUS.SHIPPING;
+  if (status === 'DELIVERED' || status === 'DONE') return ORDER_STATUS.DELIVERED;
+
+  return ORDER_STATUS.UNPAID;
+}
+
+function getOrderStatusMeta(rawStatus, lang = 'ko') {
+  const status = normalizeOrderStatus(rawStatus);
+  const isEn = lang === 'en';
+
+  if (status === ORDER_STATUS.UNPAID) {
+    return {
+      code: status,
+      label: isEn ? 'Unpaid' : '미입금',
+      detail: ''
+    };
+  }
+
+  if (status === ORDER_STATUS.PAID_PREPARING) {
+    return {
+      code: status,
+      label: isEn ? 'Payment Confirmed' : '입금확인',
+      detail: isEn ? 'Preparing item' : '상품준비중'
+    };
+  }
+
+  if (status === ORDER_STATUS.SHIPPING) {
+    return {
+      code: status,
+      label: isEn ? 'Shipping' : '배송중',
+      detail: ''
+    };
+  }
+
+  return {
+    code: ORDER_STATUS.DELIVERED,
+    label: isEn ? 'Delivered' : '배송완료',
+    detail: ''
+  };
+}
+
+function getNextOrderStatus(rawStatus) {
+  const current = normalizeOrderStatus(rawStatus);
+
+  if (current === ORDER_STATUS.UNPAID) return ORDER_STATUS.PAID_PREPARING;
+  if (current === ORDER_STATUS.PAID_PREPARING) return ORDER_STATUS.SHIPPING;
+  if (current === ORDER_STATUS.SHIPPING) return ORDER_STATUS.DELIVERED;
+  return null;
+}
+
+function getNextOrderActionLabel(rawStatus) {
+  const current = normalizeOrderStatus(rawStatus);
+  if (current === ORDER_STATUS.UNPAID) return '입금확인';
+  if (current === ORDER_STATUS.PAID_PREPARING) return '배송시작';
+  if (current === ORDER_STATUS.SHIPPING) return '배송완료';
+  return '';
 }
 
 function generateOrderNo() {
@@ -568,12 +641,137 @@ app.get('/shop/item/:id', (req, res) => {
   res.render('product-detail', { title: 'Product', product, similar, imageList });
 });
 
+app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).render('simple-error', { title: 'Error', message: '잘못된 상품입니다.' });
+  }
+
+  const product = db
+    .prepare('SELECT id, category_group, brand, model, sub_model, price, shipping_period FROM products WHERE id = ? AND is_active = 1 LIMIT 1')
+    .get(id);
+
+  if (!product) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
+  }
+
+  if (product.category_group !== '공장제') {
+    setFlash(req, 'error', '공장제 상품만 해당 구매 페이지를 이용할 수 있습니다.');
+    return res.redirect(`/shop/item/${id}`);
+  }
+
+  const formData = {
+    buyerName: req.user.username || '',
+    buyerContact: '',
+    customsClearanceNo: '',
+    buyerAddress: '',
+    quantity: 1
+  };
+
+  return res.render('purchase-form', { title: 'Purchase', product, formData });
+});
+
+app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).render('simple-error', { title: 'Error', message: '잘못된 상품입니다.' });
+  }
+
+  const product = db
+    .prepare('SELECT id, category_group, brand, model, sub_model, price, shipping_period FROM products WHERE id = ? AND is_active = 1 LIMIT 1')
+    .get(id);
+
+  if (!product) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
+  }
+
+  if (product.category_group !== '공장제') {
+    setFlash(req, 'error', '공장제 상품만 해당 구매 페이지를 이용할 수 있습니다.');
+    return res.redirect(`/shop/item/${id}`);
+  }
+
+  const buyerName = String(req.body.buyerName || '').trim();
+  const buyerContact = String(req.body.buyerContact || '').trim();
+  const buyerAddress = String(req.body.buyerAddress || '').trim();
+  const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
+  const quantity = parsePositiveInt(req.body.quantity, 1);
+
+  const formData = {
+    buyerName,
+    buyerContact,
+    customsClearanceNo,
+    buyerAddress,
+    quantity
+  };
+
+  const renderWithError = (message) => {
+    res.locals.ctx.flash = { type: 'error', message };
+    return res.render('purchase-form', { title: 'Purchase', product, formData });
+  };
+
+  if (!buyerName || !buyerContact || !buyerAddress || !customsClearanceNo) {
+    return renderWithError('필수 입력값을 모두 작성해 주세요.');
+  }
+
+  const normalizedContact = normalizePhone(buyerContact);
+  if (!DIGIT_PHONE_REGEX.test(normalizedContact) || normalizedContact.length < 8) {
+    return renderWithError('연락처 형식이 올바르지 않습니다.');
+  }
+
+  if (buyerAddress.length < 5 || buyerAddress.length > 200) {
+    return renderWithError('주소는 5~200자 범위로 입력해 주세요.');
+  }
+
+  if (!CUSTOMS_NO_REGEX.test(customsClearanceNo)) {
+    return renderWithError('통관번호 형식이 올바르지 않습니다. (영문/숫자 6~30자)');
+  }
+
+  let orderNo = generateOrderNo();
+  while (db.prepare('SELECT id FROM orders WHERE order_no = ? LIMIT 1').get(orderNo)) {
+    orderNo = generateOrderNo();
+  }
+
+  const totalPrice = Number(product.price) * quantity;
+  db.prepare(
+    `
+      INSERT INTO orders (
+        order_no,
+        product_id,
+        buyer_name,
+        buyer_contact,
+        buyer_address,
+        customs_clearance_no,
+        bank_depositor_name,
+        quantity,
+        total_price,
+        status,
+        created_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    orderNo,
+    product.id,
+    buyerName,
+    normalizedContact,
+    buyerAddress,
+    customsClearanceNo,
+    buyerName,
+    quantity,
+    totalPrice,
+    ORDER_STATUS.UNPAID,
+    req.user.id
+  );
+
+  return res.redirect(`/shop/order-complete/${orderNo}`);
+});
+
 app.post('/order/create', (req, res) => {
   const productId = Number(req.body.productId);
   const buyerName = String(req.body.buyerName || '').trim();
   const buyerContact = String(req.body.buyerContact || '').trim();
   const buyerAddress = String(req.body.buyerAddress || '').trim();
   const bankDepositorName = String(req.body.bankDepositorName || '').trim();
+  const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
   const quantity = parsePositiveInt(req.body.quantity, 1);
   const normalizedContact = normalizePhone(buyerContact);
 
@@ -613,12 +811,13 @@ app.post('/order/create', (req, res) => {
         buyer_name,
         buyer_contact,
         buyer_address,
+        customs_clearance_no,
         bank_depositor_name,
         quantity,
         total_price,
         status,
         created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_TRANSFER', ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     orderNo,
@@ -626,9 +825,11 @@ app.post('/order/create', (req, res) => {
     buyerName,
     normalizedContact,
     buyerAddress,
+    customsClearanceNo,
     bankDepositorName,
     quantity,
     totalPrice,
+    ORDER_STATUS.UNPAID,
     req.user ? req.user.id : null
   );
 
@@ -653,7 +854,34 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '주문을 찾을 수 없습니다.' });
   }
 
-  res.render('order-complete', { title: 'Order Complete', order });
+  const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
+
+  res.render('order-complete', { title: 'Order Complete', order, statusMeta });
+});
+
+app.get('/mypage', requireAuth, (req, res) => {
+  const orders = db
+    .prepare(
+      `
+        SELECT o.*, p.brand, p.model, p.sub_model
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE o.created_by_user_id = ?
+        ORDER BY o.id DESC
+      `
+    )
+    .all(req.user.id)
+    .map((order) => {
+      const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
+      return {
+        ...order,
+        status_code: statusMeta.code,
+        status_label: statusMeta.label,
+        status_detail: statusMeta.detail
+      };
+    });
+
+  res.render('mypage', { title: 'My Page', orders });
 });
 
 app.get('/notice', (req, res) => {
@@ -1057,7 +1285,20 @@ app.get('/admin', requireAdmin, (req, res) => {
         LIMIT 100
       `
     )
-    .all();
+    .all()
+    .map((order) => {
+      const statusMeta = getOrderStatusMeta(order.status, 'ko');
+      const nextStatus = getNextOrderStatus(order.status);
+      const nextActionLabel = getNextOrderActionLabel(order.status);
+      return {
+        ...order,
+        status_code: statusMeta.code,
+        status_label: statusMeta.label,
+        status_detail: statusMeta.detail,
+        next_status: nextStatus,
+        next_action_label: nextActionLabel
+      };
+    });
   const notices = db.prepare('SELECT * FROM notices ORDER BY id DESC LIMIT 50').all();
   const newsPosts = db.prepare('SELECT * FROM news_posts ORDER BY id DESC LIMIT 50').all();
   const qcs = db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 50').all();
@@ -1347,8 +1588,8 @@ app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) =>
 
 app.post('/admin/order/:id/status', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
-  const status = String(req.body.status || 'PENDING_TRANSFER').trim();
-  const allowed = new Set(['PENDING_TRANSFER', 'TRANSFER_CONFIRMED', 'PREPARING', 'SHIPPED', 'DONE']);
+  const status = normalizeOrderStatus(req.body.status || ORDER_STATUS.UNPAID);
+  const allowed = new Set(Object.values(ORDER_STATUS));
 
   if (!allowed.has(status)) {
     setFlash(req, 'error', '허용되지 않은 상태값입니다.');
@@ -1358,6 +1599,26 @@ app.post('/admin/order/:id/status', requireAdmin, (req, res) => {
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
   setFlash(req, 'success', '주문 상태를 업데이트했습니다.');
   res.redirect('/admin');
+});
+
+app.post('/admin/order/:id/next', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ? LIMIT 1').get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect('/admin');
+  }
+
+  const nextStatus = getNextOrderStatus(order.status);
+  if (!nextStatus) {
+    setFlash(req, 'error', '이미 배송완료 상태입니다.');
+    return res.redirect('/admin');
+  }
+
+  db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(nextStatus, id);
+  setFlash(req, 'success', '주문 상태를 다음 단계로 변경했습니다.');
+  return res.redirect('/admin');
 });
 
 app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {

@@ -120,6 +120,22 @@ function ensureProductsCategoryColumn() {
   }
 }
 
+function ensureOrdersCustomsColumn() {
+  const columns = db.prepare('PRAGMA table_info(orders)').all();
+  const hasCustomsNo = columns.some((column) => column.name === 'customs_clearance_no');
+
+  if (!hasCustomsNo) {
+    db.prepare("ALTER TABLE orders ADD COLUMN customs_clearance_no TEXT NOT NULL DEFAULT ''").run();
+  }
+}
+
+function normalizeOrderStatuses() {
+  db.prepare("UPDATE orders SET status = 'UNPAID' WHERE status IN ('PENDING_TRANSFER', 'UNPAID')").run();
+  db.prepare("UPDATE orders SET status = 'PAID_PREPARING' WHERE status IN ('TRANSFER_CONFIRMED', 'PREPARING', 'PAID_PREPARING')").run();
+  db.prepare("UPDATE orders SET status = 'SHIPPING' WHERE status IN ('SHIPPED', 'SHIPPING')").run();
+  db.prepare("UPDATE orders SET status = 'DELIVERED' WHERE status IN ('DONE', 'DELIVERED')").run();
+}
+
 function ensureAdminUser() {
   const countRow = db.prepare('SELECT COUNT(*) AS count FROM users WHERE is_admin = 1').get();
   if (countRow.count > 0) {
@@ -380,19 +396,20 @@ function seedOrdersAndQc(demoUserId) {
     if (products.length > 0) {
       const insertOrder = db.prepare(
         `
-          INSERT INTO orders (
-            order_no,
-            product_id,
-            buyer_name,
-            buyer_contact,
-            buyer_address,
-            bank_depositor_name,
-            quantity,
-            total_price,
-            status,
-            created_by_user_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
+      INSERT INTO orders (
+        order_no,
+        product_id,
+        buyer_name,
+        buyer_contact,
+        buyer_address,
+        customs_clearance_no,
+        bank_depositor_name,
+        quantity,
+        total_price,
+        status,
+        created_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
       );
 
       products.forEach((product, idx) => {
@@ -403,10 +420,11 @@ function seedOrdersAndQc(demoUserId) {
           idx === 0 ? '김크로노' : '이랩',
           idx === 0 ? '01012345678' : '01087654321',
           idx === 0 ? '서울특별시 강남구 테헤란로 101' : '부산광역시 해운대구 센텀동로 45',
+          idx === 0 ? 'P220312345678' : 'P220312345679',
           idx === 0 ? '김크로노' : '이랩',
           1,
           Number(product.price),
-          idx === 0 ? 'TRANSFER_CONFIRMED' : 'PREPARING',
+          idx === 0 ? 'PAID_PREPARING' : 'SHIPPING',
           demoUserId
         );
       });
@@ -576,10 +594,11 @@ export function initDb() {
       buyer_name TEXT NOT NULL,
       buyer_contact TEXT NOT NULL,
       buyer_address TEXT NOT NULL,
+      customs_clearance_no TEXT NOT NULL DEFAULT '',
       bank_depositor_name TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       total_price INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'PENDING_TRANSFER',
+      status TEXT NOT NULL DEFAULT 'UNPAID',
       created_by_user_id INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
@@ -652,6 +671,8 @@ export function initDb() {
   `);
 
   ensureProductsCategoryColumn();
+  ensureOrdersCustomsColumn();
+  normalizeOrderStatuses();
 
   for (const [key, value] of Object.entries(defaultSettings)) {
     upsertDefaultSetting(key, value);

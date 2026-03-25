@@ -295,7 +295,6 @@
           <tr>
             <th>구매번호</th>
             <th>신청 정보</th>
-            <th>입금자명</th>
             <th>상태</th>
             <th>변경</th>
           </tr>
@@ -306,21 +305,26 @@
               <td><%= item.order_no %></td>
               <td>
                 <strong><%= item.buyer_name %></strong><br />
-                <small><%= item.buyer_contact %> / <%= item.buyer_address %></small>
+                <small><%= item.buyer_contact %></small><br />
+                <small>통관번호: <%= item.customs_clearance_no || '-' %></small><br />
+                <small><%= item.buyer_address %></small><br />
+                <small>입금자명: <%= item.bank_depositor_name %></small>
               </td>
-              <td><%= item.bank_depositor_name %></td>
-              <td><%= item.status %></td>
               <td>
-                <form method="post" action="/admin/order/<%= item.id %>/status" class="inline-form">
-                  <select name="status">
-                    <option value="PENDING_TRANSFER" <%= item.status === 'PENDING_TRANSFER' ? 'selected' : '' %>>PENDING_TRANSFER</option>
-                    <option value="TRANSFER_CONFIRMED" <%= item.status === 'TRANSFER_CONFIRMED' ? 'selected' : '' %>>TRANSFER_CONFIRMED</option>
-                    <option value="PREPARING" <%= item.status === 'PREPARING' ? 'selected' : '' %>>PREPARING</option>
-                    <option value="SHIPPED" <%= item.status === 'SHIPPED' ? 'selected' : '' %>>SHIPPED</option>
-                    <option value="DONE" <%= item.status === 'DONE' ? 'selected' : '' %>>DONE</option>
-                  </select>
-                  <button type="submit" class="chip">저장</button>
-                </form>
+                <strong><%= item.status_label %></strong>
+                <% if (item.status_detail) { %>
+                  <br />
+                  <small><%= item.status_detail %></small>
+                <% } %>
+              </td>
+              <td>
+                <% if (item.next_status) { %>
+                  <form method="post" action="/admin/order/<%= item.id %>/next" class="inline-form">
+                    <button type="submit" class="chip dark"><%= item.next_action_label %></button>
+                  </form>
+                <% } else { %>
+                  <span class="muted-label">완료</span>
+                <% } %>
               </td>
             </tr>
           <% }) %>

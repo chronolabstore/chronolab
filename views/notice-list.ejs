@@ -2,17 +2,16 @@
 
 <section class="block-card">
   <div class="section-head">
-    <h2>공지사항</h2>
-    <span class="muted-label">최신 공지 업데이트</span>
+    <h2><%= ctx.lang === 'en' ? 'Notice' : '공지사항' %></h2>
   </div>
   <ul class="line-list">
     <% if (notices.length === 0) { %>
-      <li>등록된 공지사항이 없습니다.</li>
+      <li><%= ctx.lang === 'en' ? 'No notices found.' : '등록된 공지사항이 없습니다.' %></li>
     <% } %>
     <% notices.forEach((item) => { %>
       <li>
         <a href="/notice/<%= item.id %>"><%= item.title %></a>
-        <span><%= item.is_popup ? '팝업' : '일반' %> / <%= item.created_at.slice(0, 10) %></span>
+        <span><%= item.is_popup ? (ctx.lang === 'en' ? 'Popup' : '팝업') : (ctx.lang === 'en' ? 'Normal' : '일반') %> / <%= item.created_at.slice(0, 10) %></span>
       </li>
     <% }) %>
   </ul>

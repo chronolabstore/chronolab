@@ -60,38 +60,42 @@
       <span>Dial: <strong><%= product.dial_color || '-' %></strong></span>
       <span>Case: <strong><%= product.case_material || '-' %></strong></span>
       <span>Bracelet/Strap: <strong><%= product.strap_material || '-' %></strong></span>
-      <span>배송기간: <strong><%= product.shipping_period || '-' %></strong></span>
+      <span><%= ctx.lang === 'en' ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></span>
     </div>
 
     <p class="feature-copy"><%= product.features || '-' %></p>
 
-    <form method="post" action="/order/create" class="order-form">
-      <input type="hidden" name="productId" value="<%= product.id %>" />
-      <label>수량
-        <input type="number" name="quantity" value="1" min="1" required />
-      </label>
-      <label>이름
-        <input type="text" name="buyerName" required />
-      </label>
-      <label>연락처
-        <input type="text" name="buyerContact" required />
-      </label>
-      <label>주소
-        <textarea name="buyerAddress" rows="2" required></textarea>
-      </label>
-      <label>입금자명
-        <input type="text" name="bankDepositorName" required />
-      </label>
-      <button type="submit" class="cta-main full"><%= ctx.t('buyNow') %></button>
-    </form>
+    <% if (product.category_group === '공장제') { %>
+      <a href="/shop/item/<%= product.id %>/purchase" class="cta-main full"><%= ctx.lang === 'en' ? 'Go to Purchase' : '구매하기' %></a>
+    <% } else { %>
+      <form method="post" action="/order/create" class="order-form">
+        <input type="hidden" name="productId" value="<%= product.id %>" />
+        <label>수량
+          <input type="number" name="quantity" value="1" min="1" required />
+        </label>
+        <label>이름
+          <input type="text" name="buyerName" required />
+        </label>
+        <label>연락처
+          <input type="text" name="buyerContact" required />
+        </label>
+        <label>주소
+          <textarea name="buyerAddress" rows="2" required></textarea>
+        </label>
+        <label>입금자명
+          <input type="text" name="bankDepositorName" required />
+        </label>
+        <button type="submit" class="cta-main full"><%= ctx.t('buyNow') %></button>
+      </form>
+    <% } %>
   </div>
 </section>
 
 <section class="block-card">
-  <h3>Similar Watches</h3>
+  <h3><%= ctx.lang === 'en' ? 'Similar Watches' : '유사 상품' %></h3>
   <div class="product-grid compact">
     <% if (similar.length === 0) { %>
-      <p>같은 브랜드의 다른 상품이 없습니다.</p>
+      <p><%= ctx.lang === 'en' ? 'No similar products found.' : '같은 브랜드의 다른 상품이 없습니다.' %></p>
     <% } %>
     <% similar.forEach((item) => { %>
       <a href="/shop/item/<%= item.id %>" class="mini-product">

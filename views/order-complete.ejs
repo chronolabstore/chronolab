@@ -8,9 +8,11 @@
     <p>상품: <strong><%= order.brand %> <%= order.model %> <%= order.sub_model %></strong></p>
     <p>신청자: <strong><%= order.buyer_name %></strong></p>
     <p>연락처: <strong><%= order.buyer_contact %></strong></p>
+    <p>통관번호: <strong><%= order.customs_clearance_no || '-' %></strong></p>
     <p>주소: <strong><%= order.buyer_address %></strong></p>
     <p>입금자명: <strong><%= order.bank_depositor_name %></strong></p>
     <p>총 금액: <strong>₩<%= ctx.formatPrice(order.total_price) %></strong></p>
+    <p>주문상태: <strong><%= statusMeta.label %></strong> <%= statusMeta.detail ? `(${statusMeta.detail})` : '' %></p>
   </div>
 
   <div class="notice-box">

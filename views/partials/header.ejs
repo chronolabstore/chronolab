@@ -52,6 +52,7 @@
 
       <% if (ctx.currentUser) { %>
         <span class="chip muted"><%= ctx.currentUser.username %></span>
+        <a href="/mypage" class="chip"><%= ctx.t('myPage') %></a>
         <form method="post" action="/logout" class="inline-form">
           <button type="submit" class="chip"><%= ctx.t('logout') %></button>
         </form>
