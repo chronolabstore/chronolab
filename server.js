@@ -538,6 +538,21 @@ app.get('/shop/item/:id', (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
+  const imageRows = db
+    .prepare(
+      `
+        SELECT image_path
+        FROM product_images
+        WHERE product_id = ?
+        ORDER BY sort_order ASC, id ASC
+      `
+    )
+    .all(product.id);
+  const imageList = imageRows.map((row) => row.image_path).filter(Boolean);
+  if (imageList.length === 0 && product.image_path) {
+    imageList.push(product.image_path);
+  }
+
   const similar = db
     .prepare(
       `
@@ -550,7 +565,7 @@ app.get('/shop/item/:id', (req, res) => {
     )
     .all(product.brand, product.id);
 
-  res.render('product-detail', { title: 'Product', product, similar });
+  res.render('product-detail', { title: 'Product', product, similar, imageList });
 });
 
 app.post('/order/create', (req, res) => {
@@ -1171,7 +1186,7 @@ app.post('/admin/menu/remove/:id', requireAdmin, (req, res) => {
   res.redirect('/admin');
 });
 
-app.post('/admin/product/create', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req, res) => {
   const categoryGroupRaw = String(req.body.categoryGroup || SHOP_PRODUCT_GROUPS[0]).trim();
   const categoryGroup = SHOP_PRODUCT_GROUPS.includes(categoryGroupRaw)
     ? categoryGroupRaw
@@ -1196,7 +1211,10 @@ app.post('/admin/product/create', requireAdmin, upload.single('image'), (req, re
     return res.redirect('/admin');
   }
 
-  db.prepare(
+  const uploadedImages = Array.isArray(req.files) ? req.files.map((file) => fileUrl(file)).filter(Boolean) : [];
+  const primaryImage = uploadedImages[0] || '';
+
+  const inserted = db.prepare(
     `
       INSERT INTO products (
         category_group,
@@ -1233,8 +1251,22 @@ app.post('/admin/product/create', requireAdmin, upload.single('image'), (req, re
     features,
     price,
     shippingPeriod,
-    fileUrl(req.file)
+    primaryImage
   );
+  const productId = Number(inserted.lastInsertRowid);
+
+  if (uploadedImages.length > 0) {
+    const insertImage = db.prepare(
+      `
+        INSERT INTO product_images (product_id, image_path, sort_order)
+        VALUES (?, ?, ?)
+      `
+    );
+
+    uploadedImages.forEach((src, index) => {
+      insertImage.run(productId, src, index);
+    });
+  }
 
   setFlash(req, 'success', '상품이 등록되었습니다.');
   res.redirect('/admin');

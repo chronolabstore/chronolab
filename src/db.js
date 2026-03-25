@@ -2,6 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { PRODUCT_SEED_ITEMS } from './product-seeds.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,7 +155,7 @@ function ensureDemoMemberUser() {
 }
 
 function seedProducts() {
-  const insert = db.prepare(
+  const insertProduct = db.prepare(
     `
       INSERT INTO products (
         category_group,
@@ -177,187 +178,98 @@ function seedProducts() {
     `
   );
 
-  const rows = [
-    [
-      '공장제',
-      'Rolex',
-      'Submariner',
-      'Black',
-      '126610LN',
-      'Clean',
-      'V5',
-      '3235',
-      '41mm',
-      'Black',
-      'Steel',
-      'Steel Oyster',
-      '세라믹 베젤, 프리스프렁 밸런스',
-      1580000,
-      '7~14일',
-      '/assets/media/watches/factory-submariner-black.svg'
-    ],
-    [
-      '공장제',
-      'Rolex',
-      'GMT-Master II',
-      'Batman',
-      '126710BLNR',
-      'Clean',
-      'V3',
-      '3285',
-      '40mm',
-      'Black',
-      'Steel',
-      'Jubilee Steel',
-      '양방향 베젤, GMT 기능',
-      1720000,
-      '7~14일',
-      '/assets/media/watches/factory-gmt-batman.svg'
-    ],
-    [
-      '공장제',
-      'Patek Philippe',
-      'Nautilus',
-      'Blue Dial',
-      '5711/1A',
-      '3KF',
-      'V2',
-      '324SC',
-      '40mm',
-      'Blue',
-      'Steel',
-      'Integrated Steel',
-      '수평 엠보싱 다이얼',
-      1890000,
-      '10~20일',
-      '/assets/media/watches/factory-nautilus-blue.svg'
-    ],
-    [
-      '공장제',
-      'Audemars Piguet',
-      'Royal Oak',
-      'Black 15500',
-      '15500ST',
-      'ZF',
-      'V4',
-      '4302',
-      '41mm',
-      'Black',
-      'Steel',
-      'Integrated Steel',
-      '태피스트리 다이얼, 슬림 케이스',
-      1980000,
-      '10~20일',
-      '/assets/media/watches/factory-royaloak-black.svg'
-    ],
-    [
-      '젠파츠',
-      'Rolex',
-      'Datejust',
-      'Fluted Gen-Parts',
-      '126334',
-      'Custom',
-      'Hybrid',
-      '3235',
-      '41mm',
-      'Silver',
-      '904L Steel',
-      'Jubilee Steel',
-      '젠 베젤/다이얼 믹스',
-      2850000,
-      '3~5주',
-      '/assets/media/watches/genparts-datejust.svg'
-    ],
-    [
-      '젠파츠',
-      'Omega',
-      'Seamaster 300',
-      'Gen Dial Mix',
-      '210.30.42.20.03.001',
-      'Custom',
-      'Hybrid',
-      '8800',
-      '42mm',
-      'Blue',
-      'Steel',
-      'Steel Bracelet',
-      '젠 다이얼, 세라믹 베젤 인서트',
-      2360000,
-      '3~5주',
-      '/assets/media/watches/genparts-seamaster.svg'
-    ],
-    [
-      '현지중고',
-      'Cartier',
-      'Santos',
-      'Medium White',
-      'WSSA0029',
-      'Local Stock',
-      'Used',
-      'Automatic',
-      '35mm',
-      'White',
-      'Steel',
-      'Steel Bracelet',
-      '현지 매입 중고, 상태 A급',
-      3120000,
-      '2~4일',
-      '/assets/media/watches/used-santos-white.svg'
-    ],
-    [
-      '현지중고',
-      'IWC',
-      'Pilot Mark XX',
-      'Blue',
-      'IW328203',
-      'Local Stock',
-      'Used',
-      '32111',
-      '40mm',
-      'Blue',
-      'Steel',
-      'Leather Strap',
-      '현지 매입 중고, 상태 A-',
-      3580000,
-      '2~4일',
-      '/assets/media/watches/used-iwc-markxx.svg'
-    ],
-    [
-      '현지중고',
-      'Tudor',
-      'Black Bay 58',
-      'Navy Blue',
-      'M79030B',
-      'Local Stock',
-      'Used',
-      'MT5402',
-      '39mm',
-      'Blue',
-      'Steel',
-      'Steel Bracelet',
-      '현지 매입 중고, 상태 B+',
-      2750000,
-      '2~4일',
-      '/assets/media/watches/used-bb58-blue.svg'
-    ]
-  ];
+  const updateProductById = db.prepare(
+    `
+      UPDATE products
+      SET
+        category_group = ?,
+        brand = ?,
+        model = ?,
+        sub_model = ?,
+        reference = ?,
+        factory_name = ?,
+        version_name = ?,
+        movement = ?,
+        case_size = ?,
+        dial_color = ?,
+        case_material = ?,
+        strap_material = ?,
+        features = ?,
+        price = ?,
+        shipping_period = ?,
+        image_path = ?,
+        is_active = 1
+      WHERE id = ?
+    `
+  );
+
+  const findByReference = db.prepare('SELECT id FROM products WHERE reference = ? LIMIT 1');
+  const clearProductImages = db.prepare('DELETE FROM product_images WHERE product_id = ?');
+  const insertProductImage = db.prepare(
+    `
+      INSERT INTO product_images (product_id, image_path, sort_order)
+      VALUES (?, ?, ?)
+    `
+  );
 
   const tx = db.transaction(() => {
-    for (const row of rows) {
-      const [categoryGroup, brand, model, subModel, reference] = row;
-      const exists = db
-        .prepare(
-          `
-            SELECT id
-            FROM products
-            WHERE category_group = ? AND brand = ? AND model = ? AND sub_model = ? AND reference = ?
-            LIMIT 1
-          `
-        )
-        .get(categoryGroup, brand, model, subModel, reference);
+    for (const item of PRODUCT_SEED_ITEMS) {
+      const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
+      const primaryImage = images[0] || '';
+
+      const values = [
+        item.categoryGroup,
+        item.brand,
+        item.model,
+        item.subModel,
+        item.reference,
+        item.factoryName,
+        item.versionName,
+        item.movement,
+        item.caseSize,
+        item.dialColor,
+        item.caseMaterial,
+        item.strapMaterial,
+        item.features,
+        Number(item.price || 0),
+        item.shippingPeriod,
+        primaryImage
+      ];
+
+      const exists = findByReference.get(item.reference);
+      let productId = null;
 
       if (!exists) {
-        insert.run(...row);
+        const inserted = insertProduct.run(...values);
+        productId = Number(inserted.lastInsertRowid);
+      } else {
+        productId = Number(exists.id);
+        updateProductById.run(...values, productId);
+      }
+
+      clearProductImages.run(productId);
+      images.forEach((src, index) => {
+        insertProductImage.run(productId, src, index);
+      });
+    }
+
+    const oldSampleRows = db
+      .prepare(
+        `
+          SELECT id
+          FROM products
+          WHERE image_path LIKE '/assets/media/watches/%'
+        `
+      )
+      .all();
+
+    for (const row of oldSampleRows) {
+      const hasLinked = db
+        .prepare('SELECT COUNT(*) AS count FROM product_images WHERE product_id = ?')
+        .get(row.id);
+
+      if (Number(hasLinked.count) === 0) {
+        db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run(row.id);
       }
     }
   });
@@ -644,6 +556,18 @@ export function initDb() {
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS product_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      image_path TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_product_images_unique
+      ON product_images (product_id, image_path);
 
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -121,8 +121,8 @@
   <article class="block-card">
     <h3>3) 상품 업로드</h3>
     <form method="post" action="/admin/product/create" enctype="multipart/form-data" class="form-grid">
-      <label>사진
-        <input type="file" name="image" accept="image/*" />
+      <label>사진 (여러 장 업로드 가능)
+        <input type="file" name="images" accept="image/*" multiple />
       </label>
       <label>상위 분류
         <select name="categoryGroup" required>

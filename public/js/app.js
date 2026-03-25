@@ -47,9 +47,75 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initPopup);
-  } else {
+  function initProductGallery() {
+    var galleries = document.querySelectorAll('[data-gallery]');
+    if (!galleries.length) {
+      return;
+    }
+
+    galleries.forEach(function (gallery) {
+      var mainImage = gallery.querySelector('[data-gallery-main]');
+      var thumbs = Array.prototype.slice.call(gallery.querySelectorAll('[data-gallery-thumb]'));
+      var prevButton = gallery.querySelector('[data-gallery-prev]');
+      var nextButton = gallery.querySelector('[data-gallery-next]');
+
+      if (!mainImage || !thumbs.length) {
+        return;
+      }
+
+      var currentIndex = 0;
+
+      function update(index) {
+        if (index < 0 || index >= thumbs.length) {
+          return;
+        }
+
+        currentIndex = index;
+        var nextSrc = thumbs[index].getAttribute('data-src');
+        if (nextSrc) {
+          mainImage.setAttribute('src', nextSrc);
+        }
+
+        thumbs.forEach(function (thumb, thumbIndex) {
+          thumb.classList.toggle('active', thumbIndex === currentIndex);
+        });
+      }
+
+      thumbs.forEach(function (thumb, index) {
+        thumb.addEventListener('click', function () {
+          update(index);
+        });
+      });
+
+      if (prevButton) {
+        prevButton.addEventListener('click', function () {
+          var nextIndex = currentIndex === 0 ? thumbs.length - 1 : currentIndex - 1;
+          update(nextIndex);
+        });
+      }
+
+      if (nextButton) {
+        nextButton.addEventListener('click', function () {
+          var nextIndex = currentIndex === thumbs.length - 1 ? 0 : currentIndex + 1;
+          update(nextIndex);
+        });
+      }
+
+      if (thumbs.length <= 1) {
+        if (prevButton) prevButton.setAttribute('hidden', 'hidden');
+        if (nextButton) nextButton.setAttribute('hidden', 'hidden');
+      }
+    });
+  }
+
+  function initApp() {
     initPopup();
+    initProductGallery();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+  } else {
+    initApp();
   }
 })();

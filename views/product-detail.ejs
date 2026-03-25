@@ -1,9 +1,47 @@
 <%- include('partials/layout-start') %>
 
 <section class="detail-shell">
-  <div class="detail-visual">
-    <% if (product.image_path) { %>
-      <img src="<%= product.image_path %>" alt="<%= product.brand %> <%= product.model %>" />
+  <div class="detail-visual detail-gallery" data-gallery>
+    <% if (imageList && imageList.length > 0) { %>
+      <div class="detail-main-wrap">
+        <button
+          type="button"
+          class="gallery-nav gallery-prev"
+          data-gallery-prev
+          aria-label="이전 이미지"
+        >
+          &#8249;
+        </button>
+        <img
+          src="<%= imageList[0] %>"
+          alt="<%= product.brand %> <%= product.model %>"
+          class="detail-main-image"
+          data-gallery-main
+        />
+        <button
+          type="button"
+          class="gallery-nav gallery-next"
+          data-gallery-next
+          aria-label="다음 이미지"
+        >
+          &#8250;
+        </button>
+      </div>
+
+      <div class="detail-thumb-row">
+        <% imageList.forEach((src, index) => { %>
+          <button
+            type="button"
+            class="detail-thumb <%= index === 0 ? 'active' : '' %>"
+            data-gallery-thumb
+            data-index="<%= index %>"
+            data-src="<%= src %>"
+            aria-label="상품 이미지 <%= index + 1 %>"
+          >
+            <img src="<%= src %>" alt="<%= product.brand %> 썸네일 <%= index + 1 %>" loading="lazy" />
+          </button>
+        <% }) %>
+      </div>
     <% } else { %>
       <div class="image-fallback large">WATCH</div>
     <% } %>
