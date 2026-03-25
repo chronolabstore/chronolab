@@ -8,7 +8,7 @@
   </head>
   <body class="theme-<%= ctx.themeMode %>" style="<%- ctx.settings.backgroundStyle %>">
     <div class="app-shell">
-      <%- include('header') %>
+      <%- include('./header') %>
 
       <% if (ctx.flash) { %>
         <div class="flash <%= ctx.flash.type %>"><%= ctx.flash.message %></div>
