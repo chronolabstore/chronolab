@@ -15,6 +15,24 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT || 3100);
+const isProduction = process.env.NODE_ENV === 'production';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/;
+const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,}$/;
+const DIGIT_PHONE_REGEX = /^[0-9]+$/;
+
+const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
+const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
+const authAttemptStore = new Map();
+
+const ALLOWED_UPLOAD_MIME = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif'
+]);
 
 const uploadStorage = multer.diskStorage({
   destination: path.join(__dirname, 'uploads'),
@@ -27,11 +45,20 @@ const uploadStorage = multer.diskStorage({
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_UPLOAD_MIME.has(file.mimetype)) {
+      cb(new Error('지원되지 않는 파일 형식입니다. JPG/PNG/WEBP/GIF/AVIF만 업로드할 수 있습니다.'));
+      return;
+    }
+    cb(null, true);
+  }
 });
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
 app.use('/assets', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -45,7 +72,8 @@ app.use(
     cookie: {
       maxAge: 1000 * 60 * 60 * 24 * 14,
       httpOnly: true,
-      sameSite: 'lax'
+      sameSite: 'lax',
+      secure: isProduction
     }
   })
 );
@@ -123,6 +151,91 @@ function sanitizePath(pathValue = '') {
   return `/${pathValue}`;
 }
 
+function parsePositiveInt(rawValue, fallback = 1) {
+  const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function normalizePhone(rawPhone = '') {
+  return String(rawPhone).replace(/[^0-9]/g, '');
+}
+
+function safeBackPath(req, fallback = '/main') {
+  const referer = String(req.get('referer') || '');
+  if (!referer) {
+    return fallback;
+  }
+
+  try {
+    const parsed = new URL(referer);
+    const currentHost = req.get('host');
+    if (currentHost && parsed.host !== currentHost) {
+      return fallback;
+    }
+    return `${parsed.pathname}${parsed.search}` || fallback;
+  } catch {
+    if (referer.startsWith('/')) {
+      return referer;
+    }
+    return fallback;
+  }
+}
+
+function cleanupAuthAttemptStore(nowMs) {
+  if (authAttemptStore.size <= 1000) {
+    return;
+  }
+  for (const [key, row] of authAttemptStore.entries()) {
+    if (nowMs - row.windowStart > AUTH_ATTEMPT_WINDOW_MS) {
+      authAttemptStore.delete(key);
+    }
+  }
+}
+
+function consumeAuthAttempt(req, key, limit = DEFAULT_AUTH_MAX_ATTEMPTS, windowMs = AUTH_ATTEMPT_WINDOW_MS) {
+  const nowMs = Date.now();
+  cleanupAuthAttemptStore(nowMs);
+
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const storeKey = `${key}:${ip}`;
+  const found = authAttemptStore.get(storeKey);
+
+  if (!found || nowMs - found.windowStart > windowMs) {
+    authAttemptStore.set(storeKey, { count: 1, windowStart: nowMs });
+    return { allowed: true };
+  }
+
+  found.count += 1;
+  authAttemptStore.set(storeKey, found);
+
+  return { allowed: found.count <= limit };
+}
+
+function resetAuthAttempt(req, key) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  authAttemptStore.delete(`${key}:${ip}`);
+}
+
+function authAttemptGuard({ key, redirectPath, limit = DEFAULT_AUTH_MAX_ATTEMPTS }) {
+  return (req, res, next) => {
+    const result = consumeAuthAttempt(req, key, limit);
+    if (!result.allowed) {
+      setFlash(req, 'error', '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+      return res.redirect(redirectPath);
+    }
+    return next();
+  };
+}
+
+function asyncRoute(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
 function loadUser(req, res, next) {
   if (!req.session.userId) {
     req.user = null;
@@ -156,6 +269,10 @@ function loadUser(req, res, next) {
 app.use(loadUser);
 
 app.use((req, res, next) => {
+  if (req.path === '/health') {
+    return next();
+  }
+
   const fallbackLanguage = getSetting('languageDefault', 'ko');
   const lang = resolveLanguage(req.query.lang || req.cookies.lang, fallbackLanguage);
   if (req.query.lang === 'ko' || req.query.lang === 'en') {
@@ -165,7 +282,15 @@ app.use((req, res, next) => {
   const themeMode = req.cookies.themeMode === 'night' ? 'night' : 'day';
   const today = toKstDate();
 
-  if (!req.path.startsWith('/admin') && !req.path.startsWith('/assets') && !req.path.startsWith('/uploads')) {
+  const isTrackableVisitPath =
+    !req.path.startsWith('/admin') &&
+    !req.path.startsWith('/assets') &&
+    !req.path.startsWith('/uploads') &&
+    !req.path.startsWith('/set-lang') &&
+    req.path !== '/toggle-theme' &&
+    req.path !== '/favicon.ico';
+
+  if (isTrackableVisitPath) {
     if (req.session.lastVisitDate !== today) {
       incrementVisit(today);
       req.session.lastVisitDate = today;
@@ -262,14 +387,14 @@ app.get('/inquiries', (req, res) => res.redirect('/inquiry'));
 app.get('/set-lang/:lang', (req, res) => {
   const language = resolveLanguage(req.params.lang, 'ko');
   res.cookie('lang', language, { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax' });
-  res.redirect(req.get('referer') || '/main');
+  res.redirect(safeBackPath(req, '/main'));
 });
 
 app.get('/toggle-theme', (req, res) => {
   const current = req.cookies.themeMode === 'night' ? 'night' : 'day';
   const nextTheme = current === 'night' ? 'day' : 'night';
   res.cookie('themeMode', nextTheme, { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax' });
-  res.redirect(req.get('referer') || '/main');
+  res.redirect(safeBackPath(req, '/main'));
 });
 
 app.get('/health', (req, res) => {
@@ -400,10 +525,21 @@ app.post('/order/create', (req, res) => {
   const buyerContact = String(req.body.buyerContact || '').trim();
   const buyerAddress = String(req.body.buyerAddress || '').trim();
   const bankDepositorName = String(req.body.bankDepositorName || '').trim();
-  const quantity = Math.max(1, Number(req.body.quantity || 1));
+  const quantity = parsePositiveInt(req.body.quantity, 1);
+  const normalizedContact = normalizePhone(buyerContact);
 
   if (!productId || !buyerName || !buyerContact || !buyerAddress || !bankDepositorName) {
     setFlash(req, 'error', '필수 입력값을 모두 작성해 주세요.');
+    return res.redirect(`/shop/item/${productId || ''}`);
+  }
+
+  if (!DIGIT_PHONE_REGEX.test(normalizedContact) || normalizedContact.length < 8) {
+    setFlash(req, 'error', '연락처 형식이 올바르지 않습니다.');
+    return res.redirect(`/shop/item/${productId || ''}`);
+  }
+
+  if (buyerAddress.length < 5 || buyerAddress.length > 200) {
+    setFlash(req, 'error', '주소는 5~200자 범위로 입력해 주세요.');
     return res.redirect(`/shop/item/${productId || ''}`);
   }
 
@@ -439,7 +575,7 @@ app.post('/order/create', (req, res) => {
     orderNo,
     productId,
     buyerName,
-    buyerContact,
+    normalizedContact,
     buyerAddress,
     bankDepositorName,
     quantity,
@@ -618,26 +754,32 @@ app.get('/signup', (req, res) => {
   res.render('signup', { title: 'Sign up' });
 });
 
-app.post('/signup', async (req, res) => {
+app.post(
+  '/signup',
+  authAttemptGuard({ key: 'signup', redirectPath: '/signup', limit: 12 }),
+  asyncRoute(async (req, res) => {
   const email = String(req.body.email || '').trim();
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
   const passwordConfirm = String(req.body.passwordConfirm || '');
   const agreed = req.body.agreedTerms === 'on';
 
-  const usernameRegex = /^[A-Za-z0-9_]{4,20}$/;
-
   if (!email || !username || !password || !passwordConfirm) {
     setFlash(req, 'error', '필수 항목을 입력해 주세요.');
     return res.redirect('/signup');
   }
 
-  if (!usernameRegex.test(username)) {
+  if (!EMAIL_REGEX.test(email)) {
+    setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+    return res.redirect('/signup');
+  }
+
+  if (!USERNAME_REGEX.test(username)) {
     setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
     return res.redirect('/signup');
   }
 
-  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+  if (!PASSWORD_REGEX.test(password)) {
     setFlash(req, 'error', '비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
     return res.redirect('/signup');
   }
@@ -660,6 +802,7 @@ app.post('/signup', async (req, res) => {
 
     req.session.userId = Number(result.lastInsertRowid);
     req.session.isAdmin = false;
+    resetAuthAttempt(req, 'signup');
 
     setFlash(req, 'success', '회원가입이 완료되었습니다.');
     res.redirect('/main');
@@ -667,13 +810,17 @@ app.post('/signup', async (req, res) => {
     setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
     res.redirect('/signup');
   }
-});
+  })
+);
 
 app.get('/login', (req, res) => {
   res.render('login', { title: 'Login' });
 });
 
-app.post('/login', async (req, res) => {
+app.post(
+  '/login',
+  authAttemptGuard({ key: 'login', redirectPath: '/login', limit: 15 }),
+  asyncRoute(async (req, res) => {
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
 
@@ -699,10 +846,12 @@ app.post('/login', async (req, res) => {
 
   req.session.userId = Number(user.id);
   req.session.isAdmin = Number(user.is_admin) === 1;
+  resetAuthAttempt(req, 'login');
 
   setFlash(req, 'success', '로그인되었습니다.');
   res.redirect('/main');
-});
+  })
+);
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
@@ -718,7 +867,10 @@ app.get('/admin/login', (req, res) => {
   res.render('admin-login', { title: 'Admin Login', showDefaultAdminHint });
 });
 
-app.post('/admin/login', async (req, res) => {
+app.post(
+  '/admin/login',
+  authAttemptGuard({ key: 'admin-login', redirectPath: '/admin/login', limit: 10 }),
+  asyncRoute(async (req, res) => {
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
 
@@ -739,11 +891,13 @@ app.post('/admin/login', async (req, res) => {
 
   req.session.userId = Number(user.id);
   req.session.isAdmin = true;
+  resetAuthAttempt(req, 'admin-login');
 
   res.redirect('/admin');
-});
+  })
+);
 
-app.post('/admin/change-password', requireAdmin, async (req, res) => {
+app.post('/admin/change-password', requireAdmin, asyncRoute(async (req, res) => {
   const currentPassword = String(req.body.currentPassword || '');
   const newPassword = String(req.body.newPassword || '');
   const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
@@ -758,7 +912,7 @@ app.post('/admin/change-password', requireAdmin, async (req, res) => {
     return res.redirect('/admin');
   }
 
-  if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+  if (!PASSWORD_REGEX.test(newPassword)) {
     setFlash(req, 'error', '새 비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
     return res.redirect('/admin');
   }
@@ -783,7 +937,7 @@ app.post('/admin/change-password', requireAdmin, async (req, res) => {
 
   setFlash(req, 'success', '어드민 비밀번호가 변경되었습니다.');
   return res.redirect('/admin');
-});
+}));
 
 app.get('/admin/logout', (req, res) => {
   req.session.destroy(() => {
@@ -930,6 +1084,10 @@ app.post('/admin/menu/remove/:id', requireAdmin, (req, res) => {
   const id = String(req.params.id || '');
   const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const nextMenus = menus.filter((menu) => menu.id !== id);
+  if (nextMenus.length === 0) {
+    setFlash(req, 'error', '최소 1개 이상의 메뉴는 유지되어야 합니다.');
+    return res.redirect('/admin');
+  }
   setSetting('menus', JSON.stringify(nextMenus));
   setFlash(req, 'success', '메뉴가 삭제되었습니다.');
   res.redirect('/admin');
@@ -948,10 +1106,10 @@ app.post('/admin/product/create', requireAdmin, upload.single('image'), (req, re
   const caseMaterial = String(req.body.caseMaterial || '').trim();
   const strapMaterial = String(req.body.strapMaterial || '').trim();
   const features = String(req.body.features || '').trim();
-  const price = Number(req.body.price || 0);
+  const price = parsePositiveInt(req.body.price, 0);
   const shippingPeriod = String(req.body.shippingPeriod || '').trim();
 
-  if (!brand || !model || !subModel || !price) {
+  if (!brand || !model || !subModel || price <= 0) {
     setFlash(req, 'error', '브랜드/모델/세부모델/가격은 필수입니다.');
     return res.redirect('/admin');
   }
@@ -1087,6 +1245,26 @@ app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
 
 app.use((req, res) => {
   res.status(404).render('simple-error', { title: 'Not Found', message: '페이지를 찾을 수 없습니다.' });
+});
+
+app.use((error, req, res, next) => {
+  // eslint-disable-next-line no-console
+  console.error('[chrono-lab:error]', error);
+
+  const message = error?.message?.includes('지원되지 않는 파일 형식')
+    ? error.message
+    : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+
+  if (req.path === '/health' || req.accepts('json') === 'json') {
+    return res.status(500).json({ ok: false, error: 'internal_server_error' });
+  }
+
+  if (req.method === 'POST') {
+    setFlash(req, 'error', message);
+    return res.redirect(safeBackPath(req, '/main'));
+  }
+
+  return res.status(500).render('simple-error', { title: 'Error', message });
 });
 
 app.listen(PORT, () => {

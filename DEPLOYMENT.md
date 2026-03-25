@@ -52,5 +52,6 @@ cd chrono-lab
 ## 5) 운영 전 필수
 - 어드민 초기 비밀번호 변경
 - `SESSION_SECRET` 강한 랜덤값 사용
+- `NODE_ENV=production` 유지
 - `SHOW_DEFAULT_ADMIN_HINT=0` 유지 (초기 계정 힌트 숨김)
 - 실제 계좌 정보/사업자 정보 반영
