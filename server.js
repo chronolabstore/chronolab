@@ -43,6 +43,10 @@ const uploadStorage = multer.diskStorage({
   }
 });
 
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true, service: 'chrono-lab', timestamp: new Date().toISOString() });
+});
+
 const upload = multer({
   storage: uploadStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -395,10 +399,6 @@ app.get('/toggle-theme', (req, res) => {
   const nextTheme = current === 'night' ? 'day' : 'night';
   res.cookie('themeMode', nextTheme, { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax' });
   res.redirect(safeBackPath(req, '/main'));
-});
-
-app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, service: 'chrono-lab', timestamp: new Date().toISOString() });
 });
 
 app.get('/main', (req, res) => {
