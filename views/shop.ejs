@@ -14,7 +14,6 @@
   </div>
 
   <div class="filter-group">
-    <h4><%= isEn ? 'Top Category' : '상위 분류' %></h4>
     <div class="chip-row">
       <% productGroups.forEach((item) => { %>
         <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip <%= group === item ? 'dark' : '' %>"><%= groupLabelMap[item] || item %></a>
@@ -24,8 +23,8 @@
 
   <% if (group === '공장제') { %>
     <div class="filter-group">
-      <h4><%= isEn ? 'Brand' : '대분류 (브랜드)' %></h4>
-      <div class="chip-row">
+      <h4><%= isEn ? 'Brand' : '브랜드' %></h4>
+      <div class="chip-row chip-scroll-row">
         <a href="/shop?group=<%= encodeURIComponent(group) %>" class="chip <%= brand ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
         <% brands.forEach((item) => { %>
           <a href="/shop?group=<%= encodeURIComponent(group) %>&brand=<%= encodeURIComponent(item) %>" class="chip <%= brand === item ? 'dark' : '' %>"><%= item %></a>
