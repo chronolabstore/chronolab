@@ -282,6 +282,9 @@ body.theme-night .flash.error {
   padding: 24px 20px;
   background: linear-gradient(165deg, #ececef 0%, #dadce2 70%, #d0d2da 100%);
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .hero-image-pane h1 {
