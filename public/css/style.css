@@ -324,6 +324,10 @@ body.theme-night .hero-badge {
   border-top-left-radius: 22px;
   border-top-right-radius: 22px;
   margin-top: -20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
 }
 
 .hero-dark-card h3 {
@@ -332,7 +336,7 @@ body.theme-night .hero-badge {
 }
 
 .hero-dark-card p {
-  margin: 8px 0 14px;
+  margin: 0;
   color: #a5aab4;
 }
 
@@ -341,6 +345,7 @@ body.theme-night .hero-badge {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  margin-top: 2px;
 }
 
 .hero-quick-grid a {
