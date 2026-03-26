@@ -2,7 +2,6 @@
 
 :root {
   --font-main: 'Noto Sans KR', 'Noto Sans', sans-serif;
-  --mobile-desktop-scale: 1;
   --bg: #f3f3f4;
   --text: #111213;
   --muted: #6d7178;
@@ -76,8 +75,12 @@ img {
 
 .page-container {
   display: grid;
-  gap: 14px;
-  margin-top: 10px;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.page-container > * {
+  min-width: 0;
 }
 
 .site-header {
@@ -443,6 +446,7 @@ body.theme-night .hero-quick-grid a:hover {
 
 .filter-group {
   margin-top: 10px;
+  min-width: 0;
 }
 
 .filter-group h4 {
@@ -459,6 +463,8 @@ body.theme-night .hero-quick-grid a:hover {
 .chip-scroll-row {
   display: flex;
   flex-wrap: nowrap;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -480,18 +486,8 @@ body.theme-night .hero-quick-grid a:hover {
   text-align: center;
 }
 
-body.mobile-desktop-fix {
-  overflow-x: hidden;
-}
-
-body.mobile-desktop-fix .app-shell {
-  width: calc(100% / var(--mobile-desktop-scale));
-  zoom: var(--mobile-desktop-scale);
-  transform-origin: top left;
-}
-
-body.mobile-desktop-fix .chip-scroll-row .chip {
-  min-width: 122px;
+.shop-filter-card {
+  overflow: hidden;
 }
 
 .product-grid {
