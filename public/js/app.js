@@ -1,4 +1,59 @@
 (function () {
+  function getMobileDesktopScale() {
+    if (typeof window === 'undefined') {
+      return 1;
+    }
+
+    var hasMatchMedia = typeof window.matchMedia === 'function';
+    var isCoarsePointer = hasMatchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+    if (!isCoarsePointer) {
+      return 1;
+    }
+
+    var screenWidth = Number(window.screen && window.screen.width) || 0;
+    var screenHeight = Number(window.screen && window.screen.height) || 0;
+    var shortEdge = Math.min(screenWidth, screenHeight);
+    var viewportWidth = Number(window.innerWidth) || 0;
+    var visualScale = Number(window.visualViewport && window.visualViewport.scale) || 1;
+
+    if (!shortEdge || !viewportWidth) {
+      return 1;
+    }
+
+    if (shortEdge <= 540 && visualScale > 0 && visualScale < 0.95) {
+      return Math.min(2.8, Math.max(1.2, 1 / visualScale));
+    }
+
+    var ratio = viewportWidth / shortEdge;
+    if (shortEdge <= 540 && ratio > 1.2) {
+      return Math.min(2.8, Math.max(1.2, ratio));
+    }
+
+    return 1;
+  }
+
+  function applyMobileDesktopFix() {
+    if (typeof document === 'undefined' || !document.body) {
+      return;
+    }
+
+    var scale = getMobileDesktopScale();
+    if (scale > 1) {
+      document.body.classList.add('mobile-desktop-fix');
+      document.documentElement.style.setProperty('--mobile-desktop-scale', String(scale));
+      return;
+    }
+
+    document.body.classList.remove('mobile-desktop-fix');
+    document.documentElement.style.removeProperty('--mobile-desktop-scale');
+  }
+
+  function initMobileDesktopFix() {
+    applyMobileDesktopFix();
+    window.addEventListener('resize', applyMobileDesktopFix);
+    window.addEventListener('orientationchange', applyMobileDesktopFix);
+  }
+
   function closePopup() {
     var popup = document.getElementById('noticePopup');
     if (popup) {
@@ -109,6 +164,7 @@
   }
 
   function initApp() {
+    initMobileDesktopFix();
     initPopup();
     initProductGallery();
   }
