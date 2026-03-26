@@ -67,6 +67,8 @@ img {
 
 .app-shell {
   max-width: 1160px;
+  width: 100%;
+  display: block;
   margin: 0 auto;
   padding: 14px 14px 30px;
 }
@@ -78,6 +80,7 @@ img {
 }
 
 .site-header {
+  width: 100%;
   border-radius: var(--radius-xl);
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -453,9 +456,8 @@ body.theme-night .hero-quick-grid a:hover {
 }
 
 .chip-scroll-row {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
+  display: flex;
+  flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -463,6 +465,7 @@ body.theme-night .hero-quick-grid a:hover {
   touch-action: pan-x;
   overscroll-behavior-x: contain;
   padding-bottom: 2px;
+  white-space: nowrap;
 }
 
 .chip-scroll-row::-webkit-scrollbar {
@@ -472,7 +475,8 @@ body.theme-night .hero-quick-grid a:hover {
 .chip-scroll-row .chip {
   flex: 0 0 auto;
   white-space: nowrap;
-  scroll-snap-align: start;
+  min-width: 92px;
+  text-align: center;
 }
 
 .product-grid {
