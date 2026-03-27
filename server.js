@@ -33,15 +33,18 @@ const USERNAME_REGEX = /^[A-Za-z0-9_]{4,20}$/;
 const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,}$/;
 const DIGIT_PHONE_REGEX = /^[0-9]+$/;
 const CUSTOMS_NO_REGEX = /^[A-Za-z0-9-]{6,30}$/;
+const TRACKING_NUMBER_REGEX = /^[A-Za-z0-9-]{6,40}$/;
 
 const ORDER_STATUS = Object.freeze({
-  UNPAID: 'UNPAID',
-  PAID_PREPARING: 'PAID_PREPARING',
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  ORDER_CONFIRMED: 'ORDER_CONFIRMED',
+  READY_TO_SHIP: 'READY_TO_SHIP',
   SHIPPING: 'SHIPPING',
   DELIVERED: 'DELIVERED'
 });
 
 const ADMIN_MENUS = Object.freeze([
+  { id: 'admin-dashboard', labelKo: '대시보드', labelEn: 'Dashboard', path: '/admin/dashboard' },
   { id: 'admin-security', labelKo: '보안', labelEn: 'Security', path: '/admin/security' },
   { id: 'admin-site', labelKo: '사이트설정', labelEn: 'Site', path: '/admin/site' },
   { id: 'admin-menus', labelKo: '메뉴관리', labelEn: 'Menus', path: '/admin/menus' },
@@ -56,6 +59,24 @@ const ADMIN_MENUS = Object.freeze([
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
 const authAttemptStore = new Map();
+const TRACKING_AUTO_POLL_MS = Math.max(60 * 1000, Number(process.env.TRACKING_AUTO_POLL_MS || 10 * 60 * 1000));
+const TRACKING_REQUEST_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.TRACKING_REQUEST_TIMEOUT_MS || 8000)
+);
+const TRACKING_API_BASE = String(process.env.TRACKING_API_BASE || 'https://apis.tracker.delivery').replace(
+  /\/+$/,
+  ''
+);
+
+const TRACKING_CARRIERS = Object.freeze([
+  { id: 'kr.cjlogistics', label: 'CJ Logistics' },
+  { id: 'kr.epost', label: 'Korea Post' },
+  { id: 'kr.hanjin', label: 'Hanjin' },
+  { id: 'kr.logen', label: 'Logen' },
+  { id: 'kr.lotte', label: 'Lotte Global' },
+  { id: 'kr.cupost', label: 'CU Post' }
+]);
 
 const ALLOWED_UPLOAD_MIME = new Set([
   'image/jpeg',
@@ -173,41 +194,52 @@ function formatPrice(value) {
 function normalizeOrderStatus(rawStatus = '') {
   const status = String(rawStatus || '').trim().toUpperCase();
 
-  if (status === 'UNPAID' || status === 'PENDING_TRANSFER') return ORDER_STATUS.UNPAID;
-  if (status === 'PAID_PREPARING' || status === 'TRANSFER_CONFIRMED' || status === 'PREPARING') {
-    return ORDER_STATUS.PAID_PREPARING;
+  if (status === 'PENDING_REVIEW' || status === 'UNPAID' || status === 'PENDING_TRANSFER' || status === 'UNCHECKED') {
+    return ORDER_STATUS.PENDING_REVIEW;
   }
+  if (status === 'ORDER_CONFIRMED' || status === 'PAID_PREPARING' || status === 'TRANSFER_CONFIRMED' || status === 'PREPARING') {
+    return ORDER_STATUS.ORDER_CONFIRMED;
+  }
+  if (status === 'READY_TO_SHIP' || status === 'PACKING' || status === 'PRE_SHIPPING') return ORDER_STATUS.READY_TO_SHIP;
   if (status === 'SHIPPING' || status === 'SHIPPED') return ORDER_STATUS.SHIPPING;
   if (status === 'DELIVERED' || status === 'DONE') return ORDER_STATUS.DELIVERED;
 
-  return ORDER_STATUS.UNPAID;
+  return ORDER_STATUS.PENDING_REVIEW;
 }
 
 function getOrderStatusMeta(rawStatus, lang = 'ko') {
   const status = normalizeOrderStatus(rawStatus);
   const isEn = lang === 'en';
 
-  if (status === ORDER_STATUS.UNPAID) {
+  if (status === ORDER_STATUS.PENDING_REVIEW) {
     return {
       code: status,
-      label: isEn ? 'Unpaid' : '미입금',
+      label: isEn ? 'Unchecked' : '미확인',
       detail: ''
     };
   }
 
-  if (status === ORDER_STATUS.PAID_PREPARING) {
+  if (status === ORDER_STATUS.ORDER_CONFIRMED) {
     return {
       code: status,
-      label: isEn ? 'Payment Confirmed' : '입금확인',
-      detail: isEn ? 'Preparing item' : '상품준비중'
+      label: isEn ? 'Order Confirmed' : '주문확인',
+      detail: ''
+    };
+  }
+
+  if (status === ORDER_STATUS.READY_TO_SHIP) {
+    return {
+      code: status,
+      label: isEn ? 'Preparing Shipment' : '출고중',
+      detail: ''
     };
   }
 
   if (status === ORDER_STATUS.SHIPPING) {
     return {
       code: status,
-      label: isEn ? 'Shipping' : '배송중',
-      detail: ''
+      label: isEn ? 'Shipped' : '출고완료',
+      detail: isEn ? 'In Transit' : '배송중'
     };
   }
 
@@ -221,19 +253,182 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
 function getNextOrderStatus(rawStatus) {
   const current = normalizeOrderStatus(rawStatus);
 
-  if (current === ORDER_STATUS.UNPAID) return ORDER_STATUS.PAID_PREPARING;
-  if (current === ORDER_STATUS.PAID_PREPARING) return ORDER_STATUS.SHIPPING;
-  if (current === ORDER_STATUS.SHIPPING) return ORDER_STATUS.DELIVERED;
+  if (current === ORDER_STATUS.PENDING_REVIEW) return ORDER_STATUS.ORDER_CONFIRMED;
+  if (current === ORDER_STATUS.ORDER_CONFIRMED) return ORDER_STATUS.READY_TO_SHIP;
+  if (current === ORDER_STATUS.READY_TO_SHIP) return ORDER_STATUS.SHIPPING;
   return null;
 }
 
 function getNextOrderActionLabel(rawStatus, lang = 'ko') {
   const current = normalizeOrderStatus(rawStatus);
   const isEn = lang === 'en';
-  if (current === ORDER_STATUS.UNPAID) return isEn ? 'Confirm Payment' : '입금확인';
-  if (current === ORDER_STATUS.PAID_PREPARING) return isEn ? 'Start Shipping' : '배송시작';
-  if (current === ORDER_STATUS.SHIPPING) return isEn ? 'Mark Delivered' : '배송완료';
+  if (current === ORDER_STATUS.PENDING_REVIEW) return isEn ? 'Confirm Order' : '주문확인';
+  if (current === ORDER_STATUS.ORDER_CONFIRMED) return isEn ? 'Mark Preparing Shipment' : '출고중 처리';
+  if (current === ORDER_STATUS.READY_TO_SHIP) return isEn ? 'Mark Shipping' : '출고완료(배송시작)';
   return '';
+}
+
+function normalizeTrackingCarrier(rawCarrier = '') {
+  const input = String(rawCarrier || '').trim();
+  if (!input) {
+    return TRACKING_CARRIERS[0].id;
+  }
+  const exists = TRACKING_CARRIERS.some((carrier) => carrier.id === input);
+  return exists ? input : TRACKING_CARRIERS[0].id;
+}
+
+function normalizeTrackingNumber(rawTrackingNumber = '') {
+  return String(rawTrackingNumber || '').replace(/[^A-Za-z0-9-]/g, '').trim();
+}
+
+function getTrackingCarrierLabel(carrierId = '') {
+  const matched = TRACKING_CARRIERS.find((carrier) => carrier.id === carrierId);
+  if (matched) {
+    return matched.label;
+  }
+  return carrierId || '-';
+}
+
+function appendOrderStatusLog(orderId, orderNo, fromStatus, toStatus, eventNote = '') {
+  if (!orderId || !orderNo || !toStatus) {
+    return;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO order_status_logs (order_id, order_no, from_status, to_status, event_note)
+      VALUES (?, ?, ?, ?, ?)
+    `
+  ).run(
+    Number(orderId),
+    String(orderNo),
+    fromStatus ? normalizeOrderStatus(fromStatus) : null,
+    normalizeOrderStatus(toStatus),
+    String(eventNote || '').slice(0, 200)
+  );
+}
+
+let trackingPollInFlight = false;
+let lastTrackingPollMs = 0;
+
+function isDeliveredState(payload) {
+  const stateId = String(payload?.state?.id || '').toLowerCase();
+  const stateText = String(payload?.state?.text || payload?.state?.name || '').toLowerCase();
+  if (stateId.includes('delivered') || stateText.includes('delivered') || stateText.includes('배송완료')) {
+    return true;
+  }
+
+  const latestProgress = Array.isArray(payload?.progresses) ? payload.progresses[0] : null;
+  const progressText = String(
+    latestProgress?.status?.text || latestProgress?.description || latestProgress?.status?.id || ''
+  ).toLowerCase();
+
+  return progressText.includes('delivered') || progressText.includes('배송완료');
+}
+
+async function fetchTrackingPayload(carrierId, trackingNumber) {
+  if (typeof fetch !== 'function') {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TRACKING_REQUEST_TIMEOUT_MS);
+  const url = `${TRACKING_API_BASE}/trackers/${encodeURIComponent(carrierId)}/${encodeURIComponent(
+    trackingNumber
+  )}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function pollTrackingAndAutoCompleteOrders(force = false) {
+  if (trackingPollInFlight) {
+    return;
+  }
+
+  const nowMs = Date.now();
+  if (!force && nowMs - lastTrackingPollMs < TRACKING_AUTO_POLL_MS) {
+    return;
+  }
+  lastTrackingPollMs = nowMs;
+  trackingPollInFlight = true;
+
+  try {
+    const targets = db
+      .prepare(
+        `
+          SELECT id, order_no, status, tracking_carrier, tracking_number
+          FROM orders
+          WHERE status = ? AND tracking_number != ''
+          ORDER BY id ASC
+          LIMIT 100
+        `
+      )
+      .all(ORDER_STATUS.SHIPPING);
+
+    for (const item of targets) {
+      const carrierId = normalizeTrackingCarrier(item.tracking_carrier);
+      const trackingNumber = normalizeTrackingNumber(item.tracking_number);
+      if (!carrierId || !trackingNumber) {
+        continue;
+      }
+
+      const payload = await fetchTrackingPayload(carrierId, trackingNumber);
+      const latestEvent = String(
+        payload?.state?.text || payload?.state?.name || payload?.progresses?.[0]?.status?.text || ''
+      ).slice(0, 200);
+
+      db.prepare(
+        `
+          UPDATE orders
+          SET
+            tracking_last_event = ?,
+            tracking_last_checked_at = datetime('now')
+          WHERE id = ?
+        `
+      ).run(latestEvent, item.id);
+
+      if (payload && isDeliveredState(payload)) {
+        const updated = db.prepare(
+          `
+            UPDATE orders
+            SET
+              status = ?,
+              delivered_at = COALESCE(delivered_at, datetime('now')),
+              tracking_last_event = ?,
+              tracking_last_checked_at = datetime('now')
+            WHERE id = ? AND status = ?
+          `
+        ).run(ORDER_STATUS.DELIVERED, latestEvent || 'Delivered', item.id, ORDER_STATUS.SHIPPING);
+
+        if (updated.changes > 0) {
+          appendOrderStatusLog(
+            item.id,
+            item.order_no,
+            ORDER_STATUS.SHIPPING,
+            ORDER_STATUS.DELIVERED,
+            `tracking:auto:${latestEvent || 'delivered'}`
+          );
+        }
+      }
+    }
+  } finally {
+    trackingPollInFlight = false;
+  }
 }
 
 function generateOrderNo() {
@@ -400,9 +595,17 @@ app.use((req, res, next) => {
 
   if (isTrackableVisitPath) {
     if (req.session.lastVisitDate !== today) {
-      incrementVisit(today);
+      incrementVisit(today, Boolean(req.user));
       req.session.lastVisitDate = today;
     }
+  }
+
+  if (
+    !req.path.startsWith('/assets') &&
+    !req.path.startsWith('/uploads') &&
+    req.path !== '/health'
+  ) {
+    void pollTrackingAndAutoCompleteOrders(false);
   }
 
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
@@ -759,7 +962,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   }
 
   const totalPrice = Number(product.price) * quantity;
-  db.prepare(
+  const createdOrder = db.prepare(
     `
       INSERT INTO orders (
         order_no,
@@ -785,8 +988,16 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     buyerName,
     quantity,
     totalPrice,
-    ORDER_STATUS.UNPAID,
+    ORDER_STATUS.PENDING_REVIEW,
     req.user.id
+  );
+
+  appendOrderStatusLog(
+    Number(createdOrder.lastInsertRowid),
+    orderNo,
+    null,
+    ORDER_STATUS.PENDING_REVIEW,
+    'order:member:created'
   );
 
   return res.redirect(`/shop/order-complete/${orderNo}`);
@@ -817,6 +1028,11 @@ app.post('/order/create', (req, res) => {
     return res.redirect(`/shop/item/${productId || ''}`);
   }
 
+  if (customsClearanceNo && !CUSTOMS_NO_REGEX.test(customsClearanceNo)) {
+    setFlash(req, 'error', '통관번호 형식이 올바르지 않습니다. (영문/숫자 6~30자)');
+    return res.redirect(`/shop/item/${productId || ''}`);
+  }
+
   const product = db.prepare('SELECT id, price FROM products WHERE id = ? AND is_active = 1 LIMIT 1').get(productId);
   if (!product) {
     setFlash(req, 'error', '유효하지 않은 상품입니다.');
@@ -830,7 +1046,7 @@ app.post('/order/create', (req, res) => {
 
   const totalPrice = Number(product.price) * quantity;
 
-  db.prepare(
+  const createdOrder = db.prepare(
     `
       INSERT INTO orders (
         order_no,
@@ -856,8 +1072,16 @@ app.post('/order/create', (req, res) => {
     bankDepositorName,
     quantity,
     totalPrice,
-    ORDER_STATUS.UNPAID,
+    ORDER_STATUS.PENDING_REVIEW,
     req.user ? req.user.id : null
+  );
+
+  appendOrderStatusLog(
+    Number(createdOrder.lastInsertRowid),
+    orderNo,
+    null,
+    ORDER_STATUS.PENDING_REVIEW,
+    req.user ? 'order:member:created' : 'order:guest:created'
   );
 
   res.redirect(`/shop/order-complete/${orderNo}`);
@@ -887,7 +1111,7 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
 });
 
 app.get('/mypage', requireAuth, (req, res) => {
-  const orders = db
+  const baseOrders = db
     .prepare(
       `
         SELECT o.*, p.brand, p.model, p.sub_model
@@ -897,16 +1121,50 @@ app.get('/mypage', requireAuth, (req, res) => {
         ORDER BY o.id DESC
       `
     )
-    .all(req.user.id)
-    .map((order) => {
-      const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
-      return {
-        ...order,
-        status_code: statusMeta.code,
-        status_label: statusMeta.label,
-        status_detail: statusMeta.detail
-      };
-    });
+    .all(req.user.id);
+
+  const latestLogMap = new Map();
+  if (baseOrders.length > 0) {
+    const orderIds = baseOrders.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0);
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(', ');
+      const latestRows = db
+        .prepare(
+          `
+            SELECT l.order_id, l.event_note, l.created_at
+            FROM order_status_logs l
+            JOIN (
+              SELECT order_id, MAX(id) AS max_id
+              FROM order_status_logs
+              WHERE order_id IN (${placeholders})
+              GROUP BY order_id
+            ) latest ON latest.max_id = l.id
+          `
+        )
+        .all(...orderIds);
+
+      for (const row of latestRows) {
+        latestLogMap.set(Number(row.order_id), {
+          event_note: String(row.event_note || ''),
+          created_at: String(row.created_at || '')
+        });
+      }
+    }
+  }
+
+  const orders = baseOrders.map((order) => {
+    const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
+    const latestLog = latestLogMap.get(Number(order.id)) || { event_note: '', created_at: '' };
+    return {
+      ...order,
+      status_code: statusMeta.code,
+      status_label: statusMeta.label,
+      status_detail: statusMeta.detail,
+      tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier),
+      latest_event_note: latestLog.event_note,
+      latest_event_at: latestLog.created_at
+    };
+  });
 
   res.render('mypage', { title: 'My Page', orders });
 });
@@ -1202,7 +1460,7 @@ app.post('/logout', (req, res) => {
 
 app.get('/admin/login', (req, res) => {
   if (req.user?.isAdmin) {
-    return res.redirect('/admin/security');
+    return res.redirect('/admin/dashboard');
   }
   res.render('admin-login', { title: 'Admin Login' });
 });
@@ -1233,7 +1491,7 @@ app.post(
   req.session.isAdmin = true;
   resetAuthAttempt(req, 'admin-login');
 
-  res.redirect('/admin/security');
+  res.redirect('/admin/dashboard');
   })
 );
 
@@ -1286,6 +1544,183 @@ app.get('/admin/logout', requireAdmin, (req, res) => {
   });
 });
 
+function getVisitRangeSummary(baseDate, columnName) {
+  const allowedColumn = new Set(['visit_count', 'member_visit_count', 'guest_visit_count']);
+  const safeColumn = allowedColumn.has(columnName) ? columnName : 'visit_count';
+
+  const sumRange = (days) => {
+    const offsetDays = Math.max(days - 1, 0);
+    const row = db
+      .prepare(
+        `
+          SELECT COALESCE(SUM(${safeColumn}), 0) AS count
+          FROM daily_visits
+          WHERE visit_date BETWEEN date(?, '-${offsetDays} day') AND ?
+        `
+      )
+      .get(baseDate, baseDate);
+    return Number(row?.count || 0);
+  };
+
+  const totalRow = db
+    .prepare(
+      `
+        SELECT COALESCE(SUM(${safeColumn}), 0) AS count
+        FROM daily_visits
+      `
+    )
+    .get();
+
+  return {
+    today: sumRange(1),
+    week: sumRange(7),
+    month: sumRange(30),
+    year: sumRange(365),
+    total: Number(totalRow?.count || 0)
+  };
+}
+
+function buildAdminDashboardStats() {
+  const today = toKstDate();
+  const usersRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(CASE WHEN is_admin = 0 THEN 1 ELSE 0 END) AS member_count,
+          SUM(CASE WHEN is_admin = 1 THEN 1 ELSE 0 END) AS admin_count,
+          COUNT(*) AS total_count
+        FROM users
+      `
+    )
+    .get();
+
+  const orderRow = db
+    .prepare(
+      `
+        SELECT
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN status = 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS pending_review_count,
+          SUM(CASE WHEN status = 'ORDER_CONFIRMED' THEN 1 ELSE 0 END) AS confirmed_count,
+          SUM(CASE WHEN status = 'READY_TO_SHIP' THEN 1 ELSE 0 END) AS ready_to_ship_count,
+          SUM(CASE WHEN status = 'SHIPPING' THEN 1 ELSE 0 END) AS shipping_count,
+          SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) AS delivered_count
+        FROM orders
+      `
+    )
+    .get();
+
+  const boardRow = db
+    .prepare(
+      `
+        SELECT
+          (SELECT COUNT(*) FROM notices) AS notice_count,
+          (SELECT COUNT(*) FROM news_posts) AS news_count,
+          (SELECT COUNT(*) FROM qc_items) AS qc_count,
+          (SELECT COUNT(*) FROM reviews) AS review_count,
+          (SELECT COUNT(*) FROM inquiries) AS inquiry_count
+      `
+    )
+    .get();
+
+  const orderAlertRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(
+            CASE
+              WHEN status = 'PENDING_REVIEW' AND datetime(created_at) <= datetime('now', '-1 day') THEN 1
+              ELSE 0
+            END
+          ) AS stale_pending_count,
+          SUM(
+            CASE
+              WHEN status = 'SHIPPING'
+                AND COALESCE(datetime(shipping_started_at), datetime(created_at)) <= datetime('now', '-7 day')
+              THEN 1
+              ELSE 0
+            END
+          ) AS long_shipping_count
+        FROM orders
+      `
+    )
+    .get();
+
+  const shopGroupRows = db
+    .prepare(
+      `
+        SELECT
+          category_group,
+          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count,
+          SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS hidden_count
+        FROM products
+        GROUP BY category_group
+      `
+    )
+    .all();
+
+  const groupMap = new Map(
+    shopGroupRows.map((row) => [String(row.category_group || ''), {
+      groupName: String(row.category_group || ''),
+      activeCount: Number(row.active_count || 0),
+      hiddenCount: Number(row.hidden_count || 0)
+    }])
+  );
+
+  const shopByGroup = SHOP_PRODUCT_GROUPS.map((groupName) => {
+    const found = groupMap.get(groupName);
+    return {
+      groupName,
+      activeCount: found ? found.activeCount : 0,
+      hiddenCount: found ? found.hiddenCount : 0
+    };
+  });
+
+  const shopTotalRow = db
+    .prepare(
+      `
+        SELECT
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count
+        FROM products
+      `
+    )
+    .get();
+
+  return {
+    users: {
+      members: Number(usersRow?.member_count || 0),
+      admins: Number(usersRow?.admin_count || 0),
+      total: Number(usersRow?.total_count || 0)
+    },
+    memberVisits: getVisitRangeSummary(today, 'member_visit_count'),
+    totalVisits: getVisitRangeSummary(today, 'visit_count'),
+    boardCounts: {
+      notice: Number(boardRow?.notice_count || 0),
+      news: Number(boardRow?.news_count || 0),
+      qc: Number(boardRow?.qc_count || 0),
+      review: Number(boardRow?.review_count || 0),
+      inquiry: Number(boardRow?.inquiry_count || 0)
+    },
+    shopCounts: {
+      total: Number(shopTotalRow?.total_count || 0),
+      active: Number(shopTotalRow?.active_count || 0),
+      byGroup: shopByGroup
+    },
+    orderCounts: {
+      total: Number(orderRow?.total_count || 0),
+      pendingReview: Number(orderRow?.pending_review_count || 0),
+      confirmed: Number(orderRow?.confirmed_count || 0),
+      readyToShip: Number(orderRow?.ready_to_ship_count || 0),
+      shipping: Number(orderRow?.shipping_count || 0),
+      delivered: Number(orderRow?.delivered_count || 0)
+    },
+    orderAlerts: {
+      stalePending: Number(orderAlertRow?.stale_pending_count || 0),
+      longShipping: Number(orderAlertRow?.long_shipping_count || 0)
+    }
+  };
+}
+
 function buildAdminDashboardViewData(lang = 'ko') {
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const settings = {
@@ -1316,18 +1751,65 @@ function buildAdminDashboardViewData(lang = 'ko') {
     )
     .all()
     .map((order) => {
-      const statusMeta = getOrderStatusMeta(order.status, lang);
-      const nextStatus = getNextOrderStatus(order.status);
-      const nextActionLabel = getNextOrderActionLabel(order.status, lang);
+      const normalizedStatus = normalizeOrderStatus(order.status);
+      const statusMeta = getOrderStatusMeta(normalizedStatus, lang);
+      const nextStatus = getNextOrderStatus(normalizedStatus);
+      const nextActionLabel = getNextOrderActionLabel(normalizedStatus, lang);
       return {
         ...order,
+        status: normalizedStatus,
         status_code: statusMeta.code,
         status_label: statusMeta.label,
         status_detail: statusMeta.detail,
         next_status: nextStatus,
-        next_action_label: nextActionLabel
+        next_action_label: nextActionLabel,
+        tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier)
       };
     });
+
+  const orderTimelineMap = new Map();
+  if (orders.length > 0) {
+    const orderIds = orders.map((item) => Number(item.id)).filter((id) => Number.isInteger(id) && id > 0);
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(', ');
+      const logs = db
+        .prepare(
+          `
+            SELECT order_id, from_status, to_status, event_note, created_at
+            FROM order_status_logs
+            WHERE order_id IN (${placeholders})
+            ORDER BY id DESC
+          `
+        )
+        .all(...orderIds);
+
+      for (const log of logs) {
+        const key = Number(log.order_id);
+        const current = orderTimelineMap.get(key) || [];
+        if (current.length < 4) {
+          const fromStatus = log.from_status ? normalizeOrderStatus(log.from_status) : '';
+          const toStatus = normalizeOrderStatus(log.to_status);
+          const fromMeta = fromStatus ? getOrderStatusMeta(fromStatus, lang) : null;
+          const toMeta = getOrderStatusMeta(toStatus, lang);
+          current.push({
+            from_status: fromStatus,
+            from_status_label: fromMeta ? fromMeta.label : '',
+            to_status: toStatus,
+            to_status_label: toMeta.label,
+            event_note: String(log.event_note || ''),
+            created_at: String(log.created_at || '')
+          });
+          orderTimelineMap.set(key, current);
+        }
+      }
+    }
+  }
+
+  const ordersWithTimeline = orders.map((order) => ({
+    ...order,
+    status_logs: orderTimelineMap.get(Number(order.id)) || []
+  }));
+
   const notices = db.prepare('SELECT * FROM notices ORDER BY id DESC LIMIT 50').all();
   const newsPosts = db.prepare('SELECT * FROM news_posts ORDER BY id DESC LIMIT 50').all();
   const qcs = db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 50').all();
@@ -1347,11 +1829,13 @@ function buildAdminDashboardViewData(lang = 'ko') {
     settings,
     publicMenus,
     products,
-    orders,
+    orders: ordersWithTimeline,
     notices,
     newsPosts,
     qcs,
     inquiries,
+    dashboardStats: buildAdminDashboardStats(),
+    trackingCarriers: TRACKING_CARRIERS,
     formatPrice,
     productGroups: SHOP_PRODUCT_GROUPS
   };
@@ -1368,11 +1852,12 @@ function renderAdminDashboard(req, res, activeTab) {
 
 app.get('/admin', (req, res) => {
   if (req.user?.isAdmin) {
-    return res.redirect('/admin/security');
+    return res.redirect('/admin/dashboard');
   }
   return res.render('admin-login', { title: 'Admin Login' });
 });
 
+app.get('/admin/dashboard', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'dashboard'));
 app.get('/admin/security', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'security'));
 app.get('/admin/site', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'site'));
 app.get('/admin/menus', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'menus'));
@@ -1649,40 +2134,262 @@ app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) =>
   res.redirect(backPath);
 });
 
-app.post('/admin/order/:id/status', requireAdmin, (req, res) => {
+app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/orders');
   const id = Number(req.params.id);
-  const status = normalizeOrderStatus(req.body.status || ORDER_STATUS.UNPAID);
-  const allowed = new Set(Object.values(ORDER_STATUS));
-
-  if (!allowed.has(status)) {
-    setFlash(req, 'error', '허용되지 않은 상태값입니다.');
-    return res.redirect(backPath);
-  }
-
-  db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
-  setFlash(req, 'success', '주문 상태를 업데이트했습니다.');
-  res.redirect(backPath);
-});
-
-app.post('/admin/order/:id/next', requireAdmin, (req, res) => {
-  const backPath = safeBackPath(req, '/admin/orders');
-  const id = Number(req.params.id);
-  const order = db.prepare('SELECT id, status FROM orders WHERE id = ? LIMIT 1').get(id);
+  const order = db.prepare('SELECT id, order_no, status FROM orders WHERE id = ? LIMIT 1').get(id);
 
   if (!order) {
     setFlash(req, 'error', '주문을 찾을 수 없습니다.');
     return res.redirect(backPath);
   }
 
-  const nextStatus = getNextOrderStatus(order.status);
-  if (!nextStatus) {
-    setFlash(req, 'error', '이미 배송완료 상태입니다.');
+  const current = normalizeOrderStatus(order.status);
+  if (current !== ORDER_STATUS.PENDING_REVIEW) {
+    setFlash(req, 'error', '미확인 주문건만 주문확인 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
-  db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(nextStatus, id);
-  setFlash(req, 'success', '주문 상태를 다음 단계로 변경했습니다.');
+  const updated = db.prepare(
+    `
+      UPDATE orders
+      SET status = ?, checked_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `
+  ).run(ORDER_STATUS.ORDER_CONFIRMED, id, ORDER_STATUS.PENDING_REVIEW);
+
+  if (updated.changes === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.PENDING_REVIEW, ORDER_STATUS.ORDER_CONFIRMED, 'admin:confirm');
+
+  setFlash(req, 'success', '주문확인 처리되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/ready', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db.prepare('SELECT id, order_no, status FROM orders WHERE id = ? LIMIT 1').get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const current = normalizeOrderStatus(order.status);
+  if (current !== ORDER_STATUS.ORDER_CONFIRMED) {
+    setFlash(req, 'error', '주문확인 상태에서만 출고중 처리할 수 있습니다.');
+    return res.redirect(backPath);
+  }
+
+  const updated = db.prepare(
+    `
+      UPDATE orders
+      SET status = ?, ready_to_ship_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `
+  ).run(ORDER_STATUS.READY_TO_SHIP, id, ORDER_STATUS.ORDER_CONFIRMED);
+
+  if (updated.changes === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.ORDER_CONFIRMED, ORDER_STATUS.READY_TO_SHIP, 'admin:ready');
+
+  setFlash(req, 'success', '출고중 상태로 변경되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/start-shipping', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db.prepare('SELECT id, order_no, status FROM orders WHERE id = ? LIMIT 1').get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const current = normalizeOrderStatus(order.status);
+  if (current !== ORDER_STATUS.READY_TO_SHIP) {
+    setFlash(req, 'error', '출고중 상태에서만 배송시작 처리할 수 있습니다.');
+    return res.redirect(backPath);
+  }
+
+  const trackingCarrier = normalizeTrackingCarrier(req.body.trackingCarrier);
+  const trackingNumber = normalizeTrackingNumber(req.body.trackingNumber);
+
+  if (!trackingNumber) {
+    setFlash(req, 'error', '송장번호를 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!TRACKING_NUMBER_REGEX.test(trackingNumber)) {
+    setFlash(req, 'error', '송장번호 형식이 올바르지 않습니다. (영문/숫자/- 6~40자)');
+    return res.redirect(backPath);
+  }
+
+  const updated = db.prepare(
+    `
+      UPDATE orders
+      SET
+        status = ?,
+        tracking_carrier = ?,
+        tracking_number = ?,
+        tracking_last_event = '',
+        tracking_last_checked_at = NULL,
+        shipping_started_at = datetime('now')
+      WHERE id = ? AND status = ?
+    `
+  ).run(ORDER_STATUS.SHIPPING, trackingCarrier, trackingNumber, id, ORDER_STATUS.READY_TO_SHIP);
+
+  if (updated.changes === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(
+    order.id,
+    order.order_no,
+    ORDER_STATUS.READY_TO_SHIP,
+    ORDER_STATUS.SHIPPING,
+    `admin:shipping-start:${trackingCarrier}:${trackingNumber}`
+  );
+
+  setFlash(req, 'success', '출고완료(배송시작) 처리되었습니다. 송장 자동 조회를 시작합니다.');
+  void pollTrackingAndAutoCompleteOrders(true);
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/update-tracking', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db.prepare('SELECT id, order_no, status FROM orders WHERE id = ? LIMIT 1').get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeOrderStatus(order.status) !== ORDER_STATUS.SHIPPING) {
+    setFlash(req, 'error', '배송중 상태에서만 송장 수정이 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  const trackingCarrier = normalizeTrackingCarrier(req.body.trackingCarrier);
+  const trackingNumber = normalizeTrackingNumber(req.body.trackingNumber);
+
+  if (!trackingNumber || !TRACKING_NUMBER_REGEX.test(trackingNumber)) {
+    setFlash(req, 'error', '송장번호 형식이 올바르지 않습니다. (영문/숫자/- 6~40자)');
+    return res.redirect(backPath);
+  }
+
+  const updated = db.prepare(
+    `
+      UPDATE orders
+      SET
+        tracking_carrier = ?,
+        tracking_number = ?,
+        tracking_last_event = '',
+        tracking_last_checked_at = NULL
+      WHERE id = ? AND status = ?
+    `
+  ).run(trackingCarrier, trackingNumber, id, ORDER_STATUS.SHIPPING);
+
+  if (updated.changes === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(
+    order.id,
+    order.order_no,
+    ORDER_STATUS.SHIPPING,
+    ORDER_STATUS.SHIPPING,
+    `admin:tracking-update:${trackingCarrier}:${trackingNumber}`
+  );
+
+  setFlash(req, 'success', '송장 정보가 수정되었습니다. 자동 조회를 다시 실행합니다.');
+  void pollTrackingAndAutoCompleteOrders(true);
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/sync-tracking', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db
+    .prepare('SELECT id, order_no, status, tracking_carrier, tracking_number FROM orders WHERE id = ? LIMIT 1')
+    .get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeOrderStatus(order.status) !== ORDER_STATUS.SHIPPING) {
+    setFlash(req, 'error', '배송중 상태에서만 조회할 수 있습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!normalizeTrackingNumber(order.tracking_number)) {
+    setFlash(req, 'error', '송장번호가 등록되지 않았습니다.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(
+    order.id,
+    order.order_no,
+    ORDER_STATUS.SHIPPING,
+    ORDER_STATUS.SHIPPING,
+    'admin:tracking-sync'
+  );
+  void pollTrackingAndAutoCompleteOrders(true);
+  setFlash(req, 'success', '송장 상태 조회를 요청했습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/mark-delivered', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db.prepare('SELECT id, order_no, status FROM orders WHERE id = ? LIMIT 1').get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeOrderStatus(order.status) !== ORDER_STATUS.SHIPPING) {
+    setFlash(req, 'error', '배송중 상태에서만 수동 배송완료 처리가 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  const updated = db.prepare(
+    `
+      UPDATE orders
+      SET
+        status = ?,
+        delivered_at = datetime('now'),
+        tracking_last_checked_at = datetime('now'),
+        tracking_last_event = CASE
+          WHEN COALESCE(tracking_last_event, '') = '' THEN '관리자 수동 배송완료 처리'
+          ELSE tracking_last_event
+        END
+      WHERE id = ? AND status = ?
+    `
+  ).run(ORDER_STATUS.DELIVERED, id, ORDER_STATUS.SHIPPING);
+
+  if (updated.changes === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.SHIPPING, ORDER_STATUS.DELIVERED, 'admin:delivered-manual');
+
+  setFlash(req, 'success', '수동 배송완료 처리되었습니다.');
   return res.redirect(backPath);
 });
 
@@ -1733,3 +2440,7 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Chrono Lab server running on http://localhost:${PORT}`);
 });
+
+setInterval(() => {
+  void pollTrackingAndAutoCompleteOrders(false);
+}, TRACKING_AUTO_POLL_MS);

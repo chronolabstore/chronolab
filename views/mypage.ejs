@@ -13,12 +13,13 @@
           <th><%= ctx.lang === 'en' ? 'Product' : '상품' %></th>
           <th><%= ctx.lang === 'en' ? 'My Info' : '주문자 정보' %></th>
           <th><%= ctx.lang === 'en' ? 'Status' : '상태' %></th>
+          <th><%= ctx.lang === 'en' ? 'Tracking' : '송장' %></th>
         </tr>
       </thead>
       <tbody>
         <% if (orders.length === 0) { %>
           <tr>
-            <td colspan="4"><%= ctx.lang === 'en' ? 'No order history found.' : '주문 내역이 없습니다.' %></td>
+            <td colspan="5"><%= ctx.lang === 'en' ? 'No order history found.' : '주문 내역이 없습니다.' %></td>
           </tr>
         <% } %>
         <% orders.forEach((item) => { %>
@@ -37,6 +38,19 @@
               <span class="order-status"><%= item.status_label %></span>
               <% if (item.status_detail) { %>
                 <small class="muted-label"><%= item.status_detail %></small>
+              <% } %>
+              <% if (item.latest_event_at) { %>
+                <small class="muted-label"><%= ctx.lang === 'en' ? 'Updated' : '최근 변경' %>: <%= item.latest_event_at.slice(0, 16) %></small>
+              <% } %>
+            </td>
+            <td>
+              <% if (item.tracking_number) { %>
+                <small><strong><%= item.tracking_carrier_label || item.tracking_carrier || '-' %></strong></small><br />
+                <small><%= item.tracking_number %></small><br />
+                <small><%= item.tracking_last_event || '-' %></small><br />
+                <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
+              <% } else { %>
+                <small>-</small>
               <% } %>
             </td>
           </tr>

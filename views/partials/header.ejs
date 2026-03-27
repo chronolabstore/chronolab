@@ -1,6 +1,6 @@
 <header class="site-header" style="--header-color:<%= ctx.settings.headerColor %>">
   <div class="header-top">
-    <a href="<%= ctx.isAdminPage ? '/admin/security' : '/main' %>" class="brand-box">
+    <a href="<%= ctx.isAdminPage ? '/admin/dashboard' : '/main' %>" class="brand-box">
       <% if (ctx.settings.headerSymbolPath) { %>
         <img src="<%= ctx.settings.headerSymbolPath %>" alt="symbol" class="brand-symbol" />
       <% } else { %>
@@ -55,7 +55,7 @@
           <% if (ctx.isAdminPage) { %>
             <a href="/admin/logout" class="chip"><%= ctx.lang === 'en' ? 'Admin Logout' : '어드민 로그아웃' %></a>
           <% } else { %>
-            <a href="/admin" class="chip dark"><%= ctx.lang === 'en' ? 'Admin' : '어드민' %></a>
+            <span class="chip muted"><%= ctx.currentUser.username %></span>
             <form method="post" action="/logout" class="inline-form">
               <button type="submit" class="chip"><%= ctx.t('logout') %></button>
             </form>

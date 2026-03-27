@@ -129,9 +129,84 @@ function ensureOrdersCustomsColumn() {
   }
 }
 
+function ensureOrdersTrackingColumns() {
+  const columns = db.prepare('PRAGMA table_info(orders)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  const addColumnIfMissing = (name, ddl) => {
+    if (!columnNames.has(name)) {
+      db.prepare(`ALTER TABLE orders ADD COLUMN ${ddl}`).run();
+      columnNames.add(name);
+    }
+  };
+
+  addColumnIfMissing('tracking_carrier', "tracking_carrier TEXT NOT NULL DEFAULT 'kr.cjlogistics'");
+  addColumnIfMissing('tracking_number', "tracking_number TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tracking_last_event', "tracking_last_event TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('tracking_last_checked_at', 'tracking_last_checked_at TEXT');
+  addColumnIfMissing('checked_at', 'checked_at TEXT');
+  addColumnIfMissing('ready_to_ship_at', 'ready_to_ship_at TEXT');
+  addColumnIfMissing('shipping_started_at', 'shipping_started_at TEXT');
+  addColumnIfMissing('delivered_at', 'delivered_at TEXT');
+}
+
+function ensureDailyVisitSplitColumns() {
+  const columns = db.prepare('PRAGMA table_info(daily_visits)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('member_visit_count')) {
+    db.prepare('ALTER TABLE daily_visits ADD COLUMN member_visit_count INTEGER NOT NULL DEFAULT 0').run();
+  }
+
+  if (!columnNames.has('guest_visit_count')) {
+    db.prepare('ALTER TABLE daily_visits ADD COLUMN guest_visit_count INTEGER NOT NULL DEFAULT 0').run();
+  }
+}
+
+function ensureOrderStatusLogTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_status_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      order_no TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      event_note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    );
+  `);
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_order_status_logs_order_created
+      ON order_status_logs (order_id, id DESC)
+    `
+  ).run();
+}
+
 function normalizeOrderStatuses() {
-  db.prepare("UPDATE orders SET status = 'UNPAID' WHERE status IN ('PENDING_TRANSFER', 'UNPAID')").run();
-  db.prepare("UPDATE orders SET status = 'PAID_PREPARING' WHERE status IN ('TRANSFER_CONFIRMED', 'PREPARING', 'PAID_PREPARING')").run();
+  db.prepare(
+    `
+      UPDATE orders
+      SET status = 'PENDING_REVIEW'
+      WHERE status IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED')
+    `
+  ).run();
+  db.prepare(
+    `
+      UPDATE orders
+      SET status = 'ORDER_CONFIRMED'
+      WHERE status IN ('ORDER_CONFIRMED', 'PAID_PREPARING', 'TRANSFER_CONFIRMED', 'PREPARING')
+    `
+  ).run();
+  db.prepare(
+    `
+      UPDATE orders
+      SET status = 'READY_TO_SHIP'
+      WHERE status IN ('READY_TO_SHIP', 'PACKING', 'PRE_SHIPPING')
+    `
+  ).run();
   db.prepare("UPDATE orders SET status = 'SHIPPING' WHERE status IN ('SHIPPED', 'SHIPPING')").run();
   db.prepare("UPDATE orders SET status = 'DELIVERED' WHERE status IN ('DONE', 'DELIVERED')").run();
 }
@@ -424,7 +499,7 @@ function seedOrdersAndQc(demoUserId) {
           idx === 0 ? '김크로노' : '이랩',
           1,
           Number(product.price),
-          idx === 0 ? 'PAID_PREPARING' : 'SHIPPING',
+          idx === 0 ? 'ORDER_CONFIRMED' : 'SHIPPING',
           demoUserId
         );
       });
@@ -598,7 +673,15 @@ export function initDb() {
       bank_depositor_name TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       total_price INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'UNPAID',
+      status TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
+      tracking_carrier TEXT NOT NULL DEFAULT 'kr.cjlogistics',
+      tracking_number TEXT NOT NULL DEFAULT '',
+      tracking_last_event TEXT NOT NULL DEFAULT '',
+      tracking_last_checked_at TEXT,
+      checked_at TEXT,
+      ready_to_ship_at TEXT,
+      shipping_started_at TEXT,
+      delivered_at TEXT,
       created_by_user_id INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
@@ -666,12 +749,16 @@ export function initDb() {
 
     CREATE TABLE IF NOT EXISTS daily_visits (
       visit_date TEXT PRIMARY KEY,
-      visit_count INTEGER NOT NULL DEFAULT 0
+      visit_count INTEGER NOT NULL DEFAULT 0,
+      member_visit_count INTEGER NOT NULL DEFAULT 0,
+      guest_visit_count INTEGER NOT NULL DEFAULT 0
     );
   `);
 
   ensureProductsCategoryColumn();
   ensureOrdersCustomsColumn();
+  ensureOrdersTrackingColumns();
+  ensureDailyVisitSplitColumns();
   normalizeOrderStatuses();
 
   for (const [key, value] of Object.entries(defaultSettings)) {
@@ -695,6 +782,26 @@ export function initDb() {
   seedOrdersAndQc(demoUserId);
   seedReviews(demoUserId);
   seedInquiries(demoUserId);
+
+  ensureOrderStatusLogTable();
+  db.prepare(
+    `
+      INSERT INTO order_status_logs (order_id, order_no, from_status, to_status, event_note, created_at)
+      SELECT
+        o.id,
+        o.order_no,
+        NULL,
+        o.status,
+        'bootstrap',
+        o.created_at
+      FROM orders o
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM order_status_logs l
+        WHERE l.order_id = o.id
+      )
+    `
+  ).run();
 }
 
 export function getSetting(key, fallback = '') {
@@ -718,15 +825,20 @@ export function setSetting(key, value) {
   ).run(key, String(value));
 }
 
-export function incrementVisit(visitDate) {
+export function incrementVisit(visitDate, isMember = false) {
+  const memberCount = isMember ? 1 : 0;
+  const guestCount = isMember ? 0 : 1;
   db.prepare(
     `
-      INSERT INTO daily_visits (visit_date, visit_count)
-      VALUES (?, 1)
+      INSERT INTO daily_visits (visit_date, visit_count, member_visit_count, guest_visit_count)
+      VALUES (?, 1, ?, ?)
       ON CONFLICT(visit_date)
-      DO UPDATE SET visit_count = daily_visits.visit_count + 1
+      DO UPDATE SET
+        visit_count = daily_visits.visit_count + 1,
+        member_visit_count = daily_visits.member_visit_count + excluded.member_visit_count,
+        guest_visit_count = daily_visits.guest_visit_count + excluded.guest_visit_count
     `
-  ).run(visitDate);
+  ).run(visitDate, memberCount, guestCount);
 
   db.prepare('UPDATE metrics SET metric_value = metric_value + 1 WHERE metric_key = ?').run('totalVisits');
 }

@@ -1,26 +1,117 @@
 <%- include('partials/layout-start') %>
 <%
-  const tab = activeTab || 'security';
+  const tab = activeTab || 'dashboard';
   const isEn = ctx.lang === 'en';
   const groupLabelMap = {
     '공장제': isEn ? 'Factory' : '공장제',
     '젠파츠': isEn ? 'Gen Parts' : '젠파츠',
     '현지중고': isEn ? 'Local Used' : '현지중고'
   };
+
+  const stats = dashboardStats || {
+    users: { members: 0, admins: 0, total: 0 },
+    memberVisits: { today: 0, week: 0, month: 0, year: 0, total: 0 },
+    totalVisits: { today: 0, week: 0, month: 0, year: 0, total: 0 },
+    boardCounts: { notice: 0, news: 0, qc: 0, review: 0, inquiry: 0 },
+    shopCounts: { total: 0, active: 0, byGroup: [] },
+    orderCounts: { total: 0, pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0 },
+    orderAlerts: { stalePending: 0, longShipping: 0 }
+  };
 %>
 
-<section class="block-card">
-  <div class="section-head">
-    <h2>Admin Dashboard</h2>
-    <a href="/admin/logout" class="chip"><%= isEn ? 'Admin Logout' : '어드민 로그아웃' %></a>
-  </div>
-  <p class="muted-label"><%= isEn ? 'Most requested controls are organized here.' : '요청하신 기능 대부분을 여기서 관리할 수 있도록 구성했습니다.' %></p>
-</section>
-
 <section class="admin-grid single">
+  <% if (tab === 'dashboard') { %>
+  <article class="block-card">
+    <h3><%= isEn ? 'Admin Dashboard' : '관리자 대시보드' %></h3>
+
+    <div class="admin-kpi-grid two-col">
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Members' : '회원 수' %></h4>
+        <strong><%= stats.users.members %></strong>
+        <p class="muted-label"><%= isEn ? `Admins ${stats.users.admins} / Total ${stats.users.total}` : `어드민 ${stats.users.admins} / 전체 계정 ${stats.users.total}` %></p>
+      </div>
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Orders Total' : '총 주문건' %></h4>
+        <strong><%= stats.orderCounts.total %></strong>
+        <p class="muted-label"><%= isEn ? 'Order pipeline summary below.' : '주문 상태 파이프라인은 아래에서 확인하세요.' %></p>
+      </div>
+    </div>
+
+    <div class="admin-kpi-grid two-col">
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Member Visits' : '회원 방문 집계' %></h4>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.memberVisits.today %></strong></li>
+          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.memberVisits.week %></strong></li>
+          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.memberVisits.month %></strong></li>
+          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.memberVisits.year %></strong></li>
+          <li><span><%= isEn ? 'Total' : '총' %></span><strong><%= stats.memberVisits.total %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Total Visits (All)' : '총 방문자 집계(회원+비회원)' %></h4>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.totalVisits.today %></strong></li>
+          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.totalVisits.week %></strong></li>
+          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.totalVisits.month %></strong></li>
+          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.totalVisits.year %></strong></li>
+          <li><span><%= isEn ? 'Total' : '총' %></span><strong><%= stats.totalVisits.total %></strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="admin-kpi-grid two-col">
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Board Post Counts' : '게시판 게시물 수' %></h4>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Notice' : '공지사항' %></span><strong><%= stats.boardCounts.notice %></strong></li>
+          <li><span><%= isEn ? 'News' : '뉴스' %></span><strong><%= stats.boardCounts.news %></strong></li>
+          <li><span>QC</span><strong><%= stats.boardCounts.qc %></strong></li>
+          <li><span><%= isEn ? 'Reviews' : '구매후기' %></span><strong><%= stats.boardCounts.review %></strong></li>
+          <li><span><%= isEn ? 'Inquiry' : '문의' %></span><strong><%= stats.boardCounts.inquiry %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Order Status Summary' : '주문 상태 집계' %></h4>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Unchecked' : '미확인 주문건' %></span><strong><%= stats.orderCounts.pendingReview %></strong></li>
+          <li><span><%= isEn ? 'Confirmed' : '확인 주문건' %></span><strong><%= stats.orderCounts.confirmed %></strong></li>
+          <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong><%= stats.orderCounts.readyToShip %></strong></li>
+          <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong><%= stats.orderCounts.shipping %></strong></li>
+          <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong><%= stats.orderCounts.delivered %></strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <h4><%= isEn ? 'Operational Alerts' : '운영 알림' %></h4>
+      <ul class="metric-list">
+        <li><span><%= isEn ? 'Unchecked 24h+' : '24시간 이상 미확인' %></span><strong><%= stats.orderAlerts.stalePending %></strong></li>
+        <li><span><%= isEn ? 'Shipping 7d+' : '7일 이상 배송중' %></span><strong><%= stats.orderAlerts.longShipping %></strong></li>
+      </ul>
+    </div>
+
+    <div class="kpi-card">
+      <h4><%= isEn ? 'Shop Inventory (3 Groups)' : '쇼핑몰 상품 현황 (3분할)' %></h4>
+      <p class="muted-label"><%= isEn ? `Active ${stats.shopCounts.active} / Total ${stats.shopCounts.total}` : `활성 ${stats.shopCounts.active} / 전체 ${stats.shopCounts.total}` %></p>
+      <div class="shop-split-grid">
+        <% stats.shopCounts.byGroup.forEach((groupItem) => { %>
+          <article class="shop-split-card">
+            <h5><%= groupLabelMap[groupItem.groupName] || groupItem.groupName %></h5>
+            <p><strong><%= groupItem.activeCount %></strong> <%= isEn ? 'active' : '활성' %></p>
+            <small><%= isEn ? 'hidden' : '숨김' %>: <%= groupItem.hiddenCount %></small>
+          </article>
+        <% }) %>
+      </div>
+    </div>
+  </article>
+  <% } %>
+
   <% if (tab === 'security') { %>
   <article class="block-card">
-    <h3><%= isEn ? '0) Admin Security' : '0) 어드민 보안' %></h3>
+    <h3><%= isEn ? 'Admin Security' : '어드민 보안' %></h3>
     <form method="post" action="/admin/change-password" class="form-grid">
       <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
         <input type="password" name="currentPassword" required />
@@ -38,7 +129,7 @@
 
   <% if (tab === 'site') { %>
   <article class="block-card">
-    <h3><%= isEn ? '1) Site Customization' : '1) 사이트 커스터마이징' %></h3>
+    <h3><%= isEn ? 'Site Customization' : '사이트 커스터마이징' %></h3>
     <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Site Name' : '쇼핑몰 이름' %>
         <input type="text" name="siteName" value="<%= settings.siteName %>" />
@@ -105,7 +196,7 @@
 
   <% if (tab === 'menus') { %>
   <article class="block-card">
-    <h3><%= isEn ? '2) Add / Remove Menus' : '2) 메뉴 추가/삭제' %></h3>
+    <h3><%= isEn ? 'Add / Remove Menus' : '메뉴 추가/삭제' %></h3>
     <form method="post" action="/admin/menu/add" class="form-grid">
       <label><%= isEn ? 'Menu Label (KR)' : '메뉴명 (KR)' %>
         <input type="text" name="labelKo" required />
@@ -135,7 +226,7 @@
 
   <% if (tab === 'products') { %>
   <article class="block-card">
-    <h3><%= isEn ? '3) Product Upload' : '3) 상품 업로드' %></h3>
+    <h3><%= isEn ? 'Product Upload' : '상품 업로드' %></h3>
     <form method="post" action="/admin/product/create" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Images (multiple upload)' : '사진 (여러 장 업로드 가능)' %>
         <input type="file" name="images" accept="image/*" multiple />
@@ -227,7 +318,7 @@
 
   <% if (tab === 'notices') { %>
   <article class="block-card">
-    <h3><%= isEn ? '4) Notice Upload (Popup Optional)' : '4) 공지사항 업로드 (팝업 선택 가능)' %></h3>
+    <h3><%= isEn ? 'Notice Upload (Popup Optional)' : '공지사항 업로드 (팝업 선택 가능)' %></h3>
     <form method="post" action="/admin/notice/create" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Title' : '제목' %>
         <input type="text" name="title" required />
@@ -258,7 +349,7 @@
 
   <% if (tab === 'news') { %>
   <article class="block-card">
-    <h3><%= isEn ? '5) News Upload' : '5) 뉴스 업로드' %></h3>
+    <h3><%= isEn ? 'News Upload' : '뉴스 업로드' %></h3>
     <form method="post" action="/admin/news/create" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Title' : '제목' %>
         <input type="text" name="title" required />
@@ -285,7 +376,7 @@
 
   <% if (tab === 'qc') { %>
   <article class="block-card">
-    <h3><%= isEn ? '6) QC Upload' : '6) QC 업로드' %></h3>
+    <h3><%= isEn ? 'QC Upload' : 'QC 업로드' %></h3>
     <form method="post" action="/admin/qc/create" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Order No.' : '구매번호' %>
         <input type="text" name="orderNo" required />
@@ -312,7 +403,8 @@
 
   <% if (tab === 'orders') { %>
   <article class="block-card">
-    <h3><%= isEn ? '7) Order Verification (Depositor + Order No.)' : '7) 주문 확인 (입금자명 + 구매번호 대조)' %></h3>
+    <h3><%= isEn ? 'Order Management' : '주문관리' %></h3>
+    <p class="muted-label"><%= isEn ? 'Flow: Unchecked -> Confirmed -> Preparing Shipment -> Shipped (In Transit) -> Delivered(auto)' : '프로세스: 미확인 -> 주문확인 -> 출고중 -> 출고완료(배송중) -> 배송완료(자동)' %></p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -320,7 +412,8 @@
             <th><%= isEn ? 'Order No.' : '구매번호' %></th>
             <th><%= isEn ? 'Order Info' : '신청 정보' %></th>
             <th><%= isEn ? 'Status' : '상태' %></th>
-            <th><%= isEn ? 'Update' : '변경' %></th>
+            <th><%= isEn ? 'Tracking' : '송장' %></th>
+            <th><%= isEn ? 'Action' : '변경' %></th>
           </tr>
         </thead>
         <tbody>
@@ -340,12 +433,96 @@
                   <br />
                   <small><%= item.status_detail %></small>
                 <% } %>
+                <% if (item.checked_at || item.ready_to_ship_at || item.shipping_started_at || item.delivered_at) { %>
+                  <br />
+                  <small><%= isEn ? 'Timeline' : '타임라인' %>:</small>
+                  <ul class="status-mini-list">
+                    <% if (item.checked_at) { %>
+                      <li><small><%= isEn ? 'Confirmed' : '주문확인' %> · <%= item.checked_at.slice(0, 16) %></small></li>
+                    <% } %>
+                    <% if (item.ready_to_ship_at) { %>
+                      <li><small><%= isEn ? 'Preparing' : '출고중' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
+                    <% } %>
+                    <% if (item.shipping_started_at) { %>
+                      <li><small><%= isEn ? 'Shipping Start' : '배송시작' %> · <%= item.shipping_started_at.slice(0, 16) %></small></li>
+                    <% } %>
+                    <% if (item.delivered_at) { %>
+                      <li><small><%= isEn ? 'Delivered' : '배송완료' %> · <%= item.delivered_at.slice(0, 16) %></small></li>
+                    <% } %>
+                  </ul>
+                <% } %>
+                <% if (item.status_logs && item.status_logs.length > 0) { %>
+                  <small><%= isEn ? 'Latest events' : '최근 이력' %>:</small>
+                  <ul class="status-mini-list">
+                    <% item.status_logs.forEach((log) => { %>
+                      <li>
+                        <small>
+                          <%= log.created_at ? log.created_at.slice(0, 16) : '-' %> ·
+                          <%= log.from_status_label ? `${log.from_status_label} → ` : '' %><%= log.to_status_label || log.to_status %>
+                        </small>
+                      </li>
+                    <% }) %>
+                  </ul>
+                <% } %>
               </td>
               <td>
-                <% if (item.next_status) { %>
-                  <form method="post" action="/admin/order/<%= item.id %>/next" class="inline-form">
-                    <button type="submit" class="chip dark"><%= item.next_action_label %></button>
+                <% if (item.tracking_number) { %>
+                  <small><strong><%= item.tracking_carrier_label %></strong></small><br />
+                  <small><%= item.tracking_number %></small><br />
+                  <small><%= item.tracking_last_event || (isEn ? 'Tracking pending' : '조회 대기중') %></small><br />
+                  <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
+                <% } else { %>
+                  <small>-</small>
+                <% } %>
+              </td>
+              <td>
+                <% if (item.status_code === 'PENDING_REVIEW') { %>
+                  <form method="post" action="/admin/order/<%= item.id %>/confirm" class="inline-form">
+                    <button type="submit" class="chip dark"><%= isEn ? 'Confirm Order' : '주문확인' %></button>
                   </form>
+                <% } else if (item.status_code === 'ORDER_CONFIRMED') { %>
+                  <form method="post" action="/admin/order/<%= item.id %>/ready" class="inline-form">
+                    <button type="submit" class="chip dark"><%= isEn ? 'Mark Preparing' : '출고중 처리' %></button>
+                  </form>
+                <% } else if (item.status_code === 'READY_TO_SHIP') { %>
+                  <form method="post" action="/admin/order/<%= item.id %>/start-shipping" class="form-grid compact">
+                    <label>
+                      <span><%= isEn ? 'Carrier' : '택배사' %></span>
+                      <select name="trackingCarrier" required>
+                        <% trackingCarriers.forEach((carrier) => { %>
+                          <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
+                      <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
+                    </label>
+                    <button type="submit" class="chip dark"><%= isEn ? 'Shipped (Start)' : '출고완료(배송시작)' %></button>
+                  </form>
+                <% } else if (item.status_code === 'SHIPPING') { %>
+                  <form method="post" action="/admin/order/<%= item.id %>/update-tracking" class="form-grid compact">
+                    <label>
+                      <span><%= isEn ? 'Carrier' : '택배사' %></span>
+                      <select name="trackingCarrier" required>
+                        <% trackingCarriers.forEach((carrier) => { %>
+                          <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
+                        <% }) %>
+                      </select>
+                    </label>
+                    <label>
+                      <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
+                      <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
+                    </label>
+                    <button type="submit" class="chip"><%= isEn ? 'Update Tracking' : '송장 수정' %></button>
+                  </form>
+                  <form method="post" action="/admin/order/<%= item.id %>/sync-tracking" class="inline-form">
+                    <button type="submit" class="chip"><%= isEn ? 'Sync Tracking' : '송장 상태 조회' %></button>
+                  </form>
+                  <form method="post" action="/admin/order/<%= item.id %>/mark-delivered" class="inline-form">
+                    <button type="submit" class="chip"><%= isEn ? 'Mark Delivered' : '수동 배송완료' %></button>
+                  </form>
+                  <small class="muted-label"><%= isEn ? 'Auto delivery sync enabled.' : '배송완료 자동 반영 활성화됨' %></small>
                 <% } else { %>
                   <span class="muted-label"><%= isEn ? 'Done' : '완료' %></span>
                 <% } %>
@@ -360,7 +537,7 @@
 
   <% if (tab === 'inquiries') { %>
   <article class="block-card">
-    <h3><%= isEn ? '8) Inquiry Replies' : '8) 문의 답변' %></h3>
+    <h3><%= isEn ? 'Inquiry Replies' : '문의 답변' %></h3>
     <div class="admin-list">
       <% inquiries.forEach((item) => { %>
         <div class="inquiry-admin-item">
