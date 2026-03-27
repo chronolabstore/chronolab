@@ -1,6 +1,6 @@
 <header class="site-header" style="--header-color:<%= ctx.settings.headerColor %>">
   <div class="header-top">
-    <a href="/main" class="brand-box">
+    <a href="<%= ctx.isAdminPage ? '/admin/security' : '/main' %>" class="brand-box">
       <% if (ctx.settings.headerSymbolPath) { %>
         <img src="<%= ctx.settings.headerSymbolPath %>" alt="symbol" class="brand-symbol" />
       <% } else { %>
@@ -52,10 +52,14 @@
 
       <% if (ctx.currentUser) { %>
         <span class="chip muted"><%= ctx.currentUser.username %></span>
-        <a href="/mypage" class="chip"><%= ctx.t('myPage') %></a>
-        <form method="post" action="/logout" class="inline-form">
-          <button type="submit" class="chip"><%= ctx.t('logout') %></button>
-        </form>
+        <% if (ctx.isAdminPage) { %>
+          <a href="/admin/logout" class="chip"><%= ctx.lang === 'en' ? 'Admin Logout' : '어드민 로그아웃' %></a>
+        <% } else { %>
+          <a href="/mypage" class="chip"><%= ctx.t('myPage') %></a>
+          <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="chip"><%= ctx.t('logout') %></button>
+          </form>
+        <% } %>
       <% } else { %>
         <a href="/login" class="chip"><%= ctx.t('login') %></a>
         <a href="/signup" class="chip dark"><%= ctx.t('signup') %></a>

@@ -41,6 +41,18 @@ const ORDER_STATUS = Object.freeze({
   DELIVERED: 'DELIVERED'
 });
 
+const ADMIN_MENUS = Object.freeze([
+  { id: 'admin-security', labelKo: '보안', labelEn: 'Security', path: '/admin/security' },
+  { id: 'admin-site', labelKo: '사이트설정', labelEn: 'Site', path: '/admin/site' },
+  { id: 'admin-menus', labelKo: '메뉴관리', labelEn: 'Menus', path: '/admin/menus' },
+  { id: 'admin-products', labelKo: '상품관리', labelEn: 'Products', path: '/admin/products' },
+  { id: 'admin-notices', labelKo: '공지사항', labelEn: 'Notices', path: '/admin/notices' },
+  { id: 'admin-news', labelKo: '뉴스', labelEn: 'News', path: '/admin/news' },
+  { id: 'admin-qc', labelKo: 'QC', labelEn: 'QC', path: '/admin/qc' },
+  { id: 'admin-orders', labelKo: '주문관리', labelEn: 'Orders', path: '/admin/orders' },
+  { id: 'admin-inquiries', labelKo: '문의답변', labelEn: 'Inquiries', path: '/admin/inquiries' }
+]);
+
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
 const authAttemptStore = new Map();
@@ -131,6 +143,10 @@ function parseMenus(rawMenus) {
   } catch {
     return getDefaultMenus();
   }
+}
+
+function getAdminMenus() {
+  return ADMIN_MENUS.map((menu) => ({ ...menu }));
 }
 
 function setFlash(req, type, message) {
@@ -388,7 +404,9 @@ app.use((req, res, next) => {
     }
   }
 
-  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
+  const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
+  const isAdminPage = req.path.startsWith('/admin') && req.path !== '/admin/login';
+  const menus = isAdminPage && Boolean(req.user?.isAdmin) ? getAdminMenus() : publicMenus;
 
   const headerColor = getSetting('headerColor', '#111827');
   const backgroundType = getSetting('backgroundType', 'color');
@@ -416,6 +434,7 @@ app.use((req, res, next) => {
     themeMode,
     currentUser: req.user,
     isAdmin: Boolean(req.user?.isAdmin),
+    isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
     flash: getFlash(req),
     formatPrice,
     menus,
@@ -463,7 +482,10 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.user || !req.user.isAdmin) {
-    return res.redirect('/admin/login');
+    return res.status(404).render('simple-error', {
+      title: 'Not Found',
+      message: '페이지를 찾을 수 없습니다.'
+    });
   }
   return next();
 }
@@ -1177,7 +1199,7 @@ app.post('/logout', (req, res) => {
 
 app.get('/admin/login', (req, res) => {
   if (req.user?.isAdmin) {
-    return res.redirect('/admin');
+    return res.redirect('/admin/security');
   }
   res.render('admin-login', { title: 'Admin Login' });
 });
@@ -1208,28 +1230,29 @@ app.post(
   req.session.isAdmin = true;
   resetAuthAttempt(req, 'admin-login');
 
-  res.redirect('/admin');
+  res.redirect('/admin/security');
   })
 );
 
 app.post('/admin/change-password', requireAdmin, asyncRoute(async (req, res) => {
+  const backPath = safeBackPath(req, '/admin/security');
   const currentPassword = String(req.body.currentPassword || '');
   const newPassword = String(req.body.newPassword || '');
   const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
 
   if (!currentPassword || !newPassword || !newPasswordConfirm) {
     setFlash(req, 'error', '현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   if (newPassword !== newPasswordConfirm) {
     setFlash(req, 'error', '새 비밀번호 확인이 일치하지 않습니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   if (!PASSWORD_REGEX.test(newPassword)) {
     setFlash(req, 'error', '새 비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const admin = db
@@ -1238,29 +1261,30 @@ app.post('/admin/change-password', requireAdmin, asyncRoute(async (req, res) => 
 
   if (!admin) {
     setFlash(req, 'error', '어드민 계정을 찾을 수 없습니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const validCurrent = await bcrypt.compare(currentPassword, admin.password_hash);
   if (!validCurrent) {
     setFlash(req, 'error', '현재 비밀번호가 올바르지 않습니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const nextHash = await bcrypt.hash(newPassword, 10);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextHash, req.user.id);
 
   setFlash(req, 'success', '어드민 비밀번호가 변경되었습니다.');
-  return res.redirect('/admin');
+  return res.redirect(backPath);
 }));
 
-app.get('/admin/logout', (req, res) => {
+app.get('/admin/logout', requireAdmin, (req, res) => {
   req.session.destroy(() => {
     res.redirect('/admin/login');
   });
 });
 
-app.get('/admin', requireAdmin, (req, res) => {
+function buildAdminDashboardViewData() {
+  const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
     headerColor: getSetting('headerColor', '#111827'),
@@ -1273,7 +1297,7 @@ app.get('/admin', requireAdmin, (req, res) => {
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
     languageDefault: getSetting('languageDefault', 'ko'),
-    menusJson: JSON.stringify(parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus()))), null, 2)
+    menusJson: JSON.stringify(publicMenus, null, 2)
   };
 
   const products = db.prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100').all();
@@ -1316,9 +1340,9 @@ app.get('/admin', requireAdmin, (req, res) => {
     )
     .all();
 
-  res.render('admin-dashboard', {
-    title: 'Admin Dashboard',
+  return {
     settings,
+    publicMenus,
     products,
     orders,
     notices,
@@ -1327,7 +1351,69 @@ app.get('/admin', requireAdmin, (req, res) => {
     inquiries,
     formatPrice,
     productGroups: SHOP_PRODUCT_GROUPS
+  };
+}
+
+function renderAdminDashboard(req, res, activeTab) {
+  const viewData = buildAdminDashboardViewData();
+  return res.render('admin-dashboard', {
+    title: 'Admin Dashboard',
+    activeTab,
+    ...viewData
   });
+}
+
+app.get('/admin', requireAdmin, (req, res) => {
+  res.redirect('/admin/security');
+});
+
+app.get('/admin/security', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'security'));
+app.get('/admin/site', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'site'));
+app.get('/admin/menus', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'menus'));
+app.get('/admin/products', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'products'));
+app.get('/admin/notices', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'notices'));
+app.get('/admin/news', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'news'));
+app.get('/admin/qc', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'qc'));
+app.get('/admin/orders', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'orders'));
+app.get('/admin/inquiries', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'inquiries'));
+
+app.post('/admin/menu/add', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const labelKo = String(req.body.labelKo || '').trim();
+  const labelEn = String(req.body.labelEn || '').trim();
+  const menuPath = sanitizePath(String(req.body.path || '').trim());
+
+  if (!labelKo || !labelEn || !menuPath) {
+    setFlash(req, 'error', '메뉴 이름과 경로를 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (menuPath.startsWith('/admin')) {
+    setFlash(req, 'error', 'admin 경로는 공개 메뉴로 추가할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
+  const id = `menu-${Date.now()}`;
+  menus.push({ id, labelKo, labelEn, path: menuPath });
+  setSetting('menus', JSON.stringify(menus));
+
+  setFlash(req, 'success', '메뉴가 추가되었습니다.');
+  res.redirect(backPath);
+});
+
+app.post('/admin/menu/remove/:id', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const id = String(req.params.id || '');
+  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
+  const nextMenus = menus.filter((menu) => menu.id !== id);
+  if (nextMenus.length === 0) {
+    setFlash(req, 'error', '최소 1개 이상의 메뉴는 유지되어야 합니다.');
+    return res.redirect(backPath);
+  }
+  setSetting('menus', JSON.stringify(nextMenus));
+  setFlash(req, 'success', '메뉴가 삭제되었습니다.');
+  res.redirect(backPath);
 });
 
 app.post(
@@ -1340,6 +1426,7 @@ app.post(
     { name: 'backgroundImage', maxCount: 1 }
   ]),
   (req, res) => {
+    const backPath = safeBackPath(req, '/admin/site');
     const siteName = String(req.body.siteName || 'Chrono Lab').trim();
     const headerColor = String(req.body.headerColor || '#111827').trim();
     const backgroundType = String(req.body.backgroundType || 'color').trim();
@@ -1364,7 +1451,7 @@ app.post(
         setSetting('menus', JSON.stringify(parsedMenus));
       } catch {
         setFlash(req, 'error', '메뉴 JSON 형식이 올바르지 않습니다.');
-        return res.redirect('/admin');
+        return res.redirect(backPath);
       }
     }
 
@@ -1388,48 +1475,12 @@ app.post(
     }
 
     setFlash(req, 'success', '사이트 설정이 저장되었습니다.');
-    res.redirect('/admin');
+    res.redirect(backPath);
   }
 );
 
-app.post('/admin/menu/add', requireAdmin, (req, res) => {
-  const labelKo = String(req.body.labelKo || '').trim();
-  const labelEn = String(req.body.labelEn || '').trim();
-  const menuPath = sanitizePath(String(req.body.path || '').trim());
-
-  if (!labelKo || !labelEn || !menuPath) {
-    setFlash(req, 'error', '메뉴 이름과 경로를 모두 입력해 주세요.');
-    return res.redirect('/admin');
-  }
-
-  if (menuPath.startsWith('/admin')) {
-    setFlash(req, 'error', 'admin 경로는 공개 메뉴로 추가할 수 없습니다.');
-    return res.redirect('/admin');
-  }
-
-  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
-  const id = `menu-${Date.now()}`;
-  menus.push({ id, labelKo, labelEn, path: menuPath });
-  setSetting('menus', JSON.stringify(menus));
-
-  setFlash(req, 'success', '메뉴가 추가되었습니다.');
-  res.redirect('/admin');
-});
-
-app.post('/admin/menu/remove/:id', requireAdmin, (req, res) => {
-  const id = String(req.params.id || '');
-  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
-  const nextMenus = menus.filter((menu) => menu.id !== id);
-  if (nextMenus.length === 0) {
-    setFlash(req, 'error', '최소 1개 이상의 메뉴는 유지되어야 합니다.');
-    return res.redirect('/admin');
-  }
-  setSetting('menus', JSON.stringify(nextMenus));
-  setFlash(req, 'success', '메뉴가 삭제되었습니다.');
-  res.redirect('/admin');
-});
-
 app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products');
   const categoryGroupRaw = String(req.body.categoryGroup || SHOP_PRODUCT_GROUPS[0]).trim();
   const categoryGroup = SHOP_PRODUCT_GROUPS.includes(categoryGroupRaw)
     ? categoryGroupRaw
@@ -1451,7 +1502,7 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req
 
   if (!brand || !model || !subModel || price <= 0) {
     setFlash(req, 'error', '브랜드/모델/세부모델/가격은 필수입니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const uploadedImages = Array.isArray(req.files) ? req.files.map((file) => fileUrl(file)).filter(Boolean) : [];
@@ -1512,31 +1563,33 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req
   }
 
   setFlash(req, 'success', '상품이 등록되었습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products');
   const id = Number(req.params.id);
   const product = db.prepare('SELECT id, is_active FROM products WHERE id = ? LIMIT 1').get(id);
   if (!product) {
     setFlash(req, 'error', '상품을 찾을 수 없습니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const nextState = Number(product.is_active) === 1 ? 0 : 1;
   db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(nextState, id);
   setFlash(req, 'success', '상품 노출 상태를 변경했습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/notices');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
   const isPopup = req.body.isPopup === 'on' ? 1 : 0;
 
   if (!title || !content) {
     setFlash(req, 'error', '공지 제목과 내용을 입력해 주세요.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('INSERT INTO notices (title, content, image_path, is_popup) VALUES (?, ?, ?, ?)').run(
@@ -1547,16 +1600,17 @@ app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res
   );
 
   setFlash(req, 'success', '공지사항이 등록되었습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/news');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
 
   if (!title || !content) {
     setFlash(req, 'error', '뉴스 제목과 내용을 입력해 주세요.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('INSERT INTO news_posts (title, content, image_path) VALUES (?, ?, ?)').run(
@@ -1566,16 +1620,17 @@ app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) 
   );
 
   setFlash(req, 'success', '뉴스가 등록되었습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/qc');
   const orderNo = String(req.body.orderNo || '').trim();
   const note = String(req.body.note || '').trim();
 
   if (!orderNo || !req.file) {
     setFlash(req, 'error', '주문번호와 이미지를 입력해 주세요.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('INSERT INTO qc_items (order_no, image_path, note) VALUES (?, ?, ?)').run(
@@ -1585,51 +1640,54 @@ app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) =>
   );
 
   setFlash(req, 'success', 'QC 항목이 등록되었습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/order/:id/status', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
   const id = Number(req.params.id);
   const status = normalizeOrderStatus(req.body.status || ORDER_STATUS.UNPAID);
   const allowed = new Set(Object.values(ORDER_STATUS));
 
   if (!allowed.has(status)) {
     setFlash(req, 'error', '허용되지 않은 상태값입니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
   setFlash(req, 'success', '주문 상태를 업데이트했습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.post('/admin/order/:id/next', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
   const id = Number(req.params.id);
   const order = db.prepare('SELECT id, status FROM orders WHERE id = ? LIMIT 1').get(id);
 
   if (!order) {
     setFlash(req, 'error', '주문을 찾을 수 없습니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   const nextStatus = getNextOrderStatus(order.status);
   if (!nextStatus) {
     setFlash(req, 'error', '이미 배송완료 상태입니다.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(nextStatus, id);
   setFlash(req, 'success', '주문 상태를 다음 단계로 변경했습니다.');
-  return res.redirect('/admin');
+  return res.redirect(backPath);
 });
 
 app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/inquiries');
   const id = Number(req.params.id);
   const replyContent = String(req.body.replyContent || '').trim();
 
   if (!replyContent) {
     setFlash(req, 'error', '답변 내용을 입력해 주세요.');
-    return res.redirect('/admin');
+    return res.redirect(backPath);
   }
 
   db.prepare('UPDATE inquiries SET reply_content = ?, replied_at = datetime(\'now\') WHERE id = ?').run(
@@ -1638,7 +1696,7 @@ app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
   );
 
   setFlash(req, 'success', '문의 답변이 등록되었습니다.');
-  res.redirect('/admin');
+  res.redirect(backPath);
 });
 
 app.use((req, res) => {

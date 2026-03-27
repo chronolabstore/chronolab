@@ -1153,6 +1153,10 @@ body.theme-night .detail-card-dark .cta-main:hover {
   gap: 16px;
 }
 
+.admin-grid.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .admin-list {
   display: grid;
   gap: 10px;
@@ -1297,6 +1301,10 @@ td {
 
   .admin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-grid.single {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .news-blog-item {

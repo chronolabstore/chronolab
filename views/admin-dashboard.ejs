@@ -1,4 +1,5 @@
 <%- include('partials/layout-start') %>
+<% const tab = activeTab || 'security'; %>
 
 <section class="block-card">
   <div class="section-head">
@@ -8,7 +9,8 @@
   <p class="muted-label">요청하신 기능 대부분을 여기서 관리할 수 있도록 구성했습니다.</p>
 </section>
 
-<section class="admin-grid">
+<section class="admin-grid single">
+  <% if (tab === 'security') { %>
   <article class="block-card">
     <h3>0) 어드민 보안</h3>
     <form method="post" action="/admin/change-password" class="form-grid">
@@ -24,7 +26,9 @@
       <button type="submit" class="cta-main">비밀번호 변경</button>
     </form>
   </article>
+  <% } %>
 
+  <% if (tab === 'site') { %>
   <article class="block-card">
     <h3>1) 사이트 커스터마이징</h3>
     <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form-grid">
@@ -89,7 +93,9 @@
       <button type="submit" class="cta-main">사이트 설정 저장</button>
     </form>
   </article>
+  <% } %>
 
+  <% if (tab === 'menus') { %>
   <article class="block-card">
     <h3>2) 메뉴 추가/삭제</h3>
     <form method="post" action="/admin/menu/add" class="form-grid">
@@ -106,7 +112,7 @@
     </form>
 
     <div class="admin-list">
-      <% ctx.menus.forEach((menu) => { %>
+      <% publicMenus.forEach((menu) => { %>
         <div class="admin-list-item">
           <strong><%= menu.labelKo %> / <%= menu.labelEn %></strong>
           <span><%= menu.path %></span>
@@ -117,7 +123,9 @@
       <% }) %>
     </div>
   </article>
+  <% } %>
 
+  <% if (tab === 'products') { %>
   <article class="block-card">
     <h3>3) 상품 업로드</h3>
     <form method="post" action="/admin/product/create" enctype="multipart/form-data" class="form-grid">
@@ -207,7 +215,9 @@
       </table>
     </div>
   </article>
+  <% } %>
 
+  <% if (tab === 'notices') { %>
   <article class="block-card">
     <h3>4) 공지사항 업로드 (팝업 선택 가능)</h3>
     <form method="post" action="/admin/notice/create" enctype="multipart/form-data" class="form-grid">
@@ -236,7 +246,9 @@
       <% }) %>
     </ul>
   </article>
+  <% } %>
 
+  <% if (tab === 'news') { %>
   <article class="block-card">
     <h3>5) 뉴스 업로드</h3>
     <form method="post" action="/admin/news/create" enctype="multipart/form-data" class="form-grid">
@@ -261,7 +273,9 @@
       <% }) %>
     </ul>
   </article>
+  <% } %>
 
+  <% if (tab === 'qc') { %>
   <article class="block-card">
     <h3>6) QC 업로드</h3>
     <form method="post" action="/admin/qc/create" enctype="multipart/form-data" class="form-grid">
@@ -286,7 +300,9 @@
       <% }) %>
     </ul>
   </article>
+  <% } %>
 
+  <% if (tab === 'orders') { %>
   <article class="block-card">
     <h3>7) 주문 확인 (입금자명 + 구매번호 대조)</h3>
     <div class="table-wrap">
@@ -332,7 +348,9 @@
       </table>
     </div>
   </article>
+  <% } %>
 
+  <% if (tab === 'inquiries') { %>
   <article class="block-card">
     <h3>8) 문의 답변</h3>
     <div class="admin-list">
@@ -351,6 +369,7 @@
       <% }) %>
     </div>
   </article>
+  <% } %>
 </section>
 
 <%- include('partials/layout-end') %>
