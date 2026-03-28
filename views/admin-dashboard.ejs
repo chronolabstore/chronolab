@@ -281,35 +281,93 @@
             <h4><%= isEn ? 'Admin Accounts' : '관리자 계정 목록' %></h4>
             <div class="admin-list">
               <% security.adminUsers.forEach((adminItem) => { %>
-                <div class="admin-list-item">
-                  <strong><%= adminItem.username %> / <%= adminItem.admin_role_label %></strong>
-                  <span><%= isEn ? 'Created' : '생성일' %>: <%= adminItem.created_at ? adminItem.created_at.slice(0, 16) : '-' %></span>
-                  <span><%= isEn ? 'Last Login' : '최근 로그인' %>: <%= adminItem.last_login_at ? adminItem.last_login_at.slice(0, 16) : '-' %></span>
+                <div class="admin-list-item admin-account-item">
+                  <div class="admin-account-row">
+                    <div class="admin-account-brief">
+                      <strong><%= adminItem.username %></strong>
+                      <span><%= adminItem.full_name || '-' %></span>
+                    </div>
+                    <div class="admin-account-actions">
+                      <button
+                        type="button"
+                        class="chip"
+                        data-admin-edit-toggle="<%= adminItem.id %>"
+                        aria-expanded="false"
+                        aria-controls="admin-editor-<%= adminItem.id %>"
+                      ><%= isEn ? 'Edit' : '수정' %></button>
+                      <% if (!adminItem.is_primary && Number(adminItem.id) !== Number(ctx.currentUser.id)) { %>
+                        <form method="post" action="/admin/security/admin/<%= adminItem.id %>/delete" class="inline-form">
+                          <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                        </form>
+                      <% } else { %>
+                        <span class="chip muted"><%= isEn ? 'Protected' : '삭제불가' %></span>
+                      <% } %>
+                    </div>
+                  </div>
 
-                  <form method="post" action="/admin/security/admin/<%= adminItem.id %>/update" class="form-grid compact">
-                    <label><span><%= isEn ? 'ID' : '아이디' %></span><input type="text" name="username" value="<%= adminItem.username %>" required /></label>
-                    <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= adminItem.full_name || '' %>" required /></label>
-                    <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= adminItem.email || '' %>" required /></label>
-                    <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= adminItem.phone || '' %>" required /></label>
-                    <button type="submit" class="chip"><%= isEn ? 'Update Info' : '정보 수정' %></button>
-                  </form>
+                  <div class="admin-account-editor" id="admin-editor-<%= adminItem.id %>">
+                    <div class="admin-account-meta">
+                      <small><%= isEn ? 'Role' : '권한' %>: <%= adminItem.admin_role_label %></small>
+                      <small><%= isEn ? 'Created' : '생성일' %>: <%= adminItem.created_at ? adminItem.created_at.slice(0, 16) : '-' %></small>
+                      <small><%= isEn ? 'Last Login' : '최근 로그인' %>: <%= adminItem.last_login_at ? adminItem.last_login_at.slice(0, 16) : '-' %></small>
+                    </div>
 
-                  <form method="post" action="/admin/security/admin/<%= adminItem.id %>/password" class="form-grid compact">
-                    <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
-                    <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
-                    <button type="submit" class="chip"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
-                  </form>
-
-                  <% if (!adminItem.is_primary && Number(adminItem.id) !== Number(ctx.currentUser.id)) { %>
-                    <form method="post" action="/admin/security/admin/<%= adminItem.id %>/delete" class="inline-form">
-                      <button type="submit" class="chip"><%= isEn ? 'Delete Sub Admin' : '서브관리자 삭제' %></button>
+                    <form method="post" action="/admin/security/admin/<%= adminItem.id %>/update" class="form-grid compact">
+                      <label><span><%= isEn ? 'ID' : '아이디' %></span><input type="text" name="username" value="<%= adminItem.username %>" required /></label>
+                      <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= adminItem.full_name || '' %>" required /></label>
+                      <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= adminItem.email || '' %>" required /></label>
+                      <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= adminItem.phone || '' %>" required /></label>
+                      <button type="submit" class="chip"><%= isEn ? 'Confirm Update' : '확인' %></button>
                     </form>
-                  <% } else { %>
-                    <small class="muted-label"><%= isEn ? 'Primary admin cannot be deleted.' : '메인관리자는 삭제할 수 없습니다.' %></small>
-                  <% } %>
+
+                    <form method="post" action="/admin/security/admin/<%= adminItem.id %>/password" class="form-grid compact">
+                      <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
+                      <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
+                      <button type="submit" class="chip"><%= isEn ? 'Confirm Password Change' : '비밀번호 변경 확인' %></button>
+                    </form>
+                  </div>
                 </div>
               <% }) %>
             </div>
+
+            <script>
+              (() => {
+                const toggles = Array.from(document.querySelectorAll('[data-admin-edit-toggle]'));
+                if (toggles.length === 0) return;
+
+                const labels = {
+                  open: <%- JSON.stringify(isEn ? 'Edit' : '수정') %>,
+                  close: <%- JSON.stringify(isEn ? 'Close' : '닫기') %>
+                };
+
+                const closeAll = () => {
+                  toggles.forEach((btn) => {
+                    const targetId = btn.getAttribute('data-admin-edit-toggle');
+                    const panel = document.getElementById(`admin-editor-${targetId}`);
+                    if (!panel) return;
+                    panel.classList.remove('open');
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.textContent = labels.open;
+                  });
+                };
+
+                toggles.forEach((btn) => {
+                  btn.addEventListener('click', () => {
+                    const targetId = btn.getAttribute('data-admin-edit-toggle');
+                    const panel = document.getElementById(`admin-editor-${targetId}`);
+                    if (!panel) return;
+
+                    const isOpen = panel.classList.contains('open');
+                    closeAll();
+                    if (!isOpen) {
+                      panel.classList.add('open');
+                      btn.setAttribute('aria-expanded', 'true');
+                      btn.textContent = labels.close;
+                    }
+                  });
+                });
+              })();
+            </script>
           </section>
         </div>
       <% } %>

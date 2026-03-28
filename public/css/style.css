@@ -1323,6 +1323,61 @@ body.theme-night .detail-card-dark .cta-main:hover {
   gap: 6px;
 }
 
+.admin-account-item {
+  gap: 10px;
+}
+
+.admin-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-account-brief {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-account-brief strong {
+  font-size: 0.94rem;
+}
+
+.admin-account-brief span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.admin-account-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-account-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: none;
+  gap: 8px;
+}
+
+.admin-account-editor.open {
+  display: grid;
+}
+
+.admin-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.admin-account-meta small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .status-mini-list {
   margin: 4px 0 0;
   padding-left: 14px;
