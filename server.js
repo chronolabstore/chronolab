@@ -34,6 +34,12 @@ const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,}$/;
 const DIGIT_PHONE_REGEX = /^[0-9]+$/;
 const CUSTOMS_NO_REGEX = /^[A-Za-z0-9-]{6,30}$/;
 const TRACKING_NUMBER_REGEX = /^[A-Za-z0-9-]{6,40}$/;
+const PHONE_REGEX = /^[0-9]{8,20}$/;
+
+const ADMIN_ROLE = Object.freeze({
+  PRIMARY: 'PRIMARY',
+  SUB: 'SUB'
+});
 
 const ORDER_STATUS = Object.freeze({
   PENDING_REVIEW: 'PENDING_REVIEW',
@@ -55,6 +61,8 @@ const ADMIN_MENUS = Object.freeze([
   { id: 'admin-orders', labelKo: '주문관리', labelEn: 'Orders', path: '/admin/orders' },
   { id: 'admin-inquiries', labelKo: '문의답변', labelEn: 'Inquiries', path: '/admin/inquiries' }
 ]);
+
+const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -287,6 +295,137 @@ function getTrackingCarrierLabel(carrierId = '') {
     return matched.label;
   }
   return carrierId || '-';
+}
+
+function normalizeAdminRole(rawRole = '') {
+  const role = String(rawRole || '').toUpperCase();
+  return role === ADMIN_ROLE.PRIMARY ? ADMIN_ROLE.PRIMARY : ADMIN_ROLE.SUB;
+}
+
+function normalizeSecuritySection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  return SECURITY_SECTIONS.includes(section) ? section : 'profile';
+}
+
+function inferSecuritySectionFromRequest(req) {
+  const querySection = normalizeSecuritySection(req?.query?.section || '');
+  if (querySection !== 'profile') {
+    return querySection;
+  }
+
+  const pathname = String(req?.path || '');
+  if (pathname.includes('/security/alerts') || pathname.includes('/security/alert/')) {
+    return 'alerts';
+  }
+  if (pathname.includes('/security/logs')) {
+    return 'logs';
+  }
+  if (pathname.includes('/security/sub-admin') || pathname.includes('/security/admin/')) {
+    return 'admins';
+  }
+  if (pathname.includes('/security/profile')) {
+    return 'profile';
+  }
+  return 'profile';
+}
+
+function getClientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim() || 'unknown';
+}
+
+function logAdminActivity(req, actionType, detail = '') {
+  if (!req.user?.isAdmin) {
+    return;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO admin_activity_logs (
+        admin_user_id,
+        admin_username,
+        admin_role,
+        ip_address,
+        user_agent,
+        method,
+        path,
+        action_type,
+        detail
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    req.user.id,
+    req.user.username,
+    req.user.adminRole || '',
+    getClientIp(req),
+    String(req.get('user-agent') || '').slice(0, 300),
+    req.method,
+    `${req.path}${req.url.includes('?') ? req.url.slice(req.path.length) : ''}`.slice(0, 300),
+    String(actionType || '').slice(0, 80),
+    String(detail || '').slice(0, 300)
+  );
+}
+
+function logAdminActivityByUser(userRow, req, actionType, detail = '') {
+  if (!userRow) {
+    return;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO admin_activity_logs (
+        admin_user_id,
+        admin_username,
+        admin_role,
+        ip_address,
+        user_agent,
+        method,
+        path,
+        action_type,
+        detail
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    Number(userRow.id),
+    String(userRow.username || ''),
+    normalizeAdminRole(userRow.admin_role || ''),
+    getClientIp(req),
+    String(req.get('user-agent') || '').slice(0, 300),
+    req.method,
+    req.path.slice(0, 300),
+    String(actionType || '').slice(0, 80),
+    String(detail || '').slice(0, 300)
+  );
+}
+
+function recordSecurityAlert(req, reason, detail = '') {
+  const isAdmin = Boolean(req.user?.isAdmin);
+  const actorRole = isAdmin ? req.user.adminRole || ADMIN_ROLE.SUB : '';
+  const actorName = isAdmin ? req.user.username : 'unknown';
+  const actorId = isAdmin ? req.user.id : null;
+
+  db.prepare(
+    `
+      INSERT INTO admin_security_alerts (
+        actor_admin_user_id,
+        actor_username,
+        actor_role,
+        ip_address,
+        method,
+        path,
+        reason,
+        detail
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    actorId,
+    String(actorName || 'unknown'),
+    String(actorRole || ''),
+    getClientIp(req),
+    String(req.method || '').slice(0, 16),
+    `${req.path}${req.url.includes('?') ? req.url.slice(req.path.length) : ''}`.slice(0, 300),
+    String(reason || '').slice(0, 120),
+    String(detail || '').slice(0, 300)
+  );
 }
 
 function appendOrderStatusLog(orderId, orderNo, fromStatus, toStatus, eventNote = '') {
@@ -546,7 +685,14 @@ function loadUser(req, res, next) {
   }
 
   const user = db
-    .prepare('SELECT id, email, username, is_admin, created_at FROM users WHERE id = ? LIMIT 1')
+    .prepare(
+      `
+        SELECT id, email, username, full_name, phone, is_admin, admin_role, created_at
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `
+    )
     .get(req.session.userId);
 
   if (!user) {
@@ -560,7 +706,12 @@ function loadUser(req, res, next) {
     id: Number(user.id),
     email: user.email,
     username: user.username,
+    fullName: user.full_name || '',
+    phone: user.phone || '',
     isAdmin: Number(user.is_admin) === 1,
+    adminRole: Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '',
+    isPrimaryAdmin:
+      Number(user.is_admin) === 1 && normalizeAdminRole(user.admin_role) === ADMIN_ROLE.PRIMARY,
     createdAt: user.created_at
   };
 
@@ -638,6 +789,7 @@ app.use((req, res, next) => {
     themeMode,
     currentUser: req.user,
     isAdmin: Boolean(req.user?.isAdmin),
+    isPrimaryAdmin: Boolean(req.user?.isPrimaryAdmin),
     isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
     flash: getFlash(req),
     formatPrice,
@@ -676,6 +828,29 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/admin')) {
+    return next();
+  }
+
+  if (!req.user?.isAdmin) {
+    return next();
+  }
+
+  if (req.path === '/admin/login') {
+    return next();
+  }
+
+  if (req.path === '/admin/logout') {
+    logAdminActivity(req, 'LOGOUT_REQUEST', 'admin logout requested');
+    return next();
+  }
+
+  const actionType = req.method === 'GET' ? 'VIEW' : 'ACTION';
+  logAdminActivity(req, actionType, `${req.method} ${req.path}`);
+  return next();
+});
+
 function requireAuth(req, res, next) {
   if (!req.user) {
     setFlash(req, 'error', '로그인이 필요합니다.');
@@ -694,6 +869,37 @@ function requireAdmin(req, res, next) {
     return res.redirect('/admin/login');
   }
   return next();
+}
+
+function requirePrimaryAdmin(req, res, next) {
+  if (!req.user?.isAdmin) {
+    setFlash(req, 'error', req.user ? '관리자 계정으로 로그인해 주세요.' : '관리자 로그인이 필요합니다.');
+    return res.redirect('/admin/login');
+  }
+
+  if (!req.user.isPrimaryAdmin) {
+    recordSecurityAlert(req, 'security.primary_only.route', 'sub-admin attempted primary-only route');
+    logAdminActivity(req, 'SECURITY_DENIED', 'primary-only security route');
+    setFlash(req, 'error', '이 페이지는 메인관리자만 접근할 수 있습니다.');
+    return res.redirect('/admin/dashboard');
+  }
+
+  return next();
+}
+
+function getSecurityAlertReasonLabel(reasonCode = '', lang = 'ko') {
+  const isEn = lang === 'en';
+  const reason = String(reasonCode || '').trim();
+  const labels = {
+    'security.primary_only.denied': isEn
+      ? 'Primary-only area access attempt'
+      : '메인관리자 전용 영역 접근 시도',
+    'security.primary_only.route': isEn
+      ? 'Primary-only route execution attempt'
+      : '메인관리자 전용 기능 실행 시도'
+  };
+
+  return labels[reason] || reason || (isEn ? 'Unknown' : '알 수 없음');
 }
 
 app.get('/', (req, res) => {
@@ -1429,7 +1635,7 @@ app.post(
   }
 
   const user = db
-    .prepare('SELECT id, username, password_hash, is_admin FROM users WHERE username = ? LIMIT 1')
+    .prepare('SELECT id, username, password_hash, is_admin, admin_role FROM users WHERE username = ? LIMIT 1')
     .get(username);
 
   if (!user) {
@@ -1445,6 +1651,7 @@ app.post(
 
   req.session.userId = Number(user.id);
   req.session.isAdmin = Number(user.is_admin) === 1;
+  req.session.adminRole = Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '';
   resetAuthAttempt(req, 'login');
 
   setFlash(req, 'success', '로그인되었습니다.');
@@ -1473,7 +1680,7 @@ app.post(
   const password = String(req.body.password || '');
 
   const user = db
-    .prepare('SELECT id, password_hash, is_admin FROM users WHERE username = ? LIMIT 1')
+    .prepare('SELECT id, username, password_hash, is_admin, admin_role FROM users WHERE username = ? LIMIT 1')
     .get(username);
 
   if (!user || Number(user.is_admin) !== 1) {
@@ -1489,14 +1696,17 @@ app.post(
 
   req.session.userId = Number(user.id);
   req.session.isAdmin = true;
+  req.session.adminRole = normalizeAdminRole(user.admin_role);
   resetAuthAttempt(req, 'admin-login');
+
+  logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success');
 
   res.redirect('/admin/dashboard');
   })
 );
 
-app.post('/admin/change-password', requireAdmin, asyncRoute(async (req, res) => {
-  const backPath = safeBackPath(req, '/admin/security');
+app.post('/admin/change-password', requirePrimaryAdmin, asyncRoute(async (req, res) => {
+  const backPath = safeBackPath(req, '/admin/security?section=profile');
   const currentPassword = String(req.body.currentPassword || '');
   const newPassword = String(req.body.newPassword || '');
   const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
@@ -1722,6 +1932,119 @@ function buildAdminDashboardStats() {
   };
 }
 
+function buildSecurityPanelData(lang = 'ko') {
+  const isEn = lang === 'en';
+  const adminUsers = db
+    .prepare(
+      `
+        SELECT
+          u.id,
+          u.username,
+          u.full_name,
+          u.email,
+          u.phone,
+          u.admin_role,
+          u.created_at,
+          (
+            SELECT MAX(l.created_at)
+            FROM admin_activity_logs l
+            WHERE l.admin_user_id = u.id
+              AND l.action_type = 'LOGIN_SUCCESS'
+          ) AS last_login_at
+        FROM users u
+        WHERE u.is_admin = 1
+        ORDER BY
+          CASE WHEN u.admin_role = 'PRIMARY' THEN 0 ELSE 1 END ASC,
+          u.id ASC
+      `
+    )
+    .all()
+    .map((row) => {
+      const role = normalizeAdminRole(row.admin_role);
+      return {
+        ...row,
+        admin_role: role,
+        admin_role_label:
+          role === ADMIN_ROLE.PRIMARY
+            ? (isEn ? 'Primary Admin' : '메인관리자')
+            : (isEn ? 'Sub Admin' : '서브관리자'),
+        is_primary: role === ADMIN_ROLE.PRIMARY
+      };
+    });
+
+  const subAdminLogs = db
+    .prepare(
+      `
+        SELECT
+          id,
+          admin_user_id,
+          admin_username,
+          admin_role,
+          ip_address,
+          user_agent,
+          method,
+          path,
+          action_type,
+          detail,
+          created_at
+        FROM admin_activity_logs
+        WHERE admin_role = 'SUB'
+        ORDER BY id DESC
+        LIMIT 250
+      `
+    )
+    .all()
+    .map((row) => ({
+      ...row,
+      user_agent: String(row.user_agent || '')
+    }));
+
+  const securityAlerts = db
+    .prepare(
+      `
+        SELECT
+          id,
+          actor_admin_user_id,
+          actor_username,
+          actor_role,
+          ip_address,
+          method,
+          path,
+          reason,
+          detail,
+          created_at,
+          resolved_at
+        FROM admin_security_alerts
+        ORDER BY
+          CASE WHEN resolved_at IS NULL THEN 0 ELSE 1 END ASC,
+          id DESC
+        LIMIT 250
+      `
+    )
+    .all()
+    .map((row) => ({
+      ...row,
+      reason_label: getSecurityAlertReasonLabel(row.reason, lang)
+    }));
+
+  const unresolvedAlertsRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM admin_security_alerts
+        WHERE resolved_at IS NULL
+      `
+    )
+    .get();
+
+  return {
+    adminUsers,
+    subAdminLogs,
+    securityAlerts,
+    unresolvedAlertsCount: Number(unresolvedAlertsRow?.count || 0)
+  };
+}
+
 function buildAdminDashboardViewData(lang = 'ko') {
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const settings = {
@@ -1825,6 +2148,7 @@ function buildAdminDashboardViewData(lang = 'ko') {
       `
     )
     .all();
+  const securityPanelData = buildSecurityPanelData(lang);
 
   return {
     settings,
@@ -1835,6 +2159,7 @@ function buildAdminDashboardViewData(lang = 'ko') {
     newsPosts,
     qcs,
     inquiries,
+    securityPanelData,
     dashboardStats: buildAdminDashboardStats(),
     trackingCarriers: TRACKING_CARRIERS,
     formatPrice,
@@ -1842,12 +2167,27 @@ function buildAdminDashboardViewData(lang = 'ko') {
   };
 }
 
-function renderAdminDashboard(req, res, activeTab) {
+function renderAdminDashboard(req, res, activeTab, extraData = {}) {
   const viewData = buildAdminDashboardViewData(res.locals.ctx.lang);
   return res.render('admin-dashboard', {
     title: 'Admin Dashboard',
     activeTab,
+    securitySection: normalizeSecuritySection(extraData.securitySection),
+    securityAccessDenied: Boolean(extraData.securityAccessDenied),
     ...viewData
+  });
+}
+
+function handleSecurityDenied(req, res, securitySection = 'profile') {
+  recordSecurityAlert(req, 'security.primary_only.denied', 'sub-admin attempted security area access');
+  logAdminActivity(req, 'SECURITY_DENIED', `blocked security route: ${req.path}`);
+
+  return res.status(403).render('admin-dashboard', {
+    title: 'Admin Dashboard',
+    activeTab: 'security',
+    securitySection: normalizeSecuritySection(securitySection),
+    securityAccessDenied: true,
+    ...buildAdminDashboardViewData(res.locals.ctx.lang)
   });
 }
 
@@ -1859,7 +2199,353 @@ app.get('/admin', (req, res) => {
 });
 
 app.get('/admin/dashboard', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'dashboard'));
-app.get('/admin/security', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'security'));
+app.use('/admin/security', requireAdmin, (req, res, next) => {
+  if (!req.user?.isPrimaryAdmin) {
+    return handleSecurityDenied(req, res, inferSecuritySectionFromRequest(req));
+  }
+  return next();
+});
+
+app.get('/admin/security', requireAdmin, (req, res) => {
+  const securitySection = normalizeSecuritySection(req.query.section || 'profile');
+  return renderAdminDashboard(req, res, 'security', { securitySection, securityAccessDenied: false });
+});
+
+app.post('/admin/security/profile/update', requirePrimaryAdmin, (req, res) => {
+  const backPath = '/admin/security?section=profile';
+  const username = String(req.body.username || '').trim();
+  const fullName = String(req.body.fullName || '').trim();
+  const email = String(req.body.email || '').trim();
+  const phone = normalizePhone(req.body.phone || '');
+
+  if (!username || !fullName || !email || !phone) {
+    setFlash(req, 'error', '필수 항목을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!USERNAME_REGEX.test(username)) {
+    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!PHONE_REGEX.test(phone)) {
+    setFlash(req, 'error', '전화번호 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  try {
+    db.prepare(
+      `
+        UPDATE users
+        SET username = ?, full_name = ?, email = ?, phone = ?
+        WHERE id = ? AND is_admin = 1 AND admin_role = 'PRIMARY'
+      `
+    ).run(username, fullName, email, phone, req.user.id);
+
+    logAdminActivity(req, 'SECURITY_PROFILE_UPDATE', `updated primary profile:${username}`);
+    setFlash(req, 'success', '메인관리자 정보가 업데이트되었습니다.');
+    return res.redirect(backPath);
+  } catch {
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    return res.redirect(backPath);
+  }
+});
+
+app.post('/admin/security/profile/password', requirePrimaryAdmin, asyncRoute(async (req, res) => {
+  const backPath = '/admin/security?section=profile';
+  const currentPassword = String(req.body.currentPassword || '');
+  const newPassword = String(req.body.newPassword || '');
+  const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
+
+  if (!currentPassword || !newPassword || !newPasswordConfirm) {
+    setFlash(req, 'error', '현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (newPassword !== newPasswordConfirm) {
+    setFlash(req, 'error', '새 비밀번호 확인이 일치하지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!PASSWORD_REGEX.test(newPassword)) {
+    setFlash(req, 'error', '새 비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
+    return res.redirect(backPath);
+  }
+
+  const admin = db
+    .prepare("SELECT id, password_hash FROM users WHERE id = ? AND is_admin = 1 AND admin_role = 'PRIMARY' LIMIT 1")
+    .get(req.user.id);
+
+  if (!admin) {
+    setFlash(req, 'error', '메인관리자 계정을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const validCurrent = await bcrypt.compare(currentPassword, admin.password_hash);
+  if (!validCurrent) {
+    setFlash(req, 'error', '현재 비밀번호가 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextHash, req.user.id);
+
+  logAdminActivity(req, 'SECURITY_PROFILE_PASSWORD', 'updated primary password');
+  setFlash(req, 'success', '메인관리자 비밀번호가 변경되었습니다.');
+  return res.redirect(backPath);
+}));
+
+app.post('/admin/security/sub-admin/create', requirePrimaryAdmin, asyncRoute(async (req, res) => {
+  const backPath = '/admin/security?section=admins';
+  const username = String(req.body.username || '').trim();
+  const fullName = String(req.body.fullName || '').trim();
+  const email = String(req.body.email || '').trim();
+  const phone = normalizePhone(req.body.phone || '');
+  const password = String(req.body.password || '');
+  const passwordConfirm = String(req.body.passwordConfirm || '');
+
+  if (!username || !fullName || !email || !phone || !password || !passwordConfirm) {
+    setFlash(req, 'error', '필수 항목을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!USERNAME_REGEX.test(username)) {
+    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!PHONE_REGEX.test(phone)) {
+    setFlash(req, 'error', '전화번호 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!PASSWORD_REGEX.test(password)) {
+    setFlash(req, 'error', '비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (password !== passwordConfirm) {
+    setFlash(req, 'error', '비밀번호 확인이 일치하지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    db.prepare(
+      `
+        INSERT INTO users (email, username, full_name, phone, password_hash, agreed_terms, is_admin, admin_role)
+        VALUES (?, ?, ?, ?, ?, 1, 1, 'SUB')
+      `
+    ).run(email, username, fullName, phone, hash);
+
+    logAdminActivity(req, 'SECURITY_SUB_ADMIN_CREATE', `created sub-admin:${username}`);
+    setFlash(req, 'success', '서브관리자 계정이 추가되었습니다.');
+    return res.redirect(backPath);
+  } catch {
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    return res.redirect(backPath);
+  }
+}));
+
+app.post('/admin/security/admin/:id/update', requirePrimaryAdmin, (req, res) => {
+  const backPath = '/admin/security?section=admins';
+  const targetId = Number(req.params.id);
+  const username = String(req.body.username || '').trim();
+  const fullName = String(req.body.fullName || '').trim();
+  const email = String(req.body.email || '').trim();
+  const phone = normalizePhone(req.body.phone || '');
+
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 관리자입니다.');
+    return res.redirect(backPath);
+  }
+
+  const target = db
+    .prepare(
+      `
+        SELECT id, username, admin_role
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(targetId);
+
+  if (!target) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeAdminRole(target.admin_role) === ADMIN_ROLE.PRIMARY && targetId !== req.user.id) {
+    setFlash(req, 'error', '메인관리자 타겟은 수정할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!username || !fullName || !email || !phone) {
+    setFlash(req, 'error', '필수 항목을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!USERNAME_REGEX.test(username)) {
+    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!EMAIL_REGEX.test(email)) {
+    setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!PHONE_REGEX.test(phone)) {
+    setFlash(req, 'error', '전화번호 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  try {
+    db.prepare(
+      `
+        UPDATE users
+        SET username = ?, full_name = ?, email = ?, phone = ?
+        WHERE id = ? AND is_admin = 1
+      `
+    ).run(username, fullName, email, phone, targetId);
+
+    logAdminActivity(req, 'SECURITY_ADMIN_UPDATE', `updated admin:${targetId}`);
+    setFlash(req, 'success', '관리자 정보가 수정되었습니다.');
+    return res.redirect(backPath);
+  } catch {
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    return res.redirect(backPath);
+  }
+});
+
+app.post('/admin/security/admin/:id/password', requirePrimaryAdmin, asyncRoute(async (req, res) => {
+  const backPath = '/admin/security?section=admins';
+  const targetId = Number(req.params.id);
+  const newPassword = String(req.body.newPassword || '');
+  const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
+
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 관리자입니다.');
+    return res.redirect(backPath);
+  }
+
+  const target = db
+    .prepare(
+      `
+        SELECT id, username, admin_role
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(targetId);
+
+  if (!target) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeAdminRole(target.admin_role) === ADMIN_ROLE.PRIMARY && targetId !== req.user.id) {
+    setFlash(req, 'error', '메인관리자 타겟은 비밀번호 변경이 불가합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!newPassword || !newPasswordConfirm) {
+    setFlash(req, 'error', '새 비밀번호와 확인값을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!PASSWORD_REGEX.test(newPassword)) {
+    setFlash(req, 'error', '비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (newPassword !== newPasswordConfirm) {
+    setFlash(req, 'error', '비밀번호 확인이 일치하지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHash = await bcrypt.hash(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND is_admin = 1').run(nextHash, targetId);
+
+  logAdminActivity(req, 'SECURITY_ADMIN_PASSWORD', `reset password for admin:${targetId}`);
+  setFlash(req, 'success', '관리자 비밀번호가 변경되었습니다.');
+  return res.redirect(backPath);
+}));
+
+app.post('/admin/security/admin/:id/delete', requirePrimaryAdmin, (req, res) => {
+  const backPath = '/admin/security?section=admins';
+  const targetId = Number(req.params.id);
+
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 관리자입니다.');
+    return res.redirect(backPath);
+  }
+
+  const target = db
+    .prepare(
+      `
+        SELECT id, username, admin_role
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(targetId);
+
+  if (!target) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (targetId === req.user.id) {
+    setFlash(req, 'error', '본인 계정은 삭제할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (normalizeAdminRole(target.admin_role) === ADMIN_ROLE.PRIMARY) {
+    setFlash(req, 'error', '메인관리자 계정은 삭제할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM users WHERE id = ? AND is_admin = 1').run(targetId);
+  logAdminActivity(req, 'SECURITY_ADMIN_DELETE', `deleted sub-admin:${target.username || targetId}`);
+  setFlash(req, 'success', '서브관리자 계정이 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/security/alert/:id/resolve', requirePrimaryAdmin, (req, res) => {
+  const backPath = '/admin/security?section=alerts';
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 알림입니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE admin_security_alerts
+      SET resolved_at = COALESCE(resolved_at, datetime('now'))
+      WHERE id = ?
+    `
+  ).run(id);
+
+  logAdminActivity(req, 'SECURITY_ALERT_RESOLVE', `resolved alert:${id}`);
+  setFlash(req, 'success', '보안 알림을 확인 처리했습니다.');
+  return res.redirect(backPath);
+});
+
 app.get('/admin/site', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'site'));
 app.get('/admin/menus', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'menus'));
 app.get('/admin/products', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'products'));

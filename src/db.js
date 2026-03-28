@@ -120,6 +120,22 @@ function ensureProductsCategoryColumn() {
   }
 }
 
+function ensureUserAdminProfileColumns() {
+  const columns = db.prepare('PRAGMA table_info(users)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  const addColumnIfMissing = (name, ddl) => {
+    if (!columnNames.has(name)) {
+      db.prepare(`ALTER TABLE users ADD COLUMN ${ddl}`).run();
+      columnNames.add(name);
+    }
+  };
+
+  addColumnIfMissing('full_name', "full_name TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('phone', "phone TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('admin_role', "admin_role TEXT NOT NULL DEFAULT ''");
+}
+
 function ensureOrdersCustomsColumn() {
   const columns = db.prepare('PRAGMA table_info(orders)').all();
   const hasCustomsNo = columns.some((column) => column.name === 'customs_clearance_no');
@@ -185,6 +201,56 @@ function ensureOrderStatusLogTable() {
   ).run();
 }
 
+function ensureAdminSecurityTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_activity_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_user_id INTEGER,
+      admin_username TEXT NOT NULL,
+      admin_role TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      method TEXT NOT NULL DEFAULT '',
+      path TEXT NOT NULL DEFAULT '',
+      action_type TEXT NOT NULL DEFAULT '',
+      detail TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_security_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_admin_user_id INTEGER,
+      actor_username TEXT NOT NULL,
+      actor_role TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      method TEXT NOT NULL DEFAULT '',
+      path TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      detail TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT,
+      FOREIGN KEY (actor_admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_admin_activity_logs_created
+      ON admin_activity_logs (created_at DESC, id DESC)
+    `
+  ).run();
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_admin_security_alerts_created
+      ON admin_security_alerts (created_at DESC, id DESC)
+    `
+  ).run();
+}
+
 function normalizeOrderStatuses() {
   db.prepare(
     `
@@ -220,10 +286,36 @@ function ensureAdminUser() {
   const passwordHash = bcrypt.hashSync('Admin123!', 10);
   db.prepare(
     `
-      INSERT INTO users (email, username, password_hash, agreed_terms, is_admin)
-      VALUES (?, ?, ?, 1, 1)
+      INSERT INTO users (email, username, full_name, phone, password_hash, agreed_terms, is_admin, admin_role)
+      VALUES (?, ?, ?, '', ?, 1, 1, 'PRIMARY')
     `
-  ).run('admin@chronolab.local', 'admin', passwordHash);
+  ).run('admin@chronolab.local', 'admin', 'Main Admin', passwordHash);
+}
+
+function normalizeAdminRoles() {
+  db.prepare("UPDATE users SET admin_role = '' WHERE is_admin = 0 AND admin_role != ''").run();
+
+  const admins = db
+    .prepare(
+      `
+        SELECT id, username
+        FROM users
+        WHERE is_admin = 1
+        ORDER BY id ASC
+      `
+    )
+    .all();
+
+  if (admins.length === 0) {
+    return;
+  }
+
+  const preferredPrimary =
+    admins.find((admin) => String(admin.username || '').toLowerCase() === 'admin') || admins[0];
+
+  db.prepare("UPDATE users SET admin_role = 'SUB' WHERE is_admin = 1").run();
+  db.prepare("UPDATE users SET admin_role = 'PRIMARY' WHERE id = ?").run(preferredPrimary.id);
+  db.prepare("UPDATE users SET full_name = username WHERE is_admin = 1 AND COALESCE(full_name, '') = ''").run();
 }
 
 function ensureDemoMemberUser() {
@@ -622,9 +714,12 @@ export function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
       username TEXT NOT NULL UNIQUE,
+      full_name TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
       password_hash TEXT NOT NULL,
       agreed_terms INTEGER NOT NULL DEFAULT 1,
       is_admin INTEGER NOT NULL DEFAULT 0,
+      admin_role TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -756,9 +851,11 @@ export function initDb() {
   `);
 
   ensureProductsCategoryColumn();
+  ensureUserAdminProfileColumns();
   ensureOrdersCustomsColumn();
   ensureOrdersTrackingColumns();
   ensureDailyVisitSplitColumns();
+  ensureAdminSecurityTables();
   normalizeOrderStatuses();
 
   for (const [key, value] of Object.entries(defaultSettings)) {
@@ -774,6 +871,7 @@ export function initDb() {
   upsertMetric('totalVisits', 0);
 
   ensureAdminUser();
+  normalizeAdminRoles();
   const demoUserId = ensureDemoMemberUser();
 
   seedProducts();

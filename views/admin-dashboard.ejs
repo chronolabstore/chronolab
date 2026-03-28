@@ -18,6 +18,15 @@
     orderCounts: { total: 0, pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0 },
     orderAlerts: { stalePending: 0, longShipping: 0 }
   };
+  const security = securityPanelData || {
+    adminUsers: [],
+    subAdminLogs: [],
+    securityAlerts: [],
+    unresolvedAlertsCount: 0
+  };
+  const securityTab = ['profile', 'admins', 'logs', 'alerts'].includes(String(securitySection || ''))
+    ? String(securitySection)
+    : 'profile';
 %>
 
 <section class="admin-grid single">
@@ -191,18 +200,201 @@
   <% if (tab === 'security') { %>
   <article class="block-card">
     <h3><%= isEn ? 'Admin Security' : '어드민 보안' %></h3>
-    <form method="post" action="/admin/change-password" class="form-grid">
-      <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
-        <input type="password" name="currentPassword" required />
-      </label>
-      <label><%= isEn ? 'New Password (min 8, letters+numbers)' : '새 비밀번호 (영문/숫자 포함 8자 이상)' %>
-        <input type="password" name="newPassword" required />
-      </label>
-      <label><%= isEn ? 'Confirm New Password' : '새 비밀번호 확인' %>
-        <input type="password" name="newPasswordConfirm" required />
-      </label>
-      <button type="submit" class="cta-main"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
-    </form>
+    <% if (securityAccessDenied || !ctx.isPrimaryAdmin) { %>
+      <p class="security-denied-note"><%= isEn ? 'This page is accessible only to the primary admin.' : '이 페이지는 메인관리자만 접근할 수 있습니다.' %></p>
+    <% } else { %>
+      <div class="security-subnav">
+        <a href="/admin/security?section=profile" class="menu-pill <%= securityTab === 'profile' ? 'active' : '' %>"><%= isEn ? 'Primary Account' : '메인관리자 계정' %></a>
+        <a href="/admin/security?section=admins" class="menu-pill <%= securityTab === 'admins' ? 'active' : '' %>"><%= isEn ? 'Sub Admins' : '서브관리자 관리' %></a>
+        <a href="/admin/security?section=logs" class="menu-pill <%= securityTab === 'logs' ? 'active' : '' %>"><%= isEn ? 'Sub Admin Logs' : '서브관리자 로그' %></a>
+        <a href="/admin/security?section=alerts" class="menu-pill <%= securityTab === 'alerts' ? 'active' : '' %>"><%= isEn ? 'Anomaly Alerts' : '이상행동 알림' %></a>
+      </div>
+
+      <% if (securityTab === 'profile') { %>
+        <% const primaryUser = security.adminUsers.find((row) => row.is_primary) || { username: ctx.currentUser.username, full_name: ctx.currentUser.fullName || '', email: ctx.currentUser.email || '', phone: ctx.currentUser.phone || '' }; %>
+        <div class="security-panel-grid">
+          <section class="kpi-card">
+            <h4><%= isEn ? 'Primary Admin Info' : '메인관리자 정보' %></h4>
+            <form method="post" action="/admin/security/profile/update" class="form-grid">
+              <label><%= isEn ? 'ID' : '아이디' %>
+                <input type="text" name="username" value="<%= primaryUser.username || '' %>" required />
+              </label>
+              <label><%= isEn ? 'Name' : '이름' %>
+                <input type="text" name="fullName" value="<%= primaryUser.full_name || '' %>" required />
+              </label>
+              <label><%= isEn ? 'Email' : '이메일' %>
+                <input type="email" name="email" value="<%= primaryUser.email || '' %>" required />
+              </label>
+              <label><%= isEn ? 'Phone' : '전화번호' %>
+                <input type="text" name="phone" value="<%= primaryUser.phone || '' %>" required />
+              </label>
+              <button type="submit" class="chip dark"><%= isEn ? 'Update Profile' : '정보 수정' %></button>
+            </form>
+          </section>
+
+          <section class="kpi-card">
+            <h4><%= isEn ? 'Change Password' : '비밀번호 변경' %></h4>
+            <form method="post" action="/admin/security/profile/password" class="form-grid">
+              <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
+                <input type="password" name="currentPassword" required />
+              </label>
+              <label><%= isEn ? 'New Password' : '새 비밀번호' %>
+                <input type="password" name="newPassword" required />
+              </label>
+              <label><%= isEn ? 'Confirm New Password' : '새 비밀번호 확인' %>
+                <input type="password" name="newPasswordConfirm" required />
+              </label>
+              <button type="submit" class="chip dark"><%= isEn ? 'Update Password' : '비밀번호 변경' %></button>
+            </form>
+          </section>
+        </div>
+      <% } %>
+
+      <% if (securityTab === 'admins') { %>
+        <div class="security-panel-grid">
+          <section class="kpi-card">
+            <h4><%= isEn ? 'Add Sub Admin' : '서브관리자 추가' %></h4>
+            <form method="post" action="/admin/security/sub-admin/create" class="form-grid">
+              <label><%= isEn ? 'ID' : '아이디' %>
+                <input type="text" name="username" required />
+              </label>
+              <label><%= isEn ? 'Name' : '이름' %>
+                <input type="text" name="fullName" required />
+              </label>
+              <label><%= isEn ? 'Email' : '이메일' %>
+                <input type="email" name="email" required />
+              </label>
+              <label><%= isEn ? 'Phone' : '전화번호' %>
+                <input type="text" name="phone" required />
+              </label>
+              <label><%= isEn ? 'Password' : '비밀번호' %>
+                <input type="password" name="password" required />
+              </label>
+              <label><%= isEn ? 'Password Confirm' : '비밀번호 확인' %>
+                <input type="password" name="passwordConfirm" required />
+              </label>
+              <button type="submit" class="chip dark"><%= isEn ? 'Create Sub Admin' : '서브관리자 생성' %></button>
+            </form>
+          </section>
+
+          <section class="kpi-card">
+            <h4><%= isEn ? 'Admin Accounts' : '관리자 계정 목록' %></h4>
+            <div class="admin-list">
+              <% security.adminUsers.forEach((adminItem) => { %>
+                <div class="admin-list-item">
+                  <strong><%= adminItem.username %> / <%= adminItem.admin_role_label %></strong>
+                  <span><%= isEn ? 'Created' : '생성일' %>: <%= adminItem.created_at ? adminItem.created_at.slice(0, 16) : '-' %></span>
+                  <span><%= isEn ? 'Last Login' : '최근 로그인' %>: <%= adminItem.last_login_at ? adminItem.last_login_at.slice(0, 16) : '-' %></span>
+
+                  <form method="post" action="/admin/security/admin/<%= adminItem.id %>/update" class="form-grid compact">
+                    <label><span><%= isEn ? 'ID' : '아이디' %></span><input type="text" name="username" value="<%= adminItem.username %>" required /></label>
+                    <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= adminItem.full_name || '' %>" required /></label>
+                    <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= adminItem.email || '' %>" required /></label>
+                    <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= adminItem.phone || '' %>" required /></label>
+                    <button type="submit" class="chip"><%= isEn ? 'Update Info' : '정보 수정' %></button>
+                  </form>
+
+                  <form method="post" action="/admin/security/admin/<%= adminItem.id %>/password" class="form-grid compact">
+                    <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
+                    <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
+                    <button type="submit" class="chip"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
+                  </form>
+
+                  <% if (!adminItem.is_primary && Number(adminItem.id) !== Number(ctx.currentUser.id)) { %>
+                    <form method="post" action="/admin/security/admin/<%= adminItem.id %>/delete" class="inline-form">
+                      <button type="submit" class="chip"><%= isEn ? 'Delete Sub Admin' : '서브관리자 삭제' %></button>
+                    </form>
+                  <% } else { %>
+                    <small class="muted-label"><%= isEn ? 'Primary admin cannot be deleted.' : '메인관리자는 삭제할 수 없습니다.' %></small>
+                  <% } %>
+                </div>
+              <% }) %>
+            </div>
+          </section>
+        </div>
+      <% } %>
+
+      <% if (securityTab === 'logs') { %>
+        <section class="kpi-card">
+          <h4><%= isEn ? 'Sub Admin Activity Logs' : '서브관리자 활동 로그' %></h4>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><%= isEn ? 'Time' : '시간' %></th>
+                  <th><%= isEn ? 'Admin' : '관리자' %></th>
+                  <th>IP</th>
+                  <th><%= isEn ? 'Device' : '접속기기' %></th>
+                  <th><%= isEn ? 'Method/Path' : '메서드/경로' %></th>
+                  <th><%= isEn ? 'Action' : '행동' %></th>
+                  <th><%= isEn ? 'Detail' : '상세' %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (security.subAdminLogs.length === 0) { %>
+                  <tr><td colspan="7"><%= isEn ? 'No sub admin logs yet.' : '서브관리자 로그가 없습니다.' %></td></tr>
+                <% } %>
+                <% security.subAdminLogs.forEach((log) => { %>
+                  <tr>
+                    <td><%= log.created_at ? log.created_at.slice(0, 16) : '-' %></td>
+                    <td><%= log.admin_username %></td>
+                    <td><%= log.ip_address || '-' %></td>
+                    <td><%= log.user_agent || '-' %></td>
+                    <td><%= log.method %> <%= log.path %></td>
+                    <td><%= log.action_type %></td>
+                    <td><%= log.detail || '-' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (securityTab === 'alerts') { %>
+        <section class="kpi-card">
+          <h4><%= isEn ? 'Sub Admin Anomaly Alerts' : '서브관리자 이상행동 알림' %></h4>
+          <p class="muted-label"><%= isEn ? `Unresolved alerts: ${security.unresolvedAlertsCount}` : `미확인 알림: ${security.unresolvedAlertsCount}` %></p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><%= isEn ? 'Time' : '시간' %></th>
+                  <th><%= isEn ? 'Actor' : '대상' %></th>
+                  <th>IP</th>
+                  <th><%= isEn ? 'Attempt' : '시도' %></th>
+                  <th><%= isEn ? 'Reason' : '사유' %></th>
+                  <th><%= isEn ? 'Status' : '상태' %></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (security.securityAlerts.length === 0) { %>
+                  <tr><td colspan="6"><%= isEn ? 'No anomaly alerts.' : '이상행동 알림이 없습니다.' %></td></tr>
+                <% } %>
+                <% security.securityAlerts.forEach((alert) => { %>
+                  <tr>
+                    <td><%= alert.created_at ? alert.created_at.slice(0, 16) : '-' %></td>
+                    <td><%= alert.actor_username %></td>
+                    <td><%= alert.ip_address || '-' %></td>
+                    <td><%= alert.method %> <%= alert.path %></td>
+                    <td><%= alert.reason_label || alert.reason %><br /><small><%= alert.detail || '-' %></small></td>
+                    <td>
+                      <% if (alert.resolved_at) { %>
+                        <small><%= isEn ? 'Resolved' : '확인완료' %> (<%= alert.resolved_at.slice(0, 16) %>)</small>
+                      <% } else { %>
+                        <form method="post" action="/admin/security/alert/<%= alert.id %>/resolve" class="inline-form">
+                          <button type="submit" class="chip dark"><%= isEn ? 'Mark Resolved' : '확인 처리' %></button>
+                        </form>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <% } %>
+    <% } %>
   </article>
   <% } %>
 
