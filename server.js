@@ -63,6 +63,8 @@ const ADMIN_MENUS = Object.freeze([
 ]);
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
+const SECURITY_PAGE_SIZE = 20;
+const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -305,6 +307,49 @@ function normalizeAdminRole(rawRole = '') {
 function normalizeSecuritySection(rawSection = '') {
   const section = String(rawSection || '').trim().toLowerCase();
   return SECURITY_SECTIONS.includes(section) ? section : 'profile';
+}
+
+function normalizeDateInput(rawDate = '') {
+  const value = String(rawDate || '').trim();
+  return DATE_INPUT_REGEX.test(value) ? value : '';
+}
+
+function normalizePositivePage(rawPage = 1) {
+  const parsed = Number.parseInt(String(rawPage || '1'), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 1;
+  }
+  return parsed;
+}
+
+function normalizeOptionalId(rawValue = '') {
+  const parsed = Number.parseInt(String(rawValue || ''), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function clampPage(page, totalPages) {
+  const safeTotal = Math.max(1, Number(totalPages) || 1);
+  const safePage = normalizePositivePage(page);
+  if (safePage > safeTotal) {
+    return safeTotal;
+  }
+  return safePage;
+}
+
+function parseSecurityQuery(query = {}) {
+  return {
+    logFrom: normalizeDateInput(query.logFrom || ''),
+    logTo: normalizeDateInput(query.logTo || ''),
+    logAdminId: normalizeOptionalId(query.logAdminId || ''),
+    alertFrom: normalizeDateInput(query.alertFrom || ''),
+    alertTo: normalizeDateInput(query.alertTo || ''),
+    alertAdminId: normalizeOptionalId(query.alertAdminId || ''),
+    logPage: normalizePositivePage(query.logPage || 1),
+    alertPage: normalizePositivePage(query.alertPage || 1)
+  };
 }
 
 function inferSecuritySectionFromRequest(req) {
@@ -1932,8 +1977,49 @@ function buildAdminDashboardStats() {
   };
 }
 
-function buildSecurityPanelData(lang = 'ko') {
+function buildSecurityPanelData(lang = 'ko', options = {}) {
   const isEn = lang === 'en';
+  const logFilters = {
+    from: normalizeDateInput(options.logFrom || ''),
+    to: normalizeDateInput(options.logTo || ''),
+    adminId: normalizeOptionalId(options.logAdminId || '')
+  };
+  const alertFilters = {
+    from: normalizeDateInput(options.alertFrom || ''),
+    to: normalizeDateInput(options.alertTo || ''),
+    adminId: normalizeOptionalId(options.alertAdminId || '')
+  };
+
+  const logWhere = ['1=1'];
+  const logParams = [];
+  if (logFilters.adminId > 0) {
+    logWhere.push('admin_user_id = ?');
+    logParams.push(logFilters.adminId);
+  }
+  if (logFilters.from) {
+    logWhere.push("date(datetime(created_at, '+9 hours')) >= date(?)");
+    logParams.push(logFilters.from);
+  }
+  if (logFilters.to) {
+    logWhere.push("date(datetime(created_at, '+9 hours')) <= date(?)");
+    logParams.push(logFilters.to);
+  }
+  const logWhereSql = logWhere.join(' AND ');
+
+  const totalLogsRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM admin_activity_logs
+        WHERE ${logWhereSql}
+      `
+    )
+    .get(...logParams);
+  const totalLogCount = Number(totalLogsRow?.count || 0);
+  const logTotalPages = Math.max(1, Math.ceil(totalLogCount / SECURITY_PAGE_SIZE));
+  const logPage = clampPage(options.logPage, logTotalPages);
+  const logOffset = (logPage - 1) * SECURITY_PAGE_SIZE;
+
   const adminUsers = db
     .prepare(
       `
@@ -1988,16 +2074,47 @@ function buildSecurityPanelData(lang = 'ko') {
           detail,
           created_at
         FROM admin_activity_logs
-        WHERE admin_role = 'SUB'
+        WHERE ${logWhereSql}
         ORDER BY id DESC
-        LIMIT 250
+        LIMIT ?
+        OFFSET ?
       `
     )
-    .all()
+    .all(...logParams, SECURITY_PAGE_SIZE, logOffset)
     .map((row) => ({
       ...row,
       user_agent: String(row.user_agent || '')
     }));
+
+  const alertWhere = ['1=1'];
+  const alertParams = [];
+  if (alertFilters.adminId > 0) {
+    alertWhere.push('actor_admin_user_id = ?');
+    alertParams.push(alertFilters.adminId);
+  }
+  if (alertFilters.from) {
+    alertWhere.push("date(datetime(created_at, '+9 hours')) >= date(?)");
+    alertParams.push(alertFilters.from);
+  }
+  if (alertFilters.to) {
+    alertWhere.push("date(datetime(created_at, '+9 hours')) <= date(?)");
+    alertParams.push(alertFilters.to);
+  }
+  const alertWhereSql = alertWhere.join(' AND ');
+
+  const totalAlertsRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM admin_security_alerts
+        WHERE ${alertWhereSql}
+      `
+    )
+    .get(...alertParams);
+  const totalAlertCount = Number(totalAlertsRow?.count || 0);
+  const alertTotalPages = Math.max(1, Math.ceil(totalAlertCount / SECURITY_PAGE_SIZE));
+  const alertPage = clampPage(options.alertPage, alertTotalPages);
+  const alertOffset = (alertPage - 1) * SECURITY_PAGE_SIZE;
 
   const securityAlerts = db
     .prepare(
@@ -2015,13 +2132,15 @@ function buildSecurityPanelData(lang = 'ko') {
           created_at,
           resolved_at
         FROM admin_security_alerts
+        WHERE ${alertWhereSql}
         ORDER BY
           CASE WHEN resolved_at IS NULL THEN 0 ELSE 1 END ASC,
           id DESC
-        LIMIT 250
+        LIMIT ?
+        OFFSET ?
       `
     )
-    .all()
+    .all(...alertParams, SECURITY_PAGE_SIZE, alertOffset)
     .map((row) => ({
       ...row,
       reason_label: getSecurityAlertReasonLabel(row.reason, lang)
@@ -2033,19 +2152,38 @@ function buildSecurityPanelData(lang = 'ko') {
         SELECT COUNT(*) AS count
         FROM admin_security_alerts
         WHERE resolved_at IS NULL
+          AND ${alertWhereSql}
       `
     )
-    .get();
+    .get(...alertParams);
 
   return {
     adminUsers,
     subAdminLogs,
     securityAlerts,
-    unresolvedAlertsCount: Number(unresolvedAlertsRow?.count || 0)
+    unresolvedAlertsCount: Number(unresolvedAlertsRow?.count || 0),
+    filters: {
+      log: logFilters,
+      alert: alertFilters
+    },
+    pagination: {
+      log: {
+        page: logPage,
+        totalPages: logTotalPages,
+        totalCount: totalLogCount,
+        pageSize: SECURITY_PAGE_SIZE
+      },
+      alert: {
+        page: alertPage,
+        totalPages: alertTotalPages,
+        totalCount: totalAlertCount,
+        pageSize: SECURITY_PAGE_SIZE
+      }
+    }
   };
 }
 
-function buildAdminDashboardViewData(lang = 'ko') {
+function buildAdminDashboardViewData(lang = 'ko', securityOptions = {}) {
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
@@ -2148,7 +2286,7 @@ function buildAdminDashboardViewData(lang = 'ko') {
       `
     )
     .all();
-  const securityPanelData = buildSecurityPanelData(lang);
+  const securityPanelData = buildSecurityPanelData(lang, securityOptions);
 
   return {
     settings,
@@ -2168,7 +2306,10 @@ function buildAdminDashboardViewData(lang = 'ko') {
 }
 
 function renderAdminDashboard(req, res, activeTab, extraData = {}) {
-  const viewData = buildAdminDashboardViewData(res.locals.ctx.lang);
+  const viewData = buildAdminDashboardViewData(
+    res.locals.ctx.lang,
+    extraData.securityOptions || parseSecurityQuery(req.query || {})
+  );
   return res.render('admin-dashboard', {
     title: 'Admin Dashboard',
     activeTab,
@@ -2178,7 +2319,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
   });
 }
 
-function handleSecurityDenied(req, res, securitySection = 'profile') {
+function handleSecurityDenied(req, res, securitySection = 'profile', securityOptions = {}) {
   recordSecurityAlert(req, 'security.primary_only.denied', 'sub-admin attempted security area access');
   logAdminActivity(req, 'SECURITY_DENIED', `blocked security route: ${req.path}`);
 
@@ -2187,7 +2328,7 @@ function handleSecurityDenied(req, res, securitySection = 'profile') {
     activeTab: 'security',
     securitySection: normalizeSecuritySection(securitySection),
     securityAccessDenied: true,
-    ...buildAdminDashboardViewData(res.locals.ctx.lang)
+    ...buildAdminDashboardViewData(res.locals.ctx.lang, securityOptions)
   });
 }
 
@@ -2201,14 +2342,23 @@ app.get('/admin', (req, res) => {
 app.get('/admin/dashboard', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'dashboard'));
 app.use('/admin/security', requireAdmin, (req, res, next) => {
   if (!req.user?.isPrimaryAdmin) {
-    return handleSecurityDenied(req, res, inferSecuritySectionFromRequest(req));
+    return handleSecurityDenied(
+      req,
+      res,
+      inferSecuritySectionFromRequest(req),
+      parseSecurityQuery(req.query || {})
+    );
   }
   return next();
 });
 
 app.get('/admin/security', requireAdmin, (req, res) => {
   const securitySection = normalizeSecuritySection(req.query.section || 'profile');
-  return renderAdminDashboard(req, res, 'security', { securitySection, securityAccessDenied: false });
+  return renderAdminDashboard(req, res, 'security', {
+    securitySection,
+    securityAccessDenied: false,
+    securityOptions: parseSecurityQuery(req.query || {})
+  });
 });
 
 app.post('/admin/security/profile/update', requirePrimaryAdmin, (req, res) => {

@@ -22,7 +22,15 @@
     adminUsers: [],
     subAdminLogs: [],
     securityAlerts: [],
-    unresolvedAlertsCount: 0
+    unresolvedAlertsCount: 0,
+    filters: {
+      log: { from: '', to: '', adminId: 0 },
+      alert: { from: '', to: '', adminId: 0 }
+    },
+    pagination: {
+      log: { page: 1, totalPages: 1, totalCount: 0, pageSize: 20 },
+      alert: { page: 1, totalPages: 1, totalCount: 0, pageSize: 20 }
+    }
   };
   const securityTab = ['profile', 'admins', 'logs', 'alerts'].includes(String(securitySection || ''))
     ? String(securitySection)
@@ -372,7 +380,34 @@
 
       <% if (securityTab === 'logs') { %>
         <section class="kpi-card">
-          <h4><%= isEn ? 'Sub Admin Activity Logs' : '서브관리자 활동 로그' %></h4>
+          <h4><%= isEn ? 'Admin Activity Logs' : '관리자 활동 로그' %></h4>
+          <% const logFilters = (security.filters && security.filters.log) ? security.filters.log : { from: '', to: '', adminId: 0 }; %>
+          <% const logPager = (security.pagination && security.pagination.log) ? security.pagination.log : { page: 1, totalPages: 1, totalCount: security.subAdminLogs.length }; %>
+          <form method="get" action="/admin/security" class="admin-filter-row">
+            <input type="hidden" name="section" value="logs" />
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'Admin' : '관리자' %></span>
+              <select name="logAdminId">
+                <option value=""><%= isEn ? 'All Admins' : '전체 관리자' %></option>
+                <% security.adminUsers.forEach((adminItem) => { %>
+                  <option value="<%= adminItem.id %>" <%= Number(logFilters.adminId || 0) === Number(adminItem.id) ? 'selected' : '' %>>
+                    <%= adminItem.username %> (<%= adminItem.admin_role_label %>)
+                  </option>
+                <% }) %>
+              </select>
+            </label>
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'From' : '시작일' %></span>
+              <input type="date" name="logFrom" value="<%= logFilters.from || '' %>" />
+            </label>
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'To' : '종료일' %></span>
+              <input type="date" name="logTo" value="<%= logFilters.to || '' %>" />
+            </label>
+            <button type="submit" class="chip dark"><%= isEn ? 'Filter' : '조회' %></button>
+            <a href="/admin/security?section=logs" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+          </form>
+          <p class="muted-label"><%= isEn ? `Total ${logPager.totalCount} records · Page ${logPager.page}/${logPager.totalPages}` : `총 ${logPager.totalCount}건 · ${logPager.page}/${logPager.totalPages} 페이지` %></p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -388,7 +423,7 @@
               </thead>
               <tbody>
                 <% if (security.subAdminLogs.length === 0) { %>
-                  <tr><td colspan="7"><%= isEn ? 'No sub admin logs yet.' : '서브관리자 로그가 없습니다.' %></td></tr>
+                  <tr><td colspan="7"><%= isEn ? 'No admin logs found.' : '조건에 맞는 관리자 로그가 없습니다.' %></td></tr>
                 <% } %>
                 <% security.subAdminLogs.forEach((log) => { %>
                   <tr>
@@ -404,13 +439,55 @@
               </tbody>
             </table>
           </div>
+          <div class="admin-pagination">
+            <% if (logPager.page > 1) { %>
+              <a
+                class="chip"
+                href="/admin/security?section=logs&logPage=<%= logPager.page - 1 %><%= Number(logFilters.adminId || 0) > 0 ? `&logAdminId=${Number(logFilters.adminId)}` : '' %><%= logFilters.from ? `&logFrom=${encodeURIComponent(logFilters.from)}` : '' %><%= logFilters.to ? `&logTo=${encodeURIComponent(logFilters.to)}` : '' %>"
+              ><%= isEn ? 'Prev' : '이전' %></a>
+            <% } %>
+            <span class="chip muted"><%= logPager.page %> / <%= logPager.totalPages %></span>
+            <% if (logPager.page < logPager.totalPages) { %>
+              <a
+                class="chip"
+                href="/admin/security?section=logs&logPage=<%= logPager.page + 1 %><%= Number(logFilters.adminId || 0) > 0 ? `&logAdminId=${Number(logFilters.adminId)}` : '' %><%= logFilters.from ? `&logFrom=${encodeURIComponent(logFilters.from)}` : '' %><%= logFilters.to ? `&logTo=${encodeURIComponent(logFilters.to)}` : '' %>"
+              ><%= isEn ? 'Next' : '다음' %></a>
+            <% } %>
+          </div>
         </section>
       <% } %>
 
       <% if (securityTab === 'alerts') { %>
         <section class="kpi-card">
-          <h4><%= isEn ? 'Sub Admin Anomaly Alerts' : '서브관리자 이상행동 알림' %></h4>
+          <h4><%= isEn ? 'Admin Security Alerts' : '관리자 보안 알림' %></h4>
+          <% const alertFilters = (security.filters && security.filters.alert) ? security.filters.alert : { from: '', to: '', adminId: 0 }; %>
+          <% const alertPager = (security.pagination && security.pagination.alert) ? security.pagination.alert : { page: 1, totalPages: 1, totalCount: security.securityAlerts.length }; %>
+          <form method="get" action="/admin/security" class="admin-filter-row">
+            <input type="hidden" name="section" value="alerts" />
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'Admin' : '관리자' %></span>
+              <select name="alertAdminId">
+                <option value=""><%= isEn ? 'All Admins' : '전체 관리자' %></option>
+                <% security.adminUsers.forEach((adminItem) => { %>
+                  <option value="<%= adminItem.id %>" <%= Number(alertFilters.adminId || 0) === Number(adminItem.id) ? 'selected' : '' %>>
+                    <%= adminItem.username %> (<%= adminItem.admin_role_label %>)
+                  </option>
+                <% }) %>
+              </select>
+            </label>
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'From' : '시작일' %></span>
+              <input type="date" name="alertFrom" value="<%= alertFilters.from || '' %>" />
+            </label>
+            <label class="admin-filter-item">
+              <span><%= isEn ? 'To' : '종료일' %></span>
+              <input type="date" name="alertTo" value="<%= alertFilters.to || '' %>" />
+            </label>
+            <button type="submit" class="chip dark"><%= isEn ? 'Filter' : '조회' %></button>
+            <a href="/admin/security?section=alerts" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+          </form>
           <p class="muted-label"><%= isEn ? `Unresolved alerts: ${security.unresolvedAlertsCount}` : `미확인 알림: ${security.unresolvedAlertsCount}` %></p>
+          <p class="muted-label"><%= isEn ? `Total ${alertPager.totalCount} records · Page ${alertPager.page}/${alertPager.totalPages}` : `총 ${alertPager.totalCount}건 · ${alertPager.page}/${alertPager.totalPages} 페이지` %></p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -425,7 +502,7 @@
               </thead>
               <tbody>
                 <% if (security.securityAlerts.length === 0) { %>
-                  <tr><td colspan="6"><%= isEn ? 'No anomaly alerts.' : '이상행동 알림이 없습니다.' %></td></tr>
+                  <tr><td colspan="6"><%= isEn ? 'No security alerts found.' : '조건에 맞는 보안 알림이 없습니다.' %></td></tr>
                 <% } %>
                 <% security.securityAlerts.forEach((alert) => { %>
                   <tr>
@@ -447,6 +524,21 @@
                 <% }) %>
               </tbody>
             </table>
+          </div>
+          <div class="admin-pagination">
+            <% if (alertPager.page > 1) { %>
+              <a
+                class="chip"
+                href="/admin/security?section=alerts&alertPage=<%= alertPager.page - 1 %><%= Number(alertFilters.adminId || 0) > 0 ? `&alertAdminId=${Number(alertFilters.adminId)}` : '' %><%= alertFilters.from ? `&alertFrom=${encodeURIComponent(alertFilters.from)}` : '' %><%= alertFilters.to ? `&alertTo=${encodeURIComponent(alertFilters.to)}` : '' %>"
+              ><%= isEn ? 'Prev' : '이전' %></a>
+            <% } %>
+            <span class="chip muted"><%= alertPager.page %> / <%= alertPager.totalPages %></span>
+            <% if (alertPager.page < alertPager.totalPages) { %>
+              <a
+                class="chip"
+                href="/admin/security?section=alerts&alertPage=<%= alertPager.page + 1 %><%= Number(alertFilters.adminId || 0) > 0 ? `&alertAdminId=${Number(alertFilters.adminId)}` : '' %><%= alertFilters.from ? `&alertFrom=${encodeURIComponent(alertFilters.from)}` : '' %><%= alertFilters.to ? `&alertTo=${encodeURIComponent(alertFilters.to)}` : '' %>"
+              ><%= isEn ? 'Next' : '다음' %></a>
+            <% } %>
           </div>
         </section>
       <% } %>
