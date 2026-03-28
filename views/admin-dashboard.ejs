@@ -551,15 +551,15 @@
   <% } %>
 
   <% if (tab === 'site') { %>
+  <%
+    const dayThemeColors = settings.dayThemeColors || {};
+    const nightThemeColors = settings.nightThemeColors || {};
+  %>
   <article class="block-card">
     <h3><%= isEn ? 'Site Customization' : '사이트 커스터마이징' %></h3>
     <form method="post" action="/admin/settings" enctype="multipart/form-data" class="form-grid">
       <label><%= isEn ? 'Site Name' : '쇼핑몰 이름' %>
         <input type="text" name="siteName" value="<%= settings.siteName %>" />
-      </label>
-
-      <label><%= isEn ? 'Header Color' : '헤더 컬러' %>
-        <input type="color" name="headerColor" value="<%= settings.headerColor %>" />
       </label>
 
       <label><%= isEn ? 'Background Type' : '배경 타입' %>
@@ -569,9 +569,67 @@
         </select>
       </label>
 
-      <label><%= isEn ? 'Background Color' : '배경 컬러' %>
-        <input type="color" name="backgroundColor" value="<%= settings.backgroundValue && settings.backgroundValue.startsWith('#') ? settings.backgroundValue : '#f7f7f8' %>" />
-      </label>
+      <fieldset class="theme-color-fieldset">
+        <legend><%= isEn ? 'Day Mode Colors' : '데이 모드 컬러' %></legend>
+        <label><%= isEn ? 'Header Color' : '헤더 컬러' %>
+          <input type="color" name="dayHeaderColor" value="<%= dayThemeColors.headerColor || '#111827' %>" />
+        </label>
+        <label><%= isEn ? 'Background Color' : '배경 컬러' %>
+          <input type="color" name="dayBackgroundColor" value="<%= dayThemeColors.backgroundColor || '#f7f7f8' %>" />
+        </label>
+        <label><%= isEn ? 'Text Color' : '본문 텍스트 컬러' %>
+          <input type="color" name="dayTextColor" value="<%= dayThemeColors.textColor || '#111213' %>" />
+        </label>
+        <label><%= isEn ? 'Muted Text Color' : '보조 텍스트 컬러' %>
+          <input type="color" name="dayMutedColor" value="<%= dayThemeColors.mutedColor || '#6d7178' %>" />
+        </label>
+        <label><%= isEn ? 'Border Line Color' : '라인/보더 컬러' %>
+          <input type="color" name="dayLineColor" value="<%= dayThemeColors.lineColor || '#e4e5e8' %>" />
+        </label>
+        <label><%= isEn ? 'Card Color' : '카드 배경 컬러' %>
+          <input type="color" name="dayCardColor" value="<%= dayThemeColors.cardColor || '#ffffff' %>" />
+        </label>
+        <label><%= isEn ? 'Dark Card Color' : '강조 카드 컬러' %>
+          <input type="color" name="dayCardDarkColor" value="<%= dayThemeColors.cardDarkColor || '#121318' %>" />
+        </label>
+        <label><%= isEn ? 'Dark Card Text Color' : '강조 카드 텍스트 컬러' %>
+          <input type="color" name="dayCardDarkTextColor" value="<%= dayThemeColors.cardDarkTextColor || '#f8f9fb' %>" />
+        </label>
+        <label><%= isEn ? 'Chip/Control Fill' : '칩/컨트롤 배경 컬러' %>
+          <input type="color" name="dayChipColor" value="<%= dayThemeColors.chipColor || '#f5f6f8' %>" />
+        </label>
+      </fieldset>
+
+      <fieldset class="theme-color-fieldset">
+        <legend><%= isEn ? 'Night Mode Colors' : '나이트 모드 컬러' %></legend>
+        <label><%= isEn ? 'Header Color' : '헤더 컬러' %>
+          <input type="color" name="nightHeaderColor" value="<%= nightThemeColors.headerColor || '#0f172a' %>" />
+        </label>
+        <label><%= isEn ? 'Background Color' : '배경 컬러' %>
+          <input type="color" name="nightBackgroundColor" value="<%= nightThemeColors.backgroundColor || '#000000' %>" />
+        </label>
+        <label><%= isEn ? 'Text Color' : '본문 텍스트 컬러' %>
+          <input type="color" name="nightTextColor" value="<%= nightThemeColors.textColor || '#111213' %>" />
+        </label>
+        <label><%= isEn ? 'Muted Text Color' : '보조 텍스트 컬러' %>
+          <input type="color" name="nightMutedColor" value="<%= nightThemeColors.mutedColor || '#6d7178' %>" />
+        </label>
+        <label><%= isEn ? 'Border Line Color' : '라인/보더 컬러' %>
+          <input type="color" name="nightLineColor" value="<%= nightThemeColors.lineColor || '#dfe2e8' %>" />
+        </label>
+        <label><%= isEn ? 'Card Color' : '카드 배경 컬러' %>
+          <input type="color" name="nightCardColor" value="<%= nightThemeColors.cardColor || '#ffffff' %>" />
+        </label>
+        <label><%= isEn ? 'Dark Card Color' : '강조 카드 컬러' %>
+          <input type="color" name="nightCardDarkColor" value="<%= nightThemeColors.cardDarkColor || '#f1f3f7' %>" />
+        </label>
+        <label><%= isEn ? 'Dark Card Text Color' : '강조 카드 텍스트 컬러' %>
+          <input type="color" name="nightCardDarkTextColor" value="<%= nightThemeColors.cardDarkTextColor || '#111213' %>" />
+        </label>
+        <label><%= isEn ? 'Chip/Control Fill' : '칩/컨트롤 배경 컬러' %>
+          <input type="color" name="nightChipColor" value="<%= nightThemeColors.chipColor || '#f3f4f6' %>" />
+        </label>
+      </fieldset>
 
       <label><%= isEn ? 'Background Image Upload' : '배경 이미지 업로드' %>
         <input type="file" name="backgroundImage" accept="image/*" />

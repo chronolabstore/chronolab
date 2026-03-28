@@ -65,6 +65,32 @@ const ADMIN_MENUS = Object.freeze([
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
 const SECURITY_PAGE_SIZE = 20;
 const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+
+const DEFAULT_THEME_COLORS = Object.freeze({
+  day: Object.freeze({
+    headerColor: '#111827',
+    backgroundColor: '#f7f7f8',
+    textColor: '#111213',
+    mutedColor: '#6d7178',
+    lineColor: '#e4e5e8',
+    cardColor: '#ffffff',
+    cardDarkColor: '#121318',
+    cardDarkTextColor: '#f8f9fb',
+    chipColor: '#f5f6f8'
+  }),
+  night: Object.freeze({
+    headerColor: '#0f172a',
+    backgroundColor: '#000000',
+    textColor: '#111213',
+    mutedColor: '#6d7178',
+    lineColor: '#dfe2e8',
+    cardColor: '#ffffff',
+    cardDarkColor: '#f1f3f7',
+    cardDarkTextColor: '#111213',
+    chipColor: '#f3f4f6'
+  })
+});
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -353,6 +379,53 @@ function parseSecurityQuery(query = {}) {
     logPage: normalizePositivePage(query.logPage || 1),
     alertPage: normalizePositivePage(query.alertPage || 1)
   };
+}
+
+function normalizeHexColor(rawColor = '', fallback = '#000000') {
+  const value = String(rawColor || '').trim();
+  if (HEX_COLOR_REGEX.test(value)) {
+    return value.toLowerCase();
+  }
+  const safeFallback = String(fallback || '').trim();
+  if (HEX_COLOR_REGEX.test(safeFallback)) {
+    return safeFallback.toLowerCase();
+  }
+  return '#000000';
+}
+
+function getThemeColorConfig(themeMode = 'day') {
+  const key = themeMode === 'night' ? 'night' : 'day';
+  const defaults = DEFAULT_THEME_COLORS[key];
+  const legacyHeader = normalizeHexColor(getSetting('headerColor', defaults.headerColor), defaults.headerColor);
+  const legacyBg = normalizeHexColor(getSetting('backgroundValue', defaults.backgroundColor), defaults.backgroundColor);
+
+  return {
+    headerColor: normalizeHexColor(getSetting(`${key}HeaderColor`, legacyHeader), defaults.headerColor),
+    backgroundColor: normalizeHexColor(getSetting(`${key}BackgroundColor`, legacyBg), defaults.backgroundColor),
+    textColor: normalizeHexColor(getSetting(`${key}TextColor`, defaults.textColor), defaults.textColor),
+    mutedColor: normalizeHexColor(getSetting(`${key}MutedColor`, defaults.mutedColor), defaults.mutedColor),
+    lineColor: normalizeHexColor(getSetting(`${key}LineColor`, defaults.lineColor), defaults.lineColor),
+    cardColor: normalizeHexColor(getSetting(`${key}CardColor`, defaults.cardColor), defaults.cardColor),
+    cardDarkColor: normalizeHexColor(getSetting(`${key}CardDarkColor`, defaults.cardDarkColor), defaults.cardDarkColor),
+    cardDarkTextColor: normalizeHexColor(
+      getSetting(`${key}CardDarkTextColor`, defaults.cardDarkTextColor),
+      defaults.cardDarkTextColor
+    ),
+    chipColor: normalizeHexColor(getSetting(`${key}ChipColor`, defaults.chipColor), defaults.chipColor)
+  };
+}
+
+function buildThemeCssVars(colorConfig = {}) {
+  return [
+    `--bg:${colorConfig.backgroundColor || DEFAULT_THEME_COLORS.day.backgroundColor}`,
+    `--text:${colorConfig.textColor || DEFAULT_THEME_COLORS.day.textColor}`,
+    `--muted:${colorConfig.mutedColor || DEFAULT_THEME_COLORS.day.mutedColor}`,
+    `--line:${colorConfig.lineColor || DEFAULT_THEME_COLORS.day.lineColor}`,
+    `--card:${colorConfig.cardColor || DEFAULT_THEME_COLORS.day.cardColor}`,
+    `--card-dark:${colorConfig.cardDarkColor || DEFAULT_THEME_COLORS.day.cardDarkColor}`,
+    `--card-dark-text:${colorConfig.cardDarkTextColor || DEFAULT_THEME_COLORS.day.cardDarkTextColor}`,
+    `--chip:${colorConfig.chipColor || DEFAULT_THEME_COLORS.day.chipColor}`
+  ].join(';');
 }
 
 function inferSecuritySectionFromRequest(req) {
@@ -811,13 +884,22 @@ app.use((req, res, next) => {
   const isAdminPage = req.path.startsWith('/admin') && req.path !== '/admin/login';
   const menus = isAdminPage && Boolean(req.user?.isAdmin) ? getAdminMenus(req.user) : publicMenus;
 
-  const headerColor = getSetting('headerColor', '#111827');
-  const backgroundType = getSetting('backgroundType', 'color');
-  const backgroundValue = getSetting('backgroundValue', '#f7f7f8');
+  const dayThemeColors = getThemeColorConfig('day');
+  const nightThemeColors = getThemeColorConfig('night');
+  const activeThemeColors = themeMode === 'night' ? nightThemeColors : dayThemeColors;
 
-  let backgroundStyle = `background: ${backgroundValue};`;
-  if (backgroundType === 'image' && backgroundValue) {
-    backgroundStyle = `background-image: url('${backgroundValue}'); background-size: cover; background-position: center;`;
+  const headerColor = activeThemeColors.headerColor;
+  const backgroundType = getSetting('backgroundType', 'color');
+  const backgroundValue = getSetting('backgroundValue', activeThemeColors.backgroundColor);
+  const themeCssVars = buildThemeCssVars(activeThemeColors);
+  const hasBackgroundImage =
+    backgroundType === 'image' &&
+    Boolean(backgroundValue) &&
+    !HEX_COLOR_REGEX.test(String(backgroundValue).trim());
+
+  let backgroundStyle = `background: ${activeThemeColors.backgroundColor} !important;`;
+  if (hasBackgroundImage) {
+    backgroundStyle = `background-color: ${activeThemeColors.backgroundColor} !important; background-image: url('${backgroundValue}') !important; background-size: cover !important; background-position: center !important;`;
   }
 
   const popupNotice = db
@@ -851,6 +933,9 @@ app.use((req, res, next) => {
       backgroundType,
       backgroundValue,
       backgroundStyle,
+      themeCssVars,
+      dayThemeColors,
+      nightThemeColors,
       bankAccountInfo: getSetting('bankAccountInfo', ''),
       contactInfo: getSetting('contactInfo', ''),
       businessInfo: getSetting('businessInfo', '')
@@ -2188,14 +2273,18 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
 
 function buildAdminDashboardViewData(lang = 'ko', securityOptions = {}) {
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
+  const dayThemeColors = getThemeColorConfig('day');
+  const nightThemeColors = getThemeColorConfig('night');
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
-    headerColor: getSetting('headerColor', '#111827'),
+    headerColor: dayThemeColors.headerColor,
     headerLogoPath: getSetting('headerLogoPath', ''),
     headerSymbolPath: getSetting('headerSymbolPath', ''),
     footerLogoPath: getSetting('footerLogoPath', ''),
     backgroundType: getSetting('backgroundType', 'color'),
-    backgroundValue: getSetting('backgroundValue', '#f7f7f8'),
+    backgroundValue: getSetting('backgroundValue', dayThemeColors.backgroundColor),
+    dayThemeColors,
+    nightThemeColors,
     bankAccountInfo: getSetting('bankAccountInfo', ''),
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
@@ -2759,18 +2848,78 @@ app.post(
   (req, res) => {
     const backPath = safeBackPath(req, '/admin/site');
     const siteName = String(req.body.siteName || 'Chrono Lab').trim();
-    const headerColor = String(req.body.headerColor || '#111827').trim();
     const backgroundType = String(req.body.backgroundType || 'color').trim();
-    const backgroundColor = String(req.body.backgroundColor || '#f7f7f8').trim();
+    const dayThemeDefaults = DEFAULT_THEME_COLORS.day;
+    const nightThemeDefaults = DEFAULT_THEME_COLORS.night;
+
+    const dayHeaderColor = normalizeHexColor(
+      req.body.dayHeaderColor || req.body.headerColor || '',
+      dayThemeDefaults.headerColor
+    );
+    const dayBackgroundColor = normalizeHexColor(
+      req.body.dayBackgroundColor || req.body.backgroundColor || '',
+      dayThemeDefaults.backgroundColor
+    );
+    const dayTextColor = normalizeHexColor(req.body.dayTextColor || '', dayThemeDefaults.textColor);
+    const dayMutedColor = normalizeHexColor(req.body.dayMutedColor || '', dayThemeDefaults.mutedColor);
+    const dayLineColor = normalizeHexColor(req.body.dayLineColor || '', dayThemeDefaults.lineColor);
+    const dayCardColor = normalizeHexColor(req.body.dayCardColor || '', dayThemeDefaults.cardColor);
+    const dayCardDarkColor = normalizeHexColor(req.body.dayCardDarkColor || '', dayThemeDefaults.cardDarkColor);
+    const dayCardDarkTextColor = normalizeHexColor(
+      req.body.dayCardDarkTextColor || '',
+      dayThemeDefaults.cardDarkTextColor
+    );
+    const dayChipColor = normalizeHexColor(req.body.dayChipColor || '', dayThemeDefaults.chipColor);
+
+    const nightHeaderColor = normalizeHexColor(req.body.nightHeaderColor || '', nightThemeDefaults.headerColor);
+    const nightBackgroundColor = normalizeHexColor(
+      req.body.nightBackgroundColor || '',
+      nightThemeDefaults.backgroundColor
+    );
+    const nightTextColor = normalizeHexColor(req.body.nightTextColor || '', nightThemeDefaults.textColor);
+    const nightMutedColor = normalizeHexColor(req.body.nightMutedColor || '', nightThemeDefaults.mutedColor);
+    const nightLineColor = normalizeHexColor(req.body.nightLineColor || '', nightThemeDefaults.lineColor);
+    const nightCardColor = normalizeHexColor(req.body.nightCardColor || '', nightThemeDefaults.cardColor);
+    const nightCardDarkColor = normalizeHexColor(req.body.nightCardDarkColor || '', nightThemeDefaults.cardDarkColor);
+    const nightCardDarkTextColor = normalizeHexColor(
+      req.body.nightCardDarkTextColor || '',
+      nightThemeDefaults.cardDarkTextColor
+    );
+    const nightChipColor = normalizeHexColor(req.body.nightChipColor || '', nightThemeDefaults.chipColor);
+
     const bankAccountInfo = String(req.body.bankAccountInfo || '').trim();
     const contactInfo = String(req.body.contactInfo || '').trim();
     const businessInfo = String(req.body.businessInfo || '').trim();
     const languageDefault = resolveLanguage(req.body.languageDefault || 'ko', 'ko');
 
     setSetting('siteName', siteName || 'Chrono Lab');
-    setSetting('headerColor', headerColor || '#111827');
+    setSetting('dayHeaderColor', dayHeaderColor);
+    setSetting('dayBackgroundColor', dayBackgroundColor);
+    setSetting('dayTextColor', dayTextColor);
+    setSetting('dayMutedColor', dayMutedColor);
+    setSetting('dayLineColor', dayLineColor);
+    setSetting('dayCardColor', dayCardColor);
+    setSetting('dayCardDarkColor', dayCardDarkColor);
+    setSetting('dayCardDarkTextColor', dayCardDarkTextColor);
+    setSetting('dayChipColor', dayChipColor);
+
+    setSetting('nightHeaderColor', nightHeaderColor);
+    setSetting('nightBackgroundColor', nightBackgroundColor);
+    setSetting('nightTextColor', nightTextColor);
+    setSetting('nightMutedColor', nightMutedColor);
+    setSetting('nightLineColor', nightLineColor);
+    setSetting('nightCardColor', nightCardColor);
+    setSetting('nightCardDarkColor', nightCardDarkColor);
+    setSetting('nightCardDarkTextColor', nightCardDarkTextColor);
+    setSetting('nightChipColor', nightChipColor);
+
+    // Backward-compatible legacy keys
+    setSetting('headerColor', dayHeaderColor);
     setSetting('backgroundType', backgroundType === 'image' ? 'image' : 'color');
-    setSetting('backgroundValue', backgroundType === 'image' ? getSetting('backgroundValue', '#f7f7f8') : backgroundColor);
+    setSetting(
+      'backgroundValue',
+      backgroundType === 'image' ? getSetting('backgroundValue', dayBackgroundColor) : dayBackgroundColor
+    );
     setSetting('bankAccountInfo', bankAccountInfo);
     setSetting('contactInfo', contactInfo);
     setSetting('businessInfo', businessInfo);
