@@ -1244,6 +1244,10 @@ body.theme-night .detail-card-dark .cta-main:hover {
   border-color: var(--text);
 }
 
+.dashboard-shop-card {
+  margin-top: 12px;
+}
+
 .shop-split-grid {
   margin-top: 10px;
   display: grid;

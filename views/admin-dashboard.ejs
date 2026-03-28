@@ -94,8 +94,8 @@
       </div>
     </div>
 
-    <div class="kpi-card">
-      <h4><%= isEn ? 'Shop Inventory (3 Groups)' : '쇼핑몰 상품 현황 (3분할)' %></h4>
+    <div class="kpi-card dashboard-shop-card">
+      <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
       <p class="muted-label"><%= isEn ? `Active ${stats.shopCounts.active} / Total ${stats.shopCounts.total}` : `활성 ${stats.shopCounts.active} / 전체 ${stats.shopCounts.total}` %></p>
       <div class="shop-split-grid">
         <% stats.shopCounts.byGroup.forEach((groupItem) => { %>
