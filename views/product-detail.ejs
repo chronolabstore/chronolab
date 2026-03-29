@@ -49,26 +49,36 @@
   </div>
 
   <div class="detail-card-dark">
-    <h2>₩<%= ctx.formatPrice(product.price) %></h2>
-    <h3><%= product.brand %> <%= product.model %> <%= product.sub_model %></h3>
+    <h2><%= Number(product.price || 0) > 0 ? `₩${ctx.formatPrice(product.price)}` : (isEn ? 'Price on request' : '가격문의') %></h2>
+    <h3>
+      <%= productDisplay?.title || `${product.brand || ''} ${product.model || ''}`.trim() %>
+      <% if (productDisplay?.subtitle) { %>
+        <small class="muted-label"><%= productDisplay.subtitle %></small>
+      <% } %>
+    </h3>
+    <p class="muted-label"><%= productGroupLabel || product.category_group %></p>
 
-    <div class="spec-grid">
-      <span>Reference: <strong><%= product.reference || '-' %></strong></span>
-      <span>Factory: <strong><%= product.factory_name || '-' %></strong></span>
-      <span>Version: <strong><%= product.version_name || '-' %></strong></span>
-      <span>Movement: <strong><%= product.movement || '-' %></strong></span>
-      <span>Case Size: <strong><%= product.case_size || '-' %></strong></span>
-      <span>Dial: <strong><%= product.dial_color || '-' %></strong></span>
-      <span>Case: <strong><%= product.case_material || '-' %></strong></span>
-      <span>Bracelet/Strap: <strong><%= product.strap_material || '-' %></strong></span>
-      <span><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></span>
-    </div>
-
-    <p class="feature-copy"><%= product.features || '-' %></p>
-
-    <% if (product.category_group === '공장제') { %>
+    <% if ((productGroupConfig && productGroupConfig.mode === 'factory') || product.category_group === '공장제') { %>
+      <div class="spec-grid">
+        <span>Reference: <strong><%= product.reference || '-' %></strong></span>
+        <span>Factory: <strong><%= product.factory_name || '-' %></strong></span>
+        <span>Version: <strong><%= product.version_name || '-' %></strong></span>
+        <span>Movement: <strong><%= product.movement || '-' %></strong></span>
+        <span>Case Size: <strong><%= product.case_size || '-' %></strong></span>
+        <span>Dial: <strong><%= product.dial_color || '-' %></strong></span>
+        <span>Case: <strong><%= product.case_material || '-' %></strong></span>
+        <span>Bracelet/Strap: <strong><%= product.strap_material || '-' %></strong></span>
+        <span><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></span>
+      </div>
+      <p class="feature-copy"><%= product.features || '-' %></p>
       <a href="/shop/item/<%= product.id %>/purchase" class="cta-main full"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
     <% } else { %>
+      <div class="spec-grid">
+        <span><%= isEn ? 'Summary' : '간략 설명' %>: <strong><%= productDisplay?.summary || '-' %></strong></span>
+        <% (productDisplay?.customPairs || []).forEach((field) => { %>
+          <span><%= isEn ? (field.labelEn || field.labelKo || field.key) : (field.labelKo || field.labelEn || field.key) %>: <strong><%= field.value %></strong></span>
+        <% }) %>
+      </div>
       <form method="post" action="/order/create" class="order-form">
         <input type="hidden" name="productId" value="<%= product.id %>" />
         <label><%= isEn ? 'Quantity' : '수량' %>
@@ -105,8 +115,8 @@
         <% } else { %>
           <div class="image-fallback">WATCH</div>
         <% } %>
-        <strong><%= item.model %></strong>
-        <span>₩<%= ctx.formatPrice(item.price) %></span>
+        <strong><%= item.display_title || item.model %></strong>
+        <span><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></span>
       </a>
     <% }) %>
   </div>

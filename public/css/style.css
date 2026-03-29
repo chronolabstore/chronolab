@@ -1021,6 +1021,37 @@ textarea {
   font-size: 0.88rem;
 }
 
+.product-upload-mode-box {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.product-upload-mode-box[hidden] {
+  display: none !important;
+}
+
+.product-simple-fields {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.product-simple-fields[hidden] {
+  display: none !important;
+}
+
+.product-simple-fields h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
 .theme-color-fieldset {
   margin: 2px 0;
   padding: 12px;
@@ -1299,6 +1330,13 @@ textarea {
   margin-left: auto;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.admin-field-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .admin-account-editor {

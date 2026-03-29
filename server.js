@@ -1,14 +1,17 @@
 import path from 'path';
+import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
+import sharp from 'sharp';
 import {
   db,
   initDb,
   getDefaultMenus,
+  getDefaultProductGroupConfigs,
   getPostCounts,
   getSetting,
   getVisitCounts,
@@ -76,6 +79,11 @@ const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
 const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const PRODUCT_GROUP_MODE = Object.freeze({
+  FACTORY: 'factory',
+  SIMPLE: 'simple'
+});
+const PRODUCT_CUSTOM_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
 
 const DEFAULT_THEME_COLORS = Object.freeze({
   day: Object.freeze({
@@ -225,6 +233,381 @@ function parseMenus(rawMenus, options = {}) {
     return normalizedMenus.filter((menu) => !menu.isHidden);
   } catch {
     return getDefaultMenus();
+  }
+}
+
+function normalizeProductGroupKey(rawKey = '', fallback = '') {
+  const base = String(rawKey || fallback || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[<>`"'\\/?:#]/g, '')
+    .slice(0, 40);
+  return base;
+}
+
+function normalizeProductFieldKey(rawKey = '', fallback = 'field') {
+  const key = String(rawKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return key || fallback;
+}
+
+function buildFieldKeyFromLabel(label = '', fallbackIndex = 1) {
+  const normalized = normalizeProductFieldKey(label, '');
+  if (normalized) {
+    return normalized;
+  }
+  return `field_${fallbackIndex}`;
+}
+
+function getSimpleModeDefaultFields() {
+  return [
+    { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
+    { key: 'summary', labelKo: '간략 설명', labelEn: 'Summary', type: 'textarea', required: true }
+  ];
+}
+
+function normalizeProductGroupConfigs(rawValue) {
+  const fallback = getDefaultProductGroupConfigs();
+  let parsed = [];
+
+  try {
+    if (typeof rawValue === 'string') {
+      const maybeParsed = JSON.parse(rawValue);
+      if (Array.isArray(maybeParsed)) {
+        parsed = maybeParsed;
+      }
+    } else if (Array.isArray(rawValue)) {
+      parsed = rawValue;
+    }
+  } catch {
+    parsed = [];
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    parsed = fallback;
+  }
+
+  const normalizedGroups = [];
+  const usedGroupKeys = new Set();
+
+  parsed.forEach((group, idx) => {
+    if (!group || typeof group !== 'object') {
+      return;
+    }
+
+    const fallbackGroup = fallback[idx] || fallback[0];
+    const modeRaw = String(group.mode || fallbackGroup?.mode || PRODUCT_GROUP_MODE.SIMPLE)
+      .trim()
+      .toLowerCase();
+    const mode = modeRaw === PRODUCT_GROUP_MODE.FACTORY ? PRODUCT_GROUP_MODE.FACTORY : PRODUCT_GROUP_MODE.SIMPLE;
+
+    const labelKo = String(group.labelKo || group.labelEn || fallbackGroup?.labelKo || `분류 ${idx + 1}`)
+      .trim()
+      .slice(0, 60);
+    const labelEn = String(group.labelEn || group.labelKo || fallbackGroup?.labelEn || `Category ${idx + 1}`)
+      .trim()
+      .slice(0, 60);
+
+    const keySeed = normalizeProductGroupKey(group.key || labelKo || labelEn, fallbackGroup?.key || `분류${idx + 1}`);
+    if (!keySeed) {
+      return;
+    }
+
+    let key = keySeed;
+    let suffix = 2;
+    while (usedGroupKeys.has(key)) {
+      key = normalizeProductGroupKey(`${keySeed} ${suffix}`, `${keySeed}-${suffix}`) || `${keySeed}-${suffix}`;
+      suffix += 1;
+    }
+    usedGroupKeys.add(key);
+
+    let customFields = [];
+    if (mode === PRODUCT_GROUP_MODE.SIMPLE) {
+      const sourceFields = Array.isArray(group.customFields) ? group.customFields : [];
+      const usedFieldKeys = new Set();
+      customFields = sourceFields
+        .filter((field) => field && typeof field === 'object')
+        .map((field, fieldIndex) => {
+          const fieldLabelKo = String(field.labelKo || field.labelEn || `항목 ${fieldIndex + 1}`)
+            .trim()
+            .slice(0, 60);
+          const fieldLabelEn = String(field.labelEn || field.labelKo || `Field ${fieldIndex + 1}`)
+            .trim()
+            .slice(0, 60);
+          const rawType = String(field.type || 'text').trim().toLowerCase();
+          const type = PRODUCT_CUSTOM_FIELD_TYPES.has(rawType) ? rawType : 'text';
+          const required =
+            field.required === true ||
+            String(field.required || '').toLowerCase() === 'true' ||
+            String(field.required || '') === '1';
+
+          const baseFieldKey = normalizeProductFieldKey(
+            field.key || buildFieldKeyFromLabel(fieldLabelEn || fieldLabelKo, fieldIndex + 1),
+            `field_${fieldIndex + 1}`
+          );
+
+          let finalFieldKey = baseFieldKey;
+          let fieldSuffix = 2;
+          while (usedFieldKeys.has(finalFieldKey)) {
+            finalFieldKey = normalizeProductFieldKey(`${baseFieldKey}_${fieldSuffix}`, `${baseFieldKey}_${fieldSuffix}`);
+            fieldSuffix += 1;
+          }
+          usedFieldKeys.add(finalFieldKey);
+
+          return {
+            key: finalFieldKey,
+            labelKo: fieldLabelKo,
+            labelEn: fieldLabelEn,
+            type,
+            required
+          };
+        });
+
+      if (customFields.length === 0) {
+        customFields = getSimpleModeDefaultFields();
+      }
+
+      if (!customFields.some((field) => field.key === 'title')) {
+        customFields.unshift({
+          key: 'title',
+          labelKo: '제목',
+          labelEn: 'Title',
+          type: 'text',
+          required: true
+        });
+      }
+      if (!customFields.some((field) => field.key === 'summary')) {
+        customFields.push({
+          key: 'summary',
+          labelKo: '간략 설명',
+          labelEn: 'Summary',
+          type: 'textarea',
+          required: true
+        });
+      }
+
+      customFields = customFields.map((field) => {
+        if (field.key === 'title' || field.key === 'summary') {
+          return { ...field, required: true };
+        }
+        return field;
+      });
+    }
+
+    normalizedGroups.push({
+      key,
+      labelKo: labelKo || key,
+      labelEn: labelEn || key,
+      mode,
+      customFields
+    });
+  });
+
+  if (normalizedGroups.length === 0) {
+    return fallback;
+  }
+
+  return normalizedGroups;
+}
+
+function getProductGroupConfigs() {
+  const fallback = getDefaultProductGroupConfigs();
+  const raw = getSetting('productGroupConfigs', JSON.stringify(fallback));
+  const normalized = normalizeProductGroupConfigs(raw);
+  const normalizedJson = JSON.stringify(normalized);
+  if (String(raw || '') !== normalizedJson) {
+    setSetting('productGroupConfigs', normalizedJson);
+  }
+  return normalized;
+}
+
+function setProductGroupConfigs(configs) {
+  const normalized = normalizeProductGroupConfigs(configs);
+  setSetting('productGroupConfigs', JSON.stringify(normalized));
+  return normalized;
+}
+
+function getProductGroupMap(groupConfigs = getProductGroupConfigs()) {
+  return new Map(groupConfigs.map((group) => [group.key, group]));
+}
+
+function getProductGroupLabels(groupConfigs = getProductGroupConfigs(), lang = 'ko') {
+  const labels = {};
+  groupConfigs.forEach((group) => {
+    labels[group.key] = lang === 'en' ? group.labelEn || group.key : group.labelKo || group.key;
+  });
+  return labels;
+}
+
+function parseProductExtraFields(rawExtraFieldsJson) {
+  try {
+    const parsed = JSON.parse(String(rawExtraFieldsJson || '{}'));
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+    if (parsed.values && typeof parsed.values === 'object' && !Array.isArray(parsed.values)) {
+      return parsed.values;
+    }
+    if (Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function buildProductDisplayData(product, groupConfig) {
+  const safeProduct = product || {};
+  const mode =
+    groupConfig?.mode === PRODUCT_GROUP_MODE.FACTORY ? PRODUCT_GROUP_MODE.FACTORY : PRODUCT_GROUP_MODE.SIMPLE;
+  const extraValues = parseProductExtraFields(safeProduct.extra_fields_json);
+
+  if (mode === PRODUCT_GROUP_MODE.FACTORY) {
+    return {
+      title: `${safeProduct.brand || ''} ${safeProduct.model || ''}`.trim() || '-',
+      subtitle: String(safeProduct.sub_model || '').trim(),
+      meta: [safeProduct.case_material, safeProduct.movement].filter(Boolean).join(' / '),
+      summary: String(safeProduct.features || '').trim(),
+      customPairs: []
+    };
+  }
+
+  const customFields = Array.isArray(groupConfig?.customFields) ? groupConfig.customFields : [];
+  const title = String(extraValues.title || extraValues.name || safeProduct.brand || '').trim();
+  const summary = String(extraValues.summary || extraValues.description || safeProduct.sub_model || '').trim();
+  const customPairs = customFields
+    .map((field) => {
+      const value = String(extraValues[field.key] || '').trim();
+      if (!value || field.key === 'title' || field.key === 'summary') {
+        return null;
+      }
+      return {
+        key: field.key,
+        labelKo: field.labelKo || field.key,
+        labelEn: field.labelEn || field.labelKo || field.key,
+        value
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    title: title || `${safeProduct.brand || ''} ${safeProduct.model || ''}`.trim() || '-',
+    subtitle: summary || String(safeProduct.sub_model || '').trim(),
+    meta: customPairs.map((pair) => pair.value).join(' / '),
+    summary: summary || String(safeProduct.features || '').trim(),
+    customPairs
+  };
+}
+
+function decorateProductForView(product, groupConfig) {
+  const display = buildProductDisplayData(product, groupConfig);
+  return {
+    ...product,
+    display_title: display.title,
+    display_subtitle: display.subtitle,
+    display_meta: display.meta,
+    display_summary: display.summary,
+    display_fields: display.customPairs
+  };
+}
+
+function escapeSvgText(raw = '') {
+  return String(raw || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildChronoLabWatermarkSvg(width, height) {
+  const safeWidth = Math.max(120, Math.floor(Number(width || 0)));
+  const safeHeight = Math.max(120, Math.floor(Number(height || 0)));
+  const fontSize = Math.max(12, Math.min(26, Math.round(safeWidth / 34)));
+  const repeatCount = Math.max(4, Math.ceil(safeWidth / (fontSize * 5.2)));
+  const lineText = escapeSvgText(Array.from({ length: repeatCount }).fill('Chrono Lab').join('   '));
+  const yRows = [0.25, 0.5, 0.75];
+
+  const textLines = yRows
+    .map(
+      (ratio) => `
+        <text x="50%" y="${Math.round(safeHeight * ratio)}" text-anchor="middle" dominant-baseline="middle">
+          ${lineText}
+        </text>
+      `
+    )
+    .join('');
+
+  return `
+    <svg width="${safeWidth}" height="${safeHeight}" viewBox="0 0 ${safeWidth} ${safeHeight}" xmlns="http://www.w3.org/2000/svg">
+      <style>
+        text {
+          font-family: 'Noto Sans KR', 'Noto Sans', sans-serif;
+          font-size: ${fontSize}px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          fill: rgba(255, 255, 255, 0.16);
+          stroke: rgba(0, 0, 0, 0.16);
+          stroke-width: 0.6;
+        }
+      </style>
+      ${textLines}
+    </svg>
+  `;
+}
+
+async function applyChronoLabWatermarkToFile(filePath) {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    const image = sharp(filePath);
+    const metadata = await image.metadata();
+    const width = Number(metadata.width || 0);
+    const height = Number(metadata.height || 0);
+    const format = String(metadata.format || '').toLowerCase();
+
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    if (!['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(format)) {
+      return;
+    }
+
+    const watermarkSvg = buildChronoLabWatermarkSvg(width, height);
+    let pipeline = image.composite([{ input: Buffer.from(watermarkSvg), top: 0, left: 0 }]);
+
+    if (format === 'jpeg' || format === 'jpg') {
+      pipeline = pipeline.jpeg({ quality: 92, mozjpeg: true });
+    } else if (format === 'png') {
+      pipeline = pipeline.png({ compressionLevel: 9 });
+    } else if (format === 'webp') {
+      pipeline = pipeline.webp({ quality: 90 });
+    } else if (format === 'avif') {
+      pipeline = pipeline.avif({ quality: 56 });
+    }
+
+    const outputBuffer = await pipeline.toBuffer();
+    await fs.writeFile(filePath, outputBuffer);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[chrono-lab:watermark]', error);
+  }
+}
+
+async function applyChronoLabWatermarkToUploads(files = []) {
+  for (const file of files) {
+    if (!file?.path) {
+      continue;
+    }
+    await applyChronoLabWatermarkToFile(file.path);
   }
 }
 
@@ -1217,20 +1600,38 @@ app.get('/toggle-theme', (req, res) => {
 });
 
 app.get('/main', (req, res) => {
-  const groupedProducts = SHOP_PRODUCT_GROUPS.map((groupName) => ({
-    groupName,
-    products: db
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const groupedProducts = productGroupConfigs.map((groupConfig) => {
+    const rows = db
       .prepare(
         `
-          SELECT id, brand, model, sub_model, price, image_path, shipping_period
+          SELECT
+            id,
+            category_group,
+            brand,
+            model,
+            sub_model,
+            price,
+            image_path,
+            shipping_period,
+            case_material,
+            movement,
+            features,
+            extra_fields_json
           FROM products
           WHERE is_active = 1 AND category_group = ?
           ORDER BY id DESC
           LIMIT 4
         `
       )
-      .all(groupName)
-  }));
+      .all(groupConfig.key);
+
+    return {
+      groupName: groupConfig.key,
+      products: rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+    };
+  });
 
   const latestNotices = db
     .prepare(
@@ -1254,13 +1655,34 @@ app.get('/main', (req, res) => {
     )
     .all();
 
-  res.render('main', { title: 'Main', groupedProducts, latestNotices, latestNews });
+  res.render('main', {
+    title: 'Main',
+    groupedProducts,
+    latestNotices,
+    latestNews,
+    productGroupConfigs,
+    groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang)
+  });
 });
 
 app.get('/shop', (req, res) => {
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const fallbackGroups = productGroupConfigs.map((groupConfig) => groupConfig.key);
+  if (fallbackGroups.length === 0) {
+    fallbackGroups.push(...SHOP_PRODUCT_GROUPS);
+  }
+
   const groupRaw = String(req.query.group || '').trim();
-  const group = SHOP_PRODUCT_GROUPS.includes(groupRaw) ? groupRaw : SHOP_PRODUCT_GROUPS[0];
-  const canUseBrandModelFilter = group === '공장제';
+  const group = fallbackGroups.includes(groupRaw) ? groupRaw : fallbackGroups[0];
+  const selectedGroupConfig = productGroupMap.get(group) || {
+    key: group,
+    labelKo: group,
+    labelEn: group,
+    mode: PRODUCT_GROUP_MODE.SIMPLE,
+    customFields: []
+  };
+  const canUseBrandModelFilter = selectedGroupConfig.mode === PRODUCT_GROUP_MODE.FACTORY;
   const brand = canUseBrandModelFilter ? String(req.query.brand || '').trim() : '';
   const model = canUseBrandModelFilter ? String(req.query.model || '').trim() : '';
 
@@ -1305,21 +1727,38 @@ app.get('/shop', (req, res) => {
     params.push(model);
   }
 
-  const products = db
+  const productRows = db
     .prepare(
       `
-        SELECT id, category_group, brand, model, sub_model, price, image_path, shipping_period, case_material, movement
+        SELECT
+          id,
+          category_group,
+          brand,
+          model,
+          sub_model,
+          price,
+          image_path,
+          shipping_period,
+          case_material,
+          movement,
+          features,
+          extra_fields_json
         FROM products
         WHERE ${where.join(' AND ')}
         ORDER BY id DESC
       `
     )
     .all(...params);
+  const products = productRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
 
   res.render('shop', {
     title: 'Shop',
     group,
-    productGroups: SHOP_PRODUCT_GROUPS,
+    productGroups: fallbackGroups,
+    productGroupConfigs,
+    selectedGroupConfig,
+    supportsBrandModelFilter: canUseBrandModelFilter,
+    groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,
     model,
     brands,
@@ -1340,6 +1779,16 @@ app.get('/shop/item/:id', (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const productGroupConfig = productGroupMap.get(product.category_group) || {
+    key: product.category_group,
+    labelKo: product.category_group,
+    labelEn: product.category_group,
+    mode: PRODUCT_GROUP_MODE.SIMPLE,
+    customFields: []
+  };
+
   incrementFunnelEventUniqueInSession(req, FUNNEL_EVENT.PRODUCT_VIEW, `product:${id}`);
 
   const imageRows = db
@@ -1357,19 +1806,46 @@ app.get('/shop/item/:id', (req, res) => {
     imageList.push(product.image_path);
   }
 
-  const similar = db
-    .prepare(
-      `
-        SELECT id, brand, model, sub_model, price, image_path
-        FROM products
-        WHERE is_active = 1 AND brand = ? AND id != ?
-        ORDER BY id DESC
-        LIMIT 6
-      `
-    )
-    .all(product.brand, product.id);
+  let similarRows = [];
+  if (productGroupConfig.mode === PRODUCT_GROUP_MODE.FACTORY) {
+    similarRows = db
+      .prepare(
+        `
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          FROM products
+          WHERE is_active = 1 AND brand = ? AND id != ?
+          ORDER BY id DESC
+          LIMIT 6
+        `
+      )
+      .all(product.brand, product.id);
+  } else {
+    similarRows = db
+      .prepare(
+        `
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          FROM products
+          WHERE is_active = 1 AND category_group = ? AND id != ?
+          ORDER BY id DESC
+          LIMIT 6
+        `
+      )
+      .all(product.category_group, product.id);
+  }
 
-  res.render('product-detail', { title: 'Product', product, similar, imageList });
+  const similar = similarRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
+  const productDisplay = buildProductDisplayData(product, productGroupConfig);
+  const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
+
+  res.render('product-detail', {
+    title: 'Product',
+    product,
+    productDisplay,
+    productGroupConfig,
+    productGroupLabel: groupLabelMap[product.category_group] || product.category_group,
+    similar,
+    imageList
+  });
 });
 
 app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
@@ -1386,8 +1862,10 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
-  if (product.category_group !== '공장제') {
-    setFlash(req, 'error', '공장제 상품만 해당 구매 페이지를 이용할 수 있습니다.');
+  const productGroupMap = getProductGroupMap(getProductGroupConfigs());
+  const selectedGroupConfig = productGroupMap.get(product.category_group);
+  if (!selectedGroupConfig || selectedGroupConfig.mode !== PRODUCT_GROUP_MODE.FACTORY) {
+    setFlash(req, 'error', '상세 스펙형 상품만 해당 구매 페이지를 이용할 수 있습니다.');
     return res.redirect(`/shop/item/${id}`);
   }
 
@@ -1418,8 +1896,10 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
-  if (product.category_group !== '공장제') {
-    setFlash(req, 'error', '공장제 상품만 해당 구매 페이지를 이용할 수 있습니다.');
+  const productGroupMap = getProductGroupMap(getProductGroupConfigs());
+  const selectedGroupConfig = productGroupMap.get(product.category_group);
+  if (!selectedGroupConfig || selectedGroupConfig.mode !== PRODUCT_GROUP_MODE.FACTORY) {
+    setFlash(req, 'error', '상세 스펙형 상품만 해당 구매 페이지를 이용할 수 있습니다.');
     return res.redirect(`/shop/item/${id}`);
   }
 
@@ -2471,7 +2951,17 @@ function buildAdminDashboardStats() {
     ])
   );
 
-  const orderByGroup = SHOP_PRODUCT_GROUPS.map((groupName) => {
+  const configuredGroupNames = getProductGroupConfigs().map((group) => group.key);
+  const observedOrderGroupNames = orderGroupRows
+    .map((row) => String(row.category_group || '').trim())
+    .filter(Boolean)
+    .filter((groupName, idx, arr) => arr.indexOf(groupName) === idx);
+  const orderGroupNames = [
+    ...configuredGroupNames,
+    ...observedOrderGroupNames.filter((groupName) => !configuredGroupNames.includes(groupName))
+  ];
+
+  const orderByGroup = orderGroupNames.map((groupName) => {
     const found = orderGroupMap.get(groupName);
     return (
       found || {
@@ -2544,7 +3034,16 @@ function buildAdminDashboardStats() {
     }])
   );
 
-  const shopByGroup = SHOP_PRODUCT_GROUPS.map((groupName) => {
+  const observedShopGroupNames = shopGroupRows
+    .map((row) => String(row.category_group || '').trim())
+    .filter(Boolean)
+    .filter((groupName, idx, arr) => arr.indexOf(groupName) === idx);
+  const shopGroupNames = [
+    ...configuredGroupNames,
+    ...observedShopGroupNames.filter((groupName) => !configuredGroupNames.includes(groupName))
+  ];
+
+  const shopByGroup = shopGroupNames.map((groupName) => {
     const found = groupMap.get(groupName);
     return {
       groupName,
@@ -2990,7 +3489,13 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     menusJson: JSON.stringify(publicMenus, null, 2)
   };
 
-  const products = db.prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100').all();
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
+  const products = db
+    .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
+    .all()
+    .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)));
   const orders = db
     .prepare(
       `
@@ -3093,7 +3598,9 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     dashboardStats: includeDashboardStats ? getCachedAdminDashboardStats() : null,
     trackingCarriers: TRACKING_CARRIERS,
     formatPrice,
-    productGroups: SHOP_PRODUCT_GROUPS
+    productGroups: productGroupConfigs.map((group) => group.key),
+    productGroupConfigs,
+    groupLabelMap
   };
 }
 
@@ -3799,6 +4306,180 @@ app.post('/admin/menu/toggle/:id', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
+app.post('/admin/product-group/add', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const labelKo = String(req.body.labelKo || '').trim().slice(0, 60);
+  const labelEn = String(req.body.labelEn || '').trim().slice(0, 60);
+  const modeRaw = String(req.body.mode || PRODUCT_GROUP_MODE.SIMPLE).trim().toLowerCase();
+  const mode = modeRaw === PRODUCT_GROUP_MODE.FACTORY ? PRODUCT_GROUP_MODE.FACTORY : PRODUCT_GROUP_MODE.SIMPLE;
+
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '분류명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const requestedKey = normalizeProductGroupKey(req.body.key || labelKo, labelKo);
+  if (!requestedKey) {
+    setFlash(req, 'error', '분류 키를 생성할 수 없습니다. 이름을 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+  if (configs.some((group) => group.key === requestedKey)) {
+    setFlash(req, 'error', '이미 같은 분류 키가 존재합니다. 다른 이름으로 생성해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextConfigs = [...configs, {
+    key: requestedKey,
+    labelKo,
+    labelEn,
+    mode,
+    customFields: mode === PRODUCT_GROUP_MODE.SIMPLE ? getSimpleModeDefaultFields() : []
+  }];
+  setProductGroupConfigs(nextConfigs);
+
+  setFlash(req, 'success', '쇼핑몰 분류가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/remove/:key', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const key = normalizeProductGroupKey(req.params.key || '');
+  const configs = getProductGroupConfigs();
+  const target = configs.find((group) => group.key === key);
+
+  if (!target) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (configs.length <= 1) {
+    setFlash(req, 'error', '최소 1개의 분류는 유지되어야 합니다.');
+    return res.redirect(backPath);
+  }
+
+  const linkedProductRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM products
+        WHERE category_group = ?
+      `
+    )
+    .get(key);
+  if (Number(linkedProductRow?.count || 0) > 0) {
+    setFlash(req, 'error', '해당 분류에 등록된 상품이 있어 삭제할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextConfigs = configs.filter((group) => group.key !== key);
+  setProductGroupConfigs(nextConfigs);
+  setFlash(req, 'success', '쇼핑몰 분류가 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/field/add', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const labelKo = String(req.body.labelKo || '').trim().slice(0, 60);
+  const labelEn = String(req.body.labelEn || '').trim().slice(0, 60);
+  const rawType = String(req.body.fieldType || 'text').trim().toLowerCase();
+  const fieldType = PRODUCT_CUSTOM_FIELD_TYPES.has(rawType) ? rawType : 'text';
+  const required = req.body.required === 'on';
+
+  if (!groupKey || !labelKo || !labelEn) {
+    setFlash(req, 'error', '필드 추가에 필요한 값을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '필드를 추가할 분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const targetGroup = configs[targetIndex];
+  if (targetGroup.mode !== PRODUCT_GROUP_MODE.SIMPLE) {
+    setFlash(req, 'error', '간략형 분류에서만 커스텀 필드를 추가할 수 있습니다.');
+    return res.redirect(backPath);
+  }
+
+  const existingFields = Array.isArray(targetGroup.customFields) ? targetGroup.customFields : [];
+  const requestedKey = normalizeProductFieldKey(
+    req.body.fieldKey || buildFieldKeyFromLabel(labelEn || labelKo, existingFields.length + 1),
+    `field_${existingFields.length + 1}`
+  );
+  if (existingFields.some((field) => field.key === requestedKey)) {
+    setFlash(req, 'error', '같은 필드 키가 이미 존재합니다. 키를 변경해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextGroups = [...configs];
+  nextGroups[targetIndex] = {
+    ...targetGroup,
+    customFields: [
+      ...existingFields,
+      { key: requestedKey, labelKo, labelEn, type: fieldType, required }
+    ]
+  };
+
+  setProductGroupConfigs(nextGroups);
+  setFlash(req, 'success', '업로드 필드가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/field/remove', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const fieldKey = normalizeProductFieldKey(req.body.fieldKey || '', '');
+
+  if (!groupKey || !fieldKey) {
+    setFlash(req, 'error', '분류와 필드 키를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const targetGroup = configs[targetIndex];
+  if (targetGroup.mode !== PRODUCT_GROUP_MODE.SIMPLE) {
+    setFlash(req, 'error', '간략형 분류에서만 필드 삭제가 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  const existingFields = Array.isArray(targetGroup.customFields) ? targetGroup.customFields : [];
+  if (existingFields.length <= 1) {
+    setFlash(req, 'error', '최소 1개 이상의 업로드 필드는 유지되어야 합니다.');
+    return res.redirect(backPath);
+  }
+
+  if (fieldKey === 'title' || fieldKey === 'summary') {
+    setFlash(req, 'error', '기본 필드(title, summary)는 삭제할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextFields = existingFields.filter((field) => field.key !== fieldKey);
+  if (nextFields.length === existingFields.length) {
+    setFlash(req, 'error', '삭제할 필드를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextGroups = [...configs];
+  nextGroups[targetIndex] = {
+    ...targetGroup,
+    customFields: nextFields
+  };
+
+  setProductGroupConfigs(nextGroups);
+  setFlash(req, 'success', '업로드 필드가 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
 app.post(
   '/admin/settings',
   requireAdmin,
@@ -3959,33 +4640,91 @@ app.post(
   }
 );
 
-app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req, res) => {
+app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products');
-  const categoryGroupRaw = String(req.body.categoryGroup || SHOP_PRODUCT_GROUPS[0]).trim();
-  const categoryGroup = SHOP_PRODUCT_GROUPS.includes(categoryGroupRaw)
-    ? categoryGroupRaw
-    : SHOP_PRODUCT_GROUPS[0];
-  const brand = String(req.body.brand || '').trim();
-  const model = String(req.body.model || '').trim();
-  const subModel = String(req.body.subModel || '').trim();
-  const reference = String(req.body.reference || '').trim();
-  const factoryName = String(req.body.factoryName || '').trim();
-  const versionName = String(req.body.versionName || '').trim();
-  const movement = String(req.body.movement || '').trim();
-  const caseSize = String(req.body.caseSize || '').trim();
-  const dialColor = String(req.body.dialColor || '').trim();
-  const caseMaterial = String(req.body.caseMaterial || '').trim();
-  const strapMaterial = String(req.body.strapMaterial || '').trim();
-  const features = String(req.body.features || '').trim();
-  const price = parsePositiveInt(req.body.price, 0);
-  const shippingPeriod = String(req.body.shippingPeriod || '').trim();
+  const productGroupConfigs = getProductGroupConfigs();
+  const fallbackGroupKey = productGroupConfigs[0]?.key || SHOP_PRODUCT_GROUPS[0] || '공장제';
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const categoryGroupRaw = String(req.body.categoryGroup || fallbackGroupKey).trim();
+  const selectedGroup = productGroupMap.get(categoryGroupRaw) || productGroupConfigs[0] || {
+    key: fallbackGroupKey,
+    labelKo: fallbackGroupKey,
+    labelEn: fallbackGroupKey,
+    mode: PRODUCT_GROUP_MODE.SIMPLE,
+    customFields: getSimpleModeDefaultFields()
+  };
+  const categoryGroup = selectedGroup.key;
 
-  if (!brand || !model || !subModel || price <= 0) {
-    setFlash(req, 'error', '브랜드/모델/세부모델/가격은 필수입니다.');
-    return res.redirect(backPath);
+  let brand = String(req.body.brand || '').trim();
+  let model = String(req.body.model || '').trim();
+  let subModel = String(req.body.subModel || '').trim();
+  let reference = String(req.body.reference || '').trim();
+  let factoryName = String(req.body.factoryName || '').trim();
+  let versionName = String(req.body.versionName || '').trim();
+  let movement = String(req.body.movement || '').trim();
+  let caseSize = String(req.body.caseSize || '').trim();
+  let dialColor = String(req.body.dialColor || '').trim();
+  let caseMaterial = String(req.body.caseMaterial || '').trim();
+  let strapMaterial = String(req.body.strapMaterial || '').trim();
+  let features = String(req.body.features || '').trim();
+  let price = parsePositiveInt(req.body.price, 0);
+  let shippingPeriod = String(req.body.shippingPeriod || '').trim();
+
+  let extraFieldsJson = '{}';
+  if (selectedGroup.mode === PRODUCT_GROUP_MODE.FACTORY) {
+    if (!brand || !model || !subModel || price <= 0) {
+      setFlash(req, 'error', '상세형 분류는 브랜드/모델/세부모델/가격이 필수입니다.');
+      return res.redirect(backPath);
+    }
+  } else {
+    const rawExtraFields =
+      req.body.extraFields && typeof req.body.extraFields === 'object' && !Array.isArray(req.body.extraFields)
+        ? req.body.extraFields
+        : {};
+    const groupFields =
+      Array.isArray(selectedGroup.customFields) && selectedGroup.customFields.length > 0
+        ? selectedGroup.customFields
+        : getSimpleModeDefaultFields();
+    const extraFieldValues = {};
+    for (const field of groupFields) {
+      const rawValue = rawExtraFields[field.key];
+      const value = String(rawValue || '')
+        .trim()
+        .slice(0, field.type === 'textarea' ? 1000 : 300);
+      if (field.required && !value) {
+        setFlash(req, 'error', `${field.labelKo || field.key} 항목은 필수입니다.`);
+        return res.redirect(backPath);
+      }
+      extraFieldValues[field.key] = value;
+    }
+
+    const simpleTitle = String(extraFieldValues.title || '').trim();
+    const simpleSummary = String(extraFieldValues.summary || '').trim();
+    if (!simpleTitle || !simpleSummary) {
+      setFlash(req, 'error', '간략형 분류는 제목과 간략 설명이 필수입니다.');
+      return res.redirect(backPath);
+    }
+
+    brand = simpleTitle.slice(0, 80);
+    model = (selectedGroup.labelKo || selectedGroup.key || '상품').slice(0, 80);
+    subModel = simpleSummary.slice(0, 180);
+    reference = '';
+    factoryName = '';
+    versionName = '';
+    movement = '';
+    caseSize = '';
+    dialColor = '';
+    caseMaterial = '';
+    strapMaterial = '';
+    features = simpleSummary.slice(0, 500);
+    price = 0;
+    shippingPeriod = '';
+    extraFieldsJson = JSON.stringify({ values: extraFieldValues });
   }
 
-  const uploadedImages = Array.isArray(req.files) ? req.files.map((file) => fileUrl(file)).filter(Boolean) : [];
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  await applyChronoLabWatermarkToUploads(uploadedFiles);
+  const uploadedImages = uploadedFiles.map((file) => fileUrl(file)).filter(Boolean);
   const primaryImage = uploadedImages[0] || '';
 
   const inserted = db.prepare(
@@ -4006,8 +4745,9 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req
         features,
         price,
         shipping_period,
-        image_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        image_path,
+        extra_fields_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     categoryGroup,
@@ -4025,7 +4765,8 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req
     features,
     price,
     shippingPeriod,
-    primaryImage
+    primaryImage,
+    extraFieldsJson
   );
   const productId = Number(inserted.lastInsertRowid);
 
@@ -4044,7 +4785,7 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), (req
 
   setFlash(req, 'success', '상품이 등록되었습니다.');
   res.redirect(backPath);
-});
+}));
 
 app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/products');

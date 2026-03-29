@@ -2,11 +2,21 @@
 <%
   const tab = activeTab || 'dashboard';
   const isEn = ctx.lang === 'en';
-  const groupLabelMap = {
-    '공장제': isEn ? 'Factory' : '공장제',
-    '젠파츠': isEn ? 'Gen Parts' : '젠파츠',
-    '현지중고': isEn ? 'Local Used' : '현지중고'
-  };
+  const productGroupConfigList = Array.isArray(productGroupConfigs) ? productGroupConfigs : [];
+  const productGroupKeys = Array.isArray(productGroups) && productGroups.length > 0
+    ? productGroups
+    : productGroupConfigList.map((group) => group.key);
+  const groupLabelByKey = (() => {
+    if (groupLabelMap && typeof groupLabelMap === 'object' && !Array.isArray(groupLabelMap)) {
+      return groupLabelMap;
+    }
+    const generated = {};
+    productGroupConfigList.forEach((group) => {
+      generated[group.key] = isEn ? (group.labelEn || group.key) : (group.labelKo || group.key);
+    });
+    return generated;
+  })();
+  const defaultGroupKey = productGroupKeys[0] || '공장제';
 
   const stats = dashboardStats || {
     users: { active: 0, blocked: 0, total: 0 },
@@ -71,8 +81,8 @@
     <%
       const orderByGroup = Array.isArray(stats.orderCounts.byGroup) ? stats.orderCounts.byGroup : [];
       const shopByGroup = Array.isArray(stats.shopCounts.byGroup) ? stats.shopCounts.byGroup : [];
-      const defaultOrderGroup = orderByGroup.find((item) => item.groupName === '공장제') || orderByGroup[0] || {
-        groupName: '공장제',
+      const defaultOrderGroup = orderByGroup.find((item) => item.groupName === defaultGroupKey) || orderByGroup[0] || {
+        groupName: defaultGroupKey,
         totalCount: 0,
         pendingReview: 0,
         confirmed: 0,
@@ -80,8 +90,8 @@
         shipping: 0,
         delivered: 0
       };
-      const defaultShopGroup = shopByGroup.find((item) => item.groupName === '공장제') || shopByGroup[0] || {
-        groupName: '공장제',
+      const defaultShopGroup = shopByGroup.find((item) => item.groupName === defaultGroupKey) || shopByGroup[0] || {
+        groupName: defaultGroupKey,
         totalCount: 0,
         activeCount: 0,
         hiddenCount: 0
@@ -123,12 +133,12 @@
         <div class="kpi-head-row">
           <h4><%= isEn ? 'Order Status Summary' : '주문 상태 집계' %></h4>
           <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'order group switch' : '주문 분류 전환' %>">
-            <% ['공장제', '젠파츠', '현지중고'].forEach((groupName, idx) => { %>
-              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-order-group="<%= groupName %>"><%= groupLabelMap[groupName] || groupName %></button>
+            <% productGroupKeys.forEach((groupName, idx) => { %>
+              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-order-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
             <% }) %>
           </div>
         </div>
-        <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelMap[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelMap[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
+        <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
         <ul class="metric-list">
           <li><span><%= isEn ? 'Unchecked' : '미확인 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
           <li><span><%= isEn ? 'Confirmed' : '확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
@@ -258,12 +268,12 @@
         <div class="kpi-head-row">
           <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
           <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'shop group switch' : '상품 분류 전환' %>">
-            <% ['공장제', '젠파츠', '현지중고'].forEach((groupName, idx) => { %>
-              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-shop-group="<%= groupName %>"><%= groupLabelMap[groupName] || groupName %></button>
+            <% productGroupKeys.forEach((groupName, idx) => { %>
+              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-shop-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
             <% }) %>
           </div>
         </div>
-        <p class="muted-label" data-shop-caption><%= isEn ? `${groupLabelMap[defaultShopGroup.groupName] || defaultShopGroup.groupName} inventory summary.` : `${groupLabelMap[defaultShopGroup.groupName] || defaultShopGroup.groupName} 상품 현황입니다.` %></p>
+        <p class="muted-label" data-shop-caption><%= isEn ? `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} inventory summary.` : `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} 상품 현황입니다.` %></p>
         <ul class="metric-list">
           <li><span><%= isEn ? 'Total' : '전체 상품' %></span><strong data-shop-value="totalCount"><%= defaultShopGroup.totalCount %></strong></li>
           <li><span><%= isEn ? 'Active' : '활성' %></span><strong data-shop-value="activeCount"><%= defaultShopGroup.activeCount %></strong></li>
@@ -326,7 +336,8 @@
           blocked: <%- JSON.stringify(isEn ? 'Blocked members count.' : '블락 회원 수입니다.') %>
         };
         const isEnMode = <%= isEn ? 'true' : 'false' %>;
-        const groupLabelMapJs = <%- JSON.stringify(groupLabelMap) %>;
+        const groupLabelMapJs = <%- JSON.stringify(groupLabelByKey) %>;
+        const defaultGroupKeyJs = <%- JSON.stringify(defaultGroupKey) %>;
 
         const memberButtons = Array.from(memberRoot.querySelectorAll('[data-member-type]'));
         const memberValueNode = memberRoot.querySelector('[data-member-value]');
@@ -363,7 +374,14 @@
           const target =
             orderDataset.find((item) => item && item.groupName === groupName) ||
             orderDataset[0] ||
-            { groupName: '공장제', pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0 };
+            {
+              groupName: defaultGroupKeyJs,
+              pendingReview: 0,
+              confirmed: 0,
+              readyToShip: 0,
+              shipping: 0,
+              delivered: 0
+            };
 
           orderFields.forEach((field) => {
             if (orderValueNodes[field]) {
@@ -424,7 +442,7 @@
           const target =
             shopDataset.find((item) => item && item.groupName === groupName) ||
             shopDataset[0] ||
-            { groupName: '공장제', totalCount: 0, activeCount: 0, hiddenCount: 0 };
+            { groupName: defaultGroupKeyJs, totalCount: 0, activeCount: 0, hiddenCount: 0 };
 
           shopFields.forEach((field) => {
             if (shopValueNodes[field]) {
@@ -452,7 +470,7 @@
 
         orderButtons.forEach((btn) => {
           btn.addEventListener('click', () => {
-            applyOrderGroup(btn.dataset.orderGroup || '공장제');
+            applyOrderGroup(btn.dataset.orderGroup || defaultGroupKeyJs);
           });
         });
 
@@ -464,14 +482,14 @@
 
         shopButtons.forEach((btn) => {
           btn.addEventListener('click', () => {
-            applyShopGroup(btn.dataset.shopGroup || '공장제');
+            applyShopGroup(btn.dataset.shopGroup || defaultGroupKeyJs);
           });
         });
 
         applyMemberType('active');
-        applyOrderGroup('공장제');
+        applyOrderGroup(defaultGroupKeyJs);
         applyVisitType('member');
-        applyShopGroup('공장제');
+        applyShopGroup(defaultGroupKeyJs);
       })();
     </script>
   </article>
@@ -1195,67 +1213,282 @@
         </div>
       <% }) %>
     </div>
+
+    <hr />
+
+    <h3><%= isEn ? 'Shop Category Manager' : '쇼핑몰 분류 관리' %></h3>
+    <p class="muted-label">
+      <%= isEn ? 'Add/remove shop categories and configure upload fields per category.' : '쇼핑몰 분류를 추가/삭제하고 분류별 업로드 항목을 설정할 수 있습니다.' %>
+    </p>
+
+    <form method="post" action="/admin/product-group/add" class="form-grid">
+      <label><%= isEn ? 'Category Key (optional)' : '분류 키 (선택)' %>
+        <input type="text" name="key" placeholder="<%= isEn ? 'factory-custom' : 'factory-custom' %>" />
+      </label>
+      <label><%= isEn ? 'Category Name (KR)' : '분류명 (KR)' %>
+        <input type="text" name="labelKo" required />
+      </label>
+      <label><%= isEn ? 'Category Name (EN)' : '분류명 (EN)' %>
+        <input type="text" name="labelEn" required />
+      </label>
+      <label><%= isEn ? 'Upload Mode' : '업로드 방식' %>
+        <select name="mode" required>
+          <option value="factory"><%= isEn ? 'Detailed (Factory-style)' : '상세형 (공장제 스타일)' %></option>
+          <option value="simple" selected><%= isEn ? 'Simple (Title + Summary)' : '간략형 (제목 + 설명)' %></option>
+        </select>
+      </label>
+      <button type="submit" class="chip dark"><%= isEn ? 'Add Category' : '분류 추가' %></button>
+    </form>
+
+    <div class="admin-list">
+      <% productGroupConfigList.forEach((group) => { %>
+        <div class="admin-list-item">
+          <strong><%= group.labelKo || group.key %> / <%= group.labelEn || group.key %></strong>
+          <span><%= isEn ? 'Key' : '키' %>: <code><%= group.key %></code></span>
+          <span class="muted-label">
+            <%= group.mode === 'factory' ? (isEn ? 'Detailed upload mode' : '상세형 업로드') : (isEn ? 'Simple upload mode' : '간략형 업로드') %>
+          </span>
+          <% if (group.mode !== 'factory') { %>
+            <div class="admin-field-chip-row">
+              <% (group.customFields || []).forEach((field) => { %>
+                <span class="chip"><%= field.labelKo || field.key %> / <%= field.labelEn || field.key %> · <%= field.type %><%= field.required ? (isEn ? ' · required' : ' · 필수') : '' %></span>
+                <% if (field.key !== 'title' && field.key !== 'summary') { %>
+                  <form method="post" action="/admin/product-group/field/remove" class="inline-form">
+                    <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                    <input type="hidden" name="fieldKey" value="<%= field.key %>" />
+                    <button type="submit" class="chip"><%= isEn ? 'Delete Field' : '필드 삭제' %></button>
+                  </form>
+                <% } %>
+              <% }) %>
+            </div>
+          <% } %>
+          <div class="admin-account-actions">
+            <% if (productGroupConfigList.length > 1) { %>
+              <form method="post" action="/admin/product-group/remove/<%= encodeURIComponent(group.key) %>" class="inline-form">
+                <button type="submit" class="chip"><%= isEn ? 'Delete Category' : '분류 삭제' %></button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+
+    <%
+      const simpleGroups = productGroupConfigList.filter((group) => group.mode !== 'factory');
+    %>
+    <% if (simpleGroups.length > 0) { %>
+      <h4><%= isEn ? 'Custom Upload Field Add' : '커스텀 업로드 항목 추가' %></h4>
+      <form method="post" action="/admin/product-group/field/add" class="form-grid">
+        <label><%= isEn ? 'Target Category' : '대상 분류' %>
+          <select name="groupKey" required>
+            <% simpleGroups.forEach((group) => { %>
+              <option value="<%= group.key %>"><%= group.labelKo || group.key %> / <%= group.labelEn || group.key %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label><%= isEn ? 'Field Key (optional)' : '필드 키 (선택)' %>
+          <input type="text" name="fieldKey" placeholder="material_grade" />
+        </label>
+        <label><%= isEn ? 'Field Name (KR)' : '필드명 (KR)' %>
+          <input type="text" name="labelKo" required />
+        </label>
+        <label><%= isEn ? 'Field Name (EN)' : '필드명 (EN)' %>
+          <input type="text" name="labelEn" required />
+        </label>
+        <label><%= isEn ? 'Field Type' : '필드 타입' %>
+          <select name="fieldType" required>
+            <option value="text"><%= isEn ? 'Text' : '텍스트' %></option>
+            <option value="textarea"><%= isEn ? 'Textarea' : '긴 텍스트' %></option>
+            <option value="number"><%= isEn ? 'Number' : '숫자' %></option>
+          </select>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" name="required" />
+          <span><%= isEn ? 'Required field' : '필수 항목' %></span>
+        </label>
+        <button type="submit" class="chip dark"><%= isEn ? 'Add Field' : '필드 추가' %></button>
+      </form>
+    <% } else { %>
+      <p class="muted-label"><%= isEn ? 'There is no simple category yet. Add one first to create custom fields.' : '간략형 분류가 없습니다. 먼저 분류를 추가해 주세요.' %></p>
+    <% } %>
   </article>
   <% } %>
 
   <% if (tab === 'products') { %>
   <article class="block-card">
     <h3><%= isEn ? 'Product Upload' : '상품 업로드' %></h3>
-    <form method="post" action="/admin/product/create" enctype="multipart/form-data" class="form-grid">
+    <%
+      const uploadSimpleGroups = productGroupConfigList.filter((group) => group.mode !== 'factory');
+    %>
+    <form method="post" action="/admin/product/create" enctype="multipart/form-data" class="form-grid" data-product-upload-form data-product-groups="<%- encodeURIComponent(JSON.stringify(productGroupConfigList)) %>">
       <label><%= isEn ? 'Images (multiple upload)' : '사진 (여러 장 업로드 가능)' %>
         <input type="file" name="images" accept="image/*" multiple />
+        <small class="muted-label"><%= isEn ? 'All uploaded images are automatically watermarked with "Chrono Lab".' : '업로드된 모든 이미지는 자동으로 "Chrono Lab" 워터마크가 적용됩니다.' %></small>
       </label>
       <label><%= isEn ? 'Top Category' : '상위 분류' %>
-        <select name="categoryGroup" required>
+        <select name="categoryGroup" required data-product-group-select>
           <% productGroups.forEach((groupName) => { %>
-            <option value="<%= groupName %>"><%= groupLabelMap[groupName] || groupName %></option>
+            <option value="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></option>
           <% }) %>
         </select>
       </label>
-      <label><%= isEn ? 'Brand' : '브랜드' %>
-        <input type="text" name="brand" placeholder="Rolex" required />
-      </label>
-      <label><%= isEn ? 'Model' : '모델명' %>
-        <input type="text" name="model" placeholder="Submariner" required />
-      </label>
-      <label><%= isEn ? 'Sub Model' : '세부모델명' %>
-        <input type="text" name="subModel" placeholder="Black, Starbucks" required />
-      </label>
-      <label><%= isEn ? 'Reference' : '레퍼런스' %>
-        <input type="text" name="reference" />
-      </label>
-      <label><%= isEn ? 'Factory' : '공장' %>
-        <input type="text" name="factoryName" />
-      </label>
-      <label><%= isEn ? 'Version' : '버전' %>
-        <input type="text" name="versionName" />
-      </label>
-      <label><%= isEn ? 'Movement' : '무브먼트' %>
-        <input type="text" name="movement" />
-      </label>
-      <label><%= isEn ? 'Case Size' : '케이스사이즈' %>
-        <input type="text" name="caseSize" />
-      </label>
-      <label><%= isEn ? 'Dial Color' : '다이얼 색' %>
-        <input type="text" name="dialColor" />
-      </label>
-      <label><%= isEn ? 'Case Material' : '케이스 재질' %>
-        <input type="text" name="caseMaterial" placeholder="Steel, Titanium" />
-      </label>
-      <label><%= isEn ? 'Bracelet/Strap Material' : '브레이슬릿/스트랩 재질' %>
-        <input type="text" name="strapMaterial" />
-      </label>
-      <label><%= isEn ? 'Features' : '특징' %>
-        <textarea name="features" rows="2" placeholder="<%= isEn ? 'Plating, free-sprung, etc.' : '도금, 포금, 프리스프렁 등' %>"></textarea>
-      </label>
-      <label><%= isEn ? 'Price (KRW)' : '가격 (원)' %>
-        <input type="number" name="price" min="0" required />
-      </label>
-      <label><%= isEn ? 'Shipping Period' : '배송기간' %>
-        <input type="text" name="shippingPeriod" placeholder="<%= isEn ? '7-14 days' : '7~14일' %>" />
-      </label>
+      <p class="muted-label" data-product-upload-hint>
+        <%= isEn ? 'Select category to switch upload fields.' : '분류를 선택하면 업로드 항목이 자동 전환됩니다.' %>
+      </p>
+
+      <div class="product-upload-mode-box" data-product-mode="factory">
+        <label><%= isEn ? 'Brand' : '브랜드' %>
+          <input type="text" name="brand" placeholder="Rolex" data-factory-required="1" />
+        </label>
+        <label><%= isEn ? 'Model' : '모델명' %>
+          <input type="text" name="model" placeholder="Submariner" data-factory-required="1" />
+        </label>
+        <label><%= isEn ? 'Sub Model' : '세부모델명' %>
+          <input type="text" name="subModel" placeholder="Black, Starbucks" data-factory-required="1" />
+        </label>
+        <label><%= isEn ? 'Reference' : '레퍼런스' %>
+          <input type="text" name="reference" />
+        </label>
+        <label><%= isEn ? 'Factory' : '공장' %>
+          <input type="text" name="factoryName" />
+        </label>
+        <label><%= isEn ? 'Version' : '버전' %>
+          <input type="text" name="versionName" />
+        </label>
+        <label><%= isEn ? 'Movement' : '무브먼트' %>
+          <input type="text" name="movement" />
+        </label>
+        <label><%= isEn ? 'Case Size' : '케이스사이즈' %>
+          <input type="text" name="caseSize" />
+        </label>
+        <label><%= isEn ? 'Dial Color' : '다이얼 색' %>
+          <input type="text" name="dialColor" />
+        </label>
+        <label><%= isEn ? 'Case Material' : '케이스 재질' %>
+          <input type="text" name="caseMaterial" placeholder="Steel, Titanium" />
+        </label>
+        <label><%= isEn ? 'Bracelet/Strap Material' : '브레이슬릿/스트랩 재질' %>
+          <input type="text" name="strapMaterial" />
+        </label>
+        <label><%= isEn ? 'Features' : '특징' %>
+          <textarea name="features" rows="2" placeholder="<%= isEn ? 'Plating, free-sprung, etc.' : '도금, 포금, 프리스프렁 등' %>"></textarea>
+        </label>
+        <label><%= isEn ? 'Price (KRW)' : '가격 (원)' %>
+          <input type="number" name="price" min="0" data-factory-required="1" />
+        </label>
+        <label><%= isEn ? 'Shipping Period' : '배송기간' %>
+          <input type="text" name="shippingPeriod" placeholder="<%= isEn ? '7-14 days' : '7~14일' %>" />
+        </label>
+      </div>
+
+      <div class="product-upload-mode-box" data-product-mode="simple">
+        <% if (uploadSimpleGroups.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No simple categories configured. Add one in Menu Manager.' : '설정된 간략형 분류가 없습니다. 메뉴관리에서 분류를 추가해 주세요.' %></p>
+        <% } %>
+        <% uploadSimpleGroups.forEach((group) => { %>
+          <div class="product-simple-fields" data-product-simple-group="<%= group.key %>" hidden>
+            <h4><%= group.labelKo || group.key %> / <%= group.labelEn || group.key %></h4>
+            <% (group.customFields || []).forEach((field) => { %>
+              <label>
+                <%= field.labelKo || field.key %> / <%= field.labelEn || field.key %>
+                <% if (field.type === 'textarea') { %>
+                  <textarea
+                    name="extraFields[<%= field.key %>]"
+                    rows="3"
+                    data-simple-input
+                    data-simple-group="<%= group.key %>"
+                    data-simple-required="<%= field.required ? '1' : '0' %>"
+                  ></textarea>
+                <% } else { %>
+                  <input
+                    type="<%= field.type === 'number' ? 'number' : 'text' %>"
+                    name="extraFields[<%= field.key %>]"
+                    data-simple-input
+                    data-simple-group="<%= group.key %>"
+                    data-simple-required="<%= field.required ? '1' : '0' %>"
+                  />
+                <% } %>
+              </label>
+            <% }) %>
+          </div>
+        <% }) %>
+      </div>
       <button type="submit" class="cta-main"><%= isEn ? 'Add Product' : '상품 등록' %></button>
     </form>
+
+    <script>
+      (() => {
+        const form = document.querySelector('[data-product-upload-form]');
+        if (!form) return;
+
+        let groups = [];
+        try {
+          groups = JSON.parse(decodeURIComponent(form.dataset.productGroups || '[]'));
+        } catch {
+          groups = [];
+        }
+        if (!Array.isArray(groups) || groups.length === 0) return;
+
+        const selectNode = form.querySelector('[data-product-group-select]');
+        const hintNode = form.querySelector('[data-product-upload-hint]');
+        const factoryBox = form.querySelector('[data-product-mode="factory"]');
+        const simpleBox = form.querySelector('[data-product-mode="simple"]');
+        const simpleGroups = Array.from(form.querySelectorAll('[data-product-simple-group]'));
+        const factoryInputs = Array.from((factoryBox || form).querySelectorAll('input, textarea, select'));
+        const simpleInputs = Array.from(form.querySelectorAll('[data-simple-input]'));
+
+        const groupMap = new Map(groups.map((group) => [group.key, group]));
+
+        const applyGroupMode = (groupKey) => {
+          const selected = groupMap.get(groupKey) || groups[0];
+          const isFactory = String(selected.mode || '') === 'factory';
+
+          if (hintNode) {
+            hintNode.textContent = isFactory
+              ? <%- JSON.stringify(isEn ? 'Detailed category selected. Full watch specification fields are enabled.' : '상세형 분류 선택됨: 시계 세부 스펙 항목이 활성화됩니다.') %>
+              : <%- JSON.stringify(isEn ? 'Simple category selected. Only configured custom fields are required.' : '간략형 분류 선택됨: 설정된 커스텀 항목만 입력하면 됩니다.') %>;
+          }
+
+          if (factoryBox) {
+            factoryBox.hidden = !isFactory;
+          }
+          if (simpleBox) {
+            simpleBox.hidden = isFactory;
+          }
+
+          factoryInputs.forEach((input) => {
+            if (!input || input === selectNode) return;
+            input.disabled = !isFactory;
+            if (input.dataset.factoryRequired === '1') {
+              input.required = isFactory;
+            }
+          });
+
+          simpleGroups.forEach((groupNode) => {
+            const active = !isFactory && groupNode.dataset.productSimpleGroup === selected.key;
+            groupNode.hidden = !active;
+
+            const inputs = Array.from(groupNode.querySelectorAll('[data-simple-input]'));
+            inputs.forEach((input) => {
+              input.disabled = !active;
+              input.required = active && input.dataset.simpleRequired === '1';
+            });
+          });
+
+          simpleInputs
+            .filter((input) => !input.closest('[data-product-simple-group]'))
+            .forEach((input) => {
+              input.disabled = isFactory;
+            });
+        };
+
+        const initialGroup = selectNode?.value || groups[0].key;
+        applyGroupMode(initialGroup);
+        if (selectNode) {
+          selectNode.addEventListener('change', () => applyGroupMode(selectNode.value));
+        }
+      })();
+    </script>
 
     <div class="table-wrap">
       <table>
@@ -1273,9 +1506,15 @@
           <% products.forEach((item) => { %>
             <tr>
               <td><%= item.id %></td>
-              <td><%= groupLabelMap[item.category_group] || item.category_group || '-' %></td>
-              <td><%= item.brand %> <%= item.model %> <%= item.sub_model %></td>
-              <td>₩<%= formatPrice(item.price) %></td>
+              <td><%= groupLabelByKey[item.category_group] || item.category_group || '-' %></td>
+              <td>
+                <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+                <% if (item.display_subtitle) { %>
+                  <br />
+                  <small><%= item.display_subtitle %></small>
+                <% } %>
+              </td>
+              <td><%= Number(item.price || 0) > 0 ? `₩${formatPrice(item.price)}` : '-' %></td>
               <td><%= item.is_active ? (isEn ? 'Visible' : '노출') : (isEn ? 'Hidden' : '숨김') %></td>
               <td>
                 <form method="post" action="/admin/product/<%= item.id %>/toggle" class="inline-form">

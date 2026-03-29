@@ -1,11 +1,16 @@
 <%- include('partials/layout-start') %>
 <%
   const isEn = ctx.lang === 'en';
-  const groupLabelMap = {
-    '공장제': isEn ? 'Factory' : '공장제',
-    '젠파츠': isEn ? 'Gen Parts' : '젠파츠',
-    '현지중고': isEn ? 'Local Used' : '현지중고'
-  };
+  const resolvedGroupLabelMap = (() => {
+    if (groupLabelMap && typeof groupLabelMap === 'object' && !Array.isArray(groupLabelMap)) {
+      return groupLabelMap;
+    }
+    const generated = {};
+    (productGroupConfigs || []).forEach((groupItem) => {
+      generated[groupItem.key] = isEn ? (groupItem.labelEn || groupItem.key) : (groupItem.labelKo || groupItem.key);
+    });
+    return generated;
+  })();
 %>
 
 <section class="block-card shop-filter-card">
@@ -16,12 +21,12 @@
   <div class="filter-group">
     <div class="chip-row">
       <% productGroups.forEach((item) => { %>
-        <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip <%= group === item ? 'dark' : '' %>"><%= groupLabelMap[item] || item %></a>
+        <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
       <% }) %>
     </div>
   </div>
 
-  <% if (group === '공장제') { %>
+  <% if (supportsBrandModelFilter) { %>
     <div class="filter-group">
       <h4><%= isEn ? 'Brand' : '브랜드' %></h4>
       <div class="chip-row chip-scroll-row">
@@ -33,7 +38,7 @@
     </div>
   <% } %>
 
-  <% if (group === '공장제' && brand) { %>
+  <% if (supportsBrandModelFilter && brand) { %>
     <div class="filter-group">
       <h4><%= isEn ? 'Model' : '모델' %></h4>
       <div class="chip-row">
@@ -45,7 +50,7 @@
     </div>
   <% } %>
 
-  <% if (group !== '공장제') { %>
+  <% if (!supportsBrandModelFilter) { %>
     <p class="muted-label"><%= isEn ? 'Products are listed directly by selected top category.' : '선택한 카테고리는 상위 분류 기준으로 상품을 바로 확인할 수 있습니다.' %></p>
   <% } %>
 </section>
@@ -66,11 +71,11 @@
           <% } %>
         </div>
         <div class="product-meta">
-          <small><%= groupLabelMap[item.category_group] || item.category_group || '-' %></small>
-          <strong><%= item.brand %> <%= item.model %></strong>
-          <span><%= item.sub_model %></span>
-          <small><%= item.case_material || '-' %> / <%= item.movement || '-' %></small>
-          <em>₩<%= ctx.formatPrice(item.price) %></em>
+          <small><%= resolvedGroupLabelMap[item.category_group] || item.category_group || '-' %></small>
+          <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+          <span><%= item.display_subtitle || '' %></span>
+          <small><%= item.display_meta || (item.case_material || '-') + ' / ' + (item.movement || '-') %></small>
+          <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>
         </div>
       </a>
     <% }) %>

@@ -1,11 +1,16 @@
 <%- include('partials/layout-start') %>
 <%
   const isEn = ctx.lang === 'en';
-  const groupLabelMap = {
-    '공장제': isEn ? 'Factory' : '공장제',
-    '젠파츠': isEn ? 'Gen Parts' : '젠파츠',
-    '현지중고': isEn ? 'Local Used' : '현지중고'
-  };
+  const resolvedGroupLabelMap = (() => {
+    if (groupLabelMap && typeof groupLabelMap === 'object' && !Array.isArray(groupLabelMap)) {
+      return groupLabelMap;
+    }
+    const generated = {};
+    (productGroupConfigs || []).forEach((groupItem) => {
+      generated[groupItem.key] = isEn ? (groupItem.labelEn || groupItem.key) : (groupItem.labelKo || groupItem.key);
+    });
+    return generated;
+  })();
 %>
 
 <section class="hero-wrap">
@@ -39,7 +44,7 @@
     <% groupedProducts.forEach((group) => { %>
       <div class="shop-row-block">
         <div class="shop-row-head">
-          <h3><%= groupLabelMap[group.groupName] || group.groupName %></h3>
+          <h3><%= resolvedGroupLabelMap[group.groupName] || group.groupName %></h3>
         </div>
         <div class="product-grid shop-row-grid">
           <% if (group.products.length === 0) { %>
@@ -55,9 +60,9 @@
                 <% } %>
               </div>
               <div class="product-meta">
-                <strong><%= item.brand %> <%= item.model %></strong>
-                <span><%= item.sub_model %></span>
-                <em>₩<%= ctx.formatPrice(item.price) %></em>
+                <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+                <span><%= item.display_subtitle || '' %></span>
+                <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>
                 <small><%= isEn ? 'Shipping' : '배송기간' %>: <%= item.shipping_period || '-' %></small>
               </div>
             </a>

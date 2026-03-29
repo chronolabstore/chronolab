@@ -12,7 +12,37 @@ export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-export const SHOP_PRODUCT_GROUPS = ['공장제', '젠파츠', '현지중고'];
+export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
+  {
+    key: '공장제',
+    labelKo: '공장제',
+    labelEn: 'Factory',
+    mode: 'factory',
+    customFields: []
+  },
+  {
+    key: '젠파츠',
+    labelKo: '젠파츠',
+    labelEn: 'Gen Parts',
+    mode: 'simple',
+    customFields: [
+      { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
+      { key: 'summary', labelKo: '간략 설명', labelEn: 'Summary', type: 'textarea', required: true }
+    ]
+  },
+  {
+    key: '현지중고',
+    labelKo: '현지중고',
+    labelEn: 'Local Used',
+    mode: 'simple',
+    customFields: [
+      { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
+      { key: 'summary', labelKo: '간략 설명', labelEn: 'Summary', type: 'textarea', required: true }
+    ]
+  }
+];
+
+export const SHOP_PRODUCT_GROUPS = DEFAULT_PRODUCT_GROUP_CONFIGS.map((group) => group.key);
 
 const defaultMenus = [
   { id: 'home', labelKo: '메인페이지', labelEn: 'Main', path: '/main', isHidden: false },
@@ -64,7 +94,8 @@ const defaultSettings = {
   bankAccountInfo: '입금계좌: 은행명 000-0000-0000 (예금주: Chrono Lab)',
   contactInfo: '고객센터: 010-0000-0000 / 카카오톡: @chronolab',
   businessInfo: '상호: Chrono Lab | 대표: Chrono Team | 사업자번호: 000-00-00000',
-  languageDefault: 'ko'
+  languageDefault: 'ko',
+  productGroupConfigs: JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS)
 };
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -220,6 +251,15 @@ function ensureProductsCategoryColumn() {
 
   if (!hasCategoryGroup) {
     db.prepare("ALTER TABLE products ADD COLUMN category_group TEXT NOT NULL DEFAULT '공장제'").run();
+  }
+}
+
+function ensureProductsExtraFieldsColumn() {
+  const columns = db.prepare('PRAGMA table_info(products)').all();
+  const hasExtraFields = columns.some((column) => column.name === 'extra_fields_json');
+
+  if (!hasExtraFields) {
+    db.prepare("ALTER TABLE products ADD COLUMN extra_fields_json TEXT NOT NULL DEFAULT '{}'").run();
   }
 }
 
@@ -907,6 +947,7 @@ export function initDb() {
       price INTEGER NOT NULL,
       shipping_period TEXT,
       image_path TEXT,
+      extra_fields_json TEXT NOT NULL DEFAULT '{}',
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -1017,6 +1058,7 @@ export function initDb() {
   `);
 
   ensureProductsCategoryColumn();
+  ensureProductsExtraFieldsColumn();
   ensureUserAdminProfileColumns();
   ensureUserBlockColumns();
   ensureOrdersCustomsColumn();
@@ -1178,4 +1220,8 @@ export function getPostCounts(visitDate) {
 
 export function getDefaultMenus() {
   return defaultMenus;
+}
+
+export function getDefaultProductGroupConfigs() {
+  return JSON.parse(JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS));
 }
