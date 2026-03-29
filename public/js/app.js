@@ -267,6 +267,8 @@
     var pinchZoom = false;
     var pinchStartDistance = 0;
     var pinchStartScale = 1;
+    var isOpen = false;
+    var hasHistoryEntry = false;
 
     function clamp(value, min, max) {
       return Math.min(max, Math.max(min, value));
@@ -292,7 +294,18 @@
       render();
     }
 
-    function closeLightbox() {
+    function closeLightbox(options) {
+      var opts = options || {};
+      if (!isOpen && lightbox.classList.contains('hidden')) {
+        return;
+      }
+
+      if (!opts.fromPopstate && hasHistoryEntry) {
+        hasHistoryEntry = false;
+        window.history.back();
+        return;
+      }
+
       lightbox.classList.add('hidden');
       lightbox.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('lightbox-open');
@@ -300,18 +313,31 @@
       dragging = false;
       touchDrag = false;
       pinchZoom = false;
+      isOpen = false;
+      hasHistoryEntry = false;
     }
 
     function openLightbox(src, alt) {
       if (!src) {
         return;
       }
+
+      if (!isOpen) {
+        try {
+          window.history.pushState({ __chronoLightbox: true }, '', window.location.href);
+          hasHistoryEntry = true;
+        } catch (error) {
+          hasHistoryEntry = false;
+        }
+      }
+
       image.setAttribute('src', src);
       image.setAttribute('alt', alt || 'image');
       lightbox.classList.remove('hidden');
       lightbox.setAttribute('aria-hidden', 'false');
       document.body.classList.add('lightbox-open');
       resetTransform();
+      isOpen = true;
     }
 
     function applyZoom(nextScale) {
@@ -425,6 +451,13 @@
       if (event.target === lightbox) {
         closeLightbox();
       }
+    });
+
+    window.addEventListener('popstate', function () {
+      if (!isOpen) {
+        return;
+      }
+      closeLightbox({ fromPopstate: true });
     });
 
     stage.addEventListener(
