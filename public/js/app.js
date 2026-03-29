@@ -159,10 +159,364 @@
     });
   }
 
+  function initAdminInlineImagePreviews() {
+    if (!window.location.pathname.startsWith('/admin')) {
+      return;
+    }
+
+    var isEn = document.documentElement.lang === 'en';
+    var fileInputs = document.querySelectorAll('input[type="file"][accept*="image"]');
+    if (!fileInputs.length) {
+      return;
+    }
+
+    fileInputs.forEach(function (input) {
+      if (input.dataset.inlinePreviewBound === '1') {
+        return;
+      }
+      input.dataset.inlinePreviewBound = '1';
+
+      if (input.name === 'images' && input.closest('[data-admin-product-form]')) {
+        return;
+      }
+
+      var wrap = document.createElement('div');
+      wrap.className = 'inline-file-preview-wrap';
+      wrap.hidden = true;
+
+      var title = document.createElement('p');
+      title.className = 'muted-label';
+      title.textContent = isEn ? 'Image preview (click to enlarge)' : '이미지 미리보기 (클릭 시 확대)';
+
+      var grid = document.createElement('div');
+      grid.className = 'inline-file-preview-grid';
+
+      wrap.appendChild(title);
+      wrap.appendChild(grid);
+      input.insertAdjacentElement('afterend', wrap);
+
+      var objectUrls = [];
+      function clearPreview() {
+        objectUrls.forEach(function (url) {
+          URL.revokeObjectURL(url);
+        });
+        objectUrls = [];
+        grid.innerHTML = '';
+        wrap.hidden = true;
+      }
+
+      input.addEventListener('change', function () {
+        clearPreview();
+        var files = Array.prototype.slice
+          .call(input.files || [])
+          .filter(function (file) {
+            return typeof file.type === 'string' && file.type.startsWith('image/');
+          });
+
+        if (!files.length) {
+          return;
+        }
+
+        wrap.hidden = false;
+        files.forEach(function (file) {
+          var url = URL.createObjectURL(file);
+          objectUrls.push(url);
+          var preview = document.createElement('img');
+          preview.className = 'inline-file-preview-image zoomable-media';
+          preview.setAttribute('src', url);
+          preview.setAttribute('alt', file.name || 'preview');
+          grid.appendChild(preview);
+        });
+      });
+    });
+  }
+
+  function initImageLightbox() {
+    var lightbox = document.getElementById('imageLightbox');
+    if (!lightbox) {
+      return;
+    }
+
+    var stage = lightbox.querySelector('[data-lightbox-stage]');
+    var image = lightbox.querySelector('[data-lightbox-image]');
+    var zoomText = lightbox.querySelector('[data-lightbox-zoom]');
+    if (!stage || !image) {
+      return;
+    }
+
+    var minScale = 1;
+    var maxScale = 4;
+    var scale = 1;
+    var translateX = 0;
+    var translateY = 0;
+    var dragging = false;
+    var startX = 0;
+    var startY = 0;
+    var originX = 0;
+    var originY = 0;
+    var touchDrag = false;
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function setZoomText() {
+      if (!zoomText) {
+        return;
+      }
+      zoomText.textContent = Math.round(scale * 100) + '%';
+    }
+
+    function render() {
+      image.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+      setZoomText();
+      stage.classList.toggle('is-zoomed', scale > 1.02);
+    }
+
+    function resetTransform() {
+      scale = 1;
+      translateX = 0;
+      translateY = 0;
+      render();
+    }
+
+    function closeLightbox() {
+      lightbox.classList.add('hidden');
+      lightbox.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('lightbox-open');
+      image.setAttribute('src', '');
+      dragging = false;
+      touchDrag = false;
+    }
+
+    function openLightbox(src, alt) {
+      if (!src) {
+        return;
+      }
+      image.setAttribute('src', src);
+      image.setAttribute('alt', alt || 'image');
+      lightbox.classList.remove('hidden');
+      lightbox.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('lightbox-open');
+      resetTransform();
+    }
+
+    function applyZoom(nextScale) {
+      var clamped = clamp(nextScale, minScale, maxScale);
+      if (clamped === scale) {
+        return;
+      }
+      scale = clamped;
+      if (scale <= 1) {
+        translateX = 0;
+        translateY = 0;
+      }
+      render();
+    }
+
+    function zoomBy(delta) {
+      applyZoom(scale + delta);
+    }
+
+    function isEligibleImage(img) {
+      if (!img || img.closest('#imageLightbox')) {
+        return false;
+      }
+      if (img.hasAttribute('data-no-lightbox')) {
+        return false;
+      }
+      if (img.closest('[data-gallery-thumb]')) {
+        return false;
+      }
+      if (img.closest('header') || img.closest('.site-footer')) {
+        return false;
+      }
+      if (img.closest('.page-container') || img.closest('.popup-card') || img.closest('.inline-file-preview-wrap')) {
+        return true;
+      }
+      return false;
+    }
+
+    function markZoomableMedia(root) {
+      var scopedRoot = root && root.querySelectorAll ? root : document;
+      scopedRoot.querySelectorAll('img').forEach(function (img) {
+        if (isEligibleImage(img)) {
+          img.classList.add('zoomable-media');
+        }
+      });
+      scopedRoot.querySelectorAll('canvas.watermark-preview-canvas').forEach(function (canvas) {
+        canvas.classList.add('zoomable-media');
+      });
+    }
+
+    markZoomableMedia(document);
+
+    var observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        Array.prototype.forEach.call(mutation.addedNodes || [], function (node) {
+          if (!node || node.nodeType !== 1) {
+            return;
+          }
+          if (node.matches && node.matches('img') && isEligibleImage(node)) {
+            node.classList.add('zoomable-media');
+          }
+          markZoomableMedia(node);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    document.addEventListener('click', function (event) {
+      if (!lightbox.classList.contains('hidden') && event.target.closest('#imageLightbox')) {
+        var actionTarget = event.target.closest('[data-lightbox-action]');
+        if (!actionTarget) {
+          return;
+        }
+        var action = actionTarget.getAttribute('data-lightbox-action');
+        if (action === 'close') {
+          closeLightbox();
+        } else if (action === 'zoom-in') {
+          zoomBy(0.2);
+        } else if (action === 'zoom-out') {
+          zoomBy(-0.2);
+        } else if (action === 'reset') {
+          resetTransform();
+        }
+        return;
+      }
+
+      var previewCanvas = event.target.closest('canvas.watermark-preview-canvas');
+      if (previewCanvas) {
+        event.preventDefault();
+        openLightbox(previewCanvas.toDataURL('image/png'), 'preview');
+        return;
+      }
+
+      var targetImg = event.target.closest('img');
+      if (!targetImg || !isEligibleImage(targetImg)) {
+        return;
+      }
+
+      var src = targetImg.currentSrc || targetImg.getAttribute('src') || '';
+      if (!src) {
+        return;
+      }
+
+      if (targetImg.closest('a')) {
+        event.preventDefault();
+      }
+      openLightbox(src, targetImg.getAttribute('alt') || 'image');
+    });
+
+    lightbox.addEventListener('click', function (event) {
+      if (event.target === lightbox) {
+        closeLightbox();
+      }
+    });
+
+    stage.addEventListener(
+      'wheel',
+      function (event) {
+        if (lightbox.classList.contains('hidden')) {
+          return;
+        }
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 0.15 : -0.15);
+      },
+      { passive: false }
+    );
+
+    stage.addEventListener('mousedown', function (event) {
+      if (scale <= 1) {
+        return;
+      }
+      dragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      originX = translateX;
+      originY = translateY;
+      stage.classList.add('is-dragging');
+      event.preventDefault();
+    });
+
+    window.addEventListener('mousemove', function (event) {
+      if (!dragging) {
+        return;
+      }
+      translateX = originX + (event.clientX - startX);
+      translateY = originY + (event.clientY - startY);
+      render();
+    });
+
+    window.addEventListener('mouseup', function () {
+      dragging = false;
+      stage.classList.remove('is-dragging');
+    });
+
+    stage.addEventListener(
+      'touchstart',
+      function (event) {
+        if (scale <= 1 || !event.touches || event.touches.length !== 1) {
+          return;
+        }
+        touchDrag = true;
+        startX = event.touches[0].clientX;
+        startY = event.touches[0].clientY;
+        originX = translateX;
+        originY = translateY;
+      },
+      { passive: true }
+    );
+
+    stage.addEventListener(
+      'touchmove',
+      function (event) {
+        if (!touchDrag || !event.touches || event.touches.length !== 1) {
+          return;
+        }
+        translateX = originX + (event.touches[0].clientX - startX);
+        translateY = originY + (event.touches[0].clientY - startY);
+        render();
+        event.preventDefault();
+      },
+      { passive: false }
+    );
+
+    stage.addEventListener('touchend', function () {
+      touchDrag = false;
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (lightbox.classList.contains('hidden')) {
+        return;
+      }
+      if (event.key === 'Escape') {
+        closeLightbox();
+        return;
+      }
+      if (event.key === '+' || event.key === '=') {
+        zoomBy(0.2);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === '-') {
+        zoomBy(-0.2);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === '0') {
+        resetTransform();
+        event.preventDefault();
+      }
+    });
+  }
+
   function initApp() {
     initNoticePopup();
     initFlashPopup();
     initProductGallery();
+    initAdminInlineImagePreviews();
+    initImageLightbox();
   }
 
   if (document.readyState === 'loading') {

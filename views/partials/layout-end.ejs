@@ -35,6 +35,21 @@
       </div>
     <% } %>
 
+    <div id="imageLightbox" class="image-lightbox hidden" aria-hidden="true">
+      <div class="image-lightbox-shell">
+        <div class="image-lightbox-toolbar">
+          <span class="image-lightbox-zoom" data-lightbox-zoom>100%</span>
+          <button type="button" class="chip" data-lightbox-action="zoom-out"><%= ctx.lang === 'en' ? 'Zoom Out' : '축소' %></button>
+          <button type="button" class="chip" data-lightbox-action="zoom-in"><%= ctx.lang === 'en' ? 'Zoom In' : '확대' %></button>
+          <button type="button" class="chip" data-lightbox-action="reset"><%= ctx.lang === 'en' ? 'Reset' : '원본' %></button>
+          <button type="button" class="chip dark" data-lightbox-action="close"><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
+        </div>
+        <div class="image-lightbox-stage" data-lightbox-stage>
+          <img src="" alt="" class="image-lightbox-image" data-lightbox-image />
+        </div>
+      </div>
+    </div>
+
     <script src="/assets/js/app.js?v=<%= encodeURIComponent(ctx.assetVersion) %>"></script>
   </body>
 </html>
