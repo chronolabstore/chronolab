@@ -370,7 +370,10 @@
       if (img.closest('header') || img.closest('.site-footer')) {
         return false;
       }
-      if (img.closest('.page-container') || img.closest('.popup-card') || img.closest('.inline-file-preview-wrap')) {
+      if (img.classList.contains('zoomable-media')) {
+        return true;
+      }
+      if (img.hasAttribute('data-lightbox-enabled')) {
         return true;
       }
       return false;
@@ -378,10 +381,11 @@
 
     function markZoomableMedia(root) {
       var scopedRoot = root && root.querySelectorAll ? root : document;
-      scopedRoot.querySelectorAll('img').forEach(function (img) {
-        if (isEligibleImage(img)) {
-          img.classList.add('zoomable-media');
-        }
+      if (scopedRoot.matches && scopedRoot.matches('img[data-lightbox-enabled]')) {
+        scopedRoot.classList.add('zoomable-media');
+      }
+      scopedRoot.querySelectorAll('img[data-lightbox-enabled]').forEach(function (img) {
+        img.classList.add('zoomable-media');
       });
       scopedRoot.querySelectorAll('canvas.watermark-preview-canvas').forEach(function (canvas) {
         canvas.classList.add('zoomable-media');

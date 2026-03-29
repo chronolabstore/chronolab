@@ -8,7 +8,7 @@
   <% if (canOpen) { %>
     <article class="content-article"><%= inquiry.content %></article>
     <% if (inquiry.image_path) { %>
-      <img src="<%= inquiry.image_path %>" alt="inquiry image" class="notice-image" />
+      <img src="<%= inquiry.image_path %>" alt="inquiry image" class="notice-image" data-lightbox-enabled="1" />
     <% } %>
 
     <div class="notice-box">
