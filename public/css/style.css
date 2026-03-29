@@ -635,43 +635,67 @@ body.theme-night .hero-quick-grid a:hover {
 .detail-main-wrap {
   position: relative;
   width: 100%;
-  height: 290px;
+  height: clamp(320px, 52vh, 620px);
+  min-height: 280px;
   border-radius: 18px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(12, 16, 24, 0.08);
+}
+
+.detail-main-wrap.gallery-landscape {
+  height: clamp(260px, 43vh, 480px);
+}
+
+.detail-main-wrap.gallery-square {
+  height: clamp(320px, 52vh, 620px);
+}
+
+.detail-main-wrap.gallery-portrait {
+  height: clamp(420px, 68vh, 900px);
 }
 
 .detail-main-image {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-}
-
-.detail-main-wrap.gallery-fill .detail-main-image {
   object-fit: cover;
+  object-position: center center;
 }
 
 .gallery-nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(10, 14, 22, 0.48);
   color: #ffffff;
-  font-size: 1.35rem;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 0;
+  line-height: 0;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   z-index: 2;
   backdrop-filter: blur(2px);
   transition: background 0.16s ease;
+}
+
+.gallery-nav-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+}
+
+.gallery-nav-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .gallery-nav:hover {
@@ -693,8 +717,8 @@ body.theme-night .hero-quick-grid a:hover {
 .detail-thumb-row {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 9px;
 }
 
 .detail-thumb {
@@ -704,12 +728,14 @@ body.theme-night .hero-quick-grid a:hover {
   padding: 0;
   background: var(--chip);
   cursor: pointer;
+  aspect-ratio: 4 / 3;
 }
 
 .detail-thumb img {
   width: 100%;
-  height: 52px;
+  height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .detail-thumb.active {
@@ -1806,6 +1832,32 @@ body.theme-night .inline-file-preview-image {
 }
 
 @media (max-width: 767px) {
+  .detail-main-wrap {
+    height: clamp(280px, 48vh, 460px);
+  }
+
+  .detail-main-wrap.gallery-landscape {
+    height: clamp(220px, 36vh, 340px);
+  }
+
+  .detail-main-wrap.gallery-square {
+    height: clamp(280px, 48vh, 460px);
+  }
+
+  .detail-main-wrap.gallery-portrait {
+    height: clamp(360px, 65vh, 780px);
+  }
+
+  .gallery-nav {
+    width: 40px;
+    height: 40px;
+  }
+
+  .detail-thumb-row {
+    grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+    gap: 8px;
+  }
+
   .hero-quick-grid a {
     flex: 1 1 calc(50% - 10px);
     max-width: none;

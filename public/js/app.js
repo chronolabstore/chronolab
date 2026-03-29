@@ -101,12 +101,21 @@
         var naturalWidth = Number(mainImage.naturalWidth || 0);
         var naturalHeight = Number(mainImage.naturalHeight || 0);
         if (!naturalWidth || !naturalHeight) {
-          mainWrap.classList.remove('gallery-fill');
+          mainWrap.classList.remove('gallery-landscape', 'gallery-square', 'gallery-portrait');
           return;
         }
 
         var ratio = naturalWidth / naturalHeight;
-        mainWrap.classList.toggle('gallery-fill', ratio >= 1.3);
+        mainWrap.classList.remove('gallery-landscape', 'gallery-square', 'gallery-portrait');
+        if (ratio >= 1.2) {
+          mainWrap.classList.add('gallery-landscape');
+          return;
+        }
+        if (ratio <= 0.88) {
+          mainWrap.classList.add('gallery-portrait');
+          return;
+        }
+        mainWrap.classList.add('gallery-square');
       }
 
       function update(index) {
@@ -255,6 +264,9 @@
     var originX = 0;
     var originY = 0;
     var touchDrag = false;
+    var pinchZoom = false;
+    var pinchStartDistance = 0;
+    var pinchStartScale = 1;
 
     function clamp(value, min, max) {
       return Math.min(max, Math.max(min, value));
@@ -287,6 +299,7 @@
       image.setAttribute('src', '');
       dragging = false;
       touchDrag = false;
+      pinchZoom = false;
     }
 
     function openLightbox(src, alt) {
@@ -456,7 +469,21 @@
     stage.addEventListener(
       'touchstart',
       function (event) {
-        if (scale <= 1 || !event.touches || event.touches.length !== 1) {
+        if (!event.touches) {
+          return;
+        }
+
+        if (event.touches.length === 2) {
+          pinchZoom = true;
+          touchDrag = false;
+          var dx = event.touches[0].clientX - event.touches[1].clientX;
+          var dy = event.touches[0].clientY - event.touches[1].clientY;
+          pinchStartDistance = Math.hypot(dx, dy) || 1;
+          pinchStartScale = scale;
+          return;
+        }
+
+        if (scale <= 1 || event.touches.length !== 1) {
           return;
         }
         touchDrag = true;
@@ -471,7 +498,21 @@
     stage.addEventListener(
       'touchmove',
       function (event) {
-        if (!touchDrag || !event.touches || event.touches.length !== 1) {
+        if (!event.touches) {
+          return;
+        }
+
+        if (pinchZoom && event.touches.length === 2) {
+          var dx = event.touches[0].clientX - event.touches[1].clientX;
+          var dy = event.touches[0].clientY - event.touches[1].clientY;
+          var nextDistance = Math.hypot(dx, dy) || 1;
+          var ratio = nextDistance / (pinchStartDistance || 1);
+          applyZoom(pinchStartScale * ratio);
+          event.preventDefault();
+          return;
+        }
+
+        if (!touchDrag || event.touches.length !== 1) {
           return;
         }
         translateX = originX + (event.touches[0].clientX - startX);
@@ -482,8 +523,16 @@
       { passive: false }
     );
 
-    stage.addEventListener('touchend', function () {
+    stage.addEventListener('touchend', function (event) {
       touchDrag = false;
+      if (!event.touches || event.touches.length < 2) {
+        pinchZoom = false;
+      }
+    });
+
+    stage.addEventListener('touchcancel', function () {
+      touchDrag = false;
+      pinchZoom = false;
     });
 
     document.addEventListener('keydown', function (event) {

@@ -11,7 +11,11 @@
           data-gallery-prev
           aria-label="<%= isEn ? 'Previous image' : '이전 이미지' %>"
         >
-          &#8249;
+          <span class="gallery-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
         </button>
         <img
           src="<%= imageList[0] %>"
@@ -25,7 +29,11 @@
           data-gallery-next
           aria-label="<%= isEn ? 'Next image' : '다음 이미지' %>"
         >
-          &#8250;
+          <span class="gallery-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M7.5 4.5L13 10l-5.5 5.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
         </button>
       </div>
 
