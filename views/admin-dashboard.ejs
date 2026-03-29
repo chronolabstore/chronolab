@@ -1216,17 +1216,36 @@
         <div class="admin-list menu-manage-list">
           <% publicMenus.forEach((menu) => { %>
             <div class="admin-list-item">
-              <strong><%= menu.labelKo %> / <%= menu.labelEn %></strong>
-              <span><%= menu.path %></span>
-              <span class="muted-label"><%= menu.isHidden ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '표시중') %></span>
-              <div class="admin-account-actions">
-                <form method="post" action="/admin/menu/toggle/<%= menu.id %>" class="inline-form">
-                  <button type="submit" class="chip"><%= menu.isHidden ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
-                </form>
-                <form method="post" action="/admin/menu/remove/<%= menu.id %>" class="inline-form">
-                  <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                </form>
+              <div class="menu-manage-item-row">
+                <div class="menu-manage-item-copy">
+                  <strong><%= menu.labelKo %> / <%= menu.labelEn %></strong>
+                  <span><%= menu.path %></span>
+                  <span class="muted-label"><%= menu.isHidden ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '표시중') %></span>
+                </div>
+                <div class="admin-account-actions">
+                  <form method="post" action="/admin/menu/toggle/<%= menu.id %>" class="inline-form">
+                    <button type="submit" class="chip"><%= menu.isHidden ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
+                  </form>
+                  <form method="post" action="/admin/menu/remove/<%= menu.id %>" class="inline-form">
+                    <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                  </form>
+                </div>
               </div>
+              <details class="menu-inline-edit">
+                <summary><%= isEn ? 'Edit' : '수정' %></summary>
+                <form method="post" action="/admin/menu/update/<%= menu.id %>" class="form-grid compact menu-inline-edit-form">
+                  <label><%= isEn ? 'Menu Label (KR)' : '메뉴명 (KR)' %>
+                    <input type="text" name="labelKo" value="<%= menu.labelKo %>" required />
+                  </label>
+                  <label><%= isEn ? 'Menu Label (EN)' : '메뉴명 (EN)' %>
+                    <input type="text" name="labelEn" value="<%= menu.labelEn %>" required />
+                  </label>
+                  <label><%= isEn ? 'Path' : '경로' %>
+                    <input type="text" name="path" value="<%= menu.path %>" required />
+                  </label>
+                  <button type="submit" class="chip dark"><%= isEn ? 'Save Changes' : '수정 저장' %></button>
+                </form>
+              </details>
             </div>
           <% }) %>
         </div>

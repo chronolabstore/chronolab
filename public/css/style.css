@@ -1240,6 +1240,53 @@ body.theme-night .watermark-preview-canvas {
   margin-top: 2px;
 }
 
+.menu-manage-item-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.menu-manage-item-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.menu-inline-edit {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.menu-inline-edit > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: var(--chip);
+}
+
+.menu-inline-edit > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-inline-edit[open] > summary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.menu-inline-edit-form {
+  margin-top: 4px;
+}
+
 .menu-fields-grid {
   margin-top: 12px;
 }

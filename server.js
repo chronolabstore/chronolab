@@ -4683,6 +4683,54 @@ app.post('/admin/menu/add', requireAdmin, (req, res) => {
   res.redirect(backPath);
 });
 
+app.post('/admin/menu/update/:id', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=public');
+  const id = String(req.params.id || '');
+  const labelKo = String(req.body.labelKo || '').trim();
+  const labelEn = String(req.body.labelEn || '').trim();
+  const menuPath = sanitizePath(String(req.body.path || '').trim());
+
+  if (!id) {
+    setFlash(req, 'error', '메뉴를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!labelKo || !labelEn || !menuPath) {
+    setFlash(req, 'error', '메뉴 이름과 경로를 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (menuPath.startsWith('/admin')) {
+    setFlash(req, 'error', 'admin 경로는 공개 메뉴로 설정할 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const menus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())), { includeHidden: true });
+  const targetIndex = menus.findIndex((menu) => menu.id === id);
+
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '메뉴를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const hasDuplicatePath = menus.some((menu) => menu.id !== id && menu.path === menuPath);
+  if (hasDuplicatePath) {
+    setFlash(req, 'error', '이미 사용 중인 경로입니다.');
+    return res.redirect(backPath);
+  }
+
+  menus[targetIndex] = {
+    ...menus[targetIndex],
+    labelKo,
+    labelEn,
+    path: menuPath
+  };
+
+  setSetting('menus', JSON.stringify(menus));
+  setFlash(req, 'success', '메뉴 정보가 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
 app.post('/admin/menu/remove/:id', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/menus');
   const id = String(req.params.id || '');
