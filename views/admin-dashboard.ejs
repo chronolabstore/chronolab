@@ -17,7 +17,27 @@
     boardCounts: { notice: 0, news: 0, qc: 0, review: 0, inquiry: 0 },
     shopCounts: { total: 0, active: 0, byGroup: [] },
     orderCounts: { total: 0, pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0, byGroup: [] },
-    orderAlerts: { stalePending: 0, longShipping: 0 }
+    orderAlerts: { stalePending: 0, longShipping: 0 },
+    actionItems: { uncheckedOrders: 0, paymentWaiting: 0, pendingInquiries: 0, qcPending: 0, totalUrgent: 0 },
+    delayWarnings: { pendingOver24h: 0, confirmedOver48h: 0, readyOver72h: 0, shippingOver7d: 0 },
+    inquiryOps: { pending: 0, overdue24h: 0, repliedToday: 0, avgReplyHours: 0 },
+    paymentPerformance: {
+      todayCount: 0,
+      todayAmount: 0,
+      weekCount: 0,
+      weekAmount: 0,
+      monthCount: 0,
+      monthAmount: 0,
+      totalCount: 0,
+      totalAmount: 0,
+      confirmRate: 0
+    },
+    conversionFunnel: {
+      windowDays: 30,
+      window: { productViews: 0, purchaseViews: 0, orderCreated: 0, paymentConfirmed: 0 },
+      total: { productViews: 0, purchaseViews: 0, orderCreated: 0, paymentConfirmed: 0 },
+      rates: { viewToPurchase: 0, purchaseToOrder: 0, orderToPayment: 0, viewToPayment: 0 }
+    }
   };
   const security = securityPanelData || {
     adminUsers: [],
@@ -134,6 +154,84 @@
           <li><span><%= isEn ? '30 Days' : '한달' %></span><strong data-visit-value="month"><%= stats.memberVisits.month %></strong></li>
           <li><span><%= isEn ? '1 Year' : '1년' %></span><strong data-visit-value="year"><%= stats.memberVisits.year %></strong></li>
           <li><span><%= isEn ? 'Total' : '총' %></span><strong data-visit-value="total"><%= stats.memberVisits.total %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Today Action Queue' : '오늘 우선 처리' %></h4>
+        <strong><%= Number(stats.actionItems.totalUrgent || 0).toLocaleString() %></strong>
+        <p class="muted-label"><%= isEn ? 'Priority tasks requiring immediate handling.' : '바로 처리해야 할 핵심 작업 건수입니다.' %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Unchecked Orders' : '미확인 주문건' %></span><strong><%= Number(stats.actionItems.uncheckedOrders || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Payment Check Wait 12h+' : '입금확인 대기 12시간+' %></span><strong><%= Number(stats.actionItems.paymentWaiting || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Unreplied Inquiries' : '미답변 문의' %></span><strong><%= Number(stats.actionItems.pendingInquiries || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'QC Missing Orders' : 'QC 미등록 주문' %></span><strong><%= Number(stats.actionItems.qcPending || 0).toLocaleString() %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Order Delay Warnings' : '주문 지연 경고' %></h4>
+        <p class="muted-label"><%= isEn ? 'SLA delay alerts by order pipeline stage.' : '주문 단계별 지연 건수입니다.' %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Pending Review 24h+' : '미확인 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Confirmed 48h+' : '확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Ready 72h+' : '출고중 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Shipping 7d+' : '배송중 7일+' %></span><strong><%= Number(stats.delayWarnings.shippingOver7d || 0).toLocaleString() %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Inquiry Operations' : '문의 운영 상태' %></h4>
+        <p class="muted-label"><%= isEn ? 'Inquiry backlog and response speed.' : '문의 적체와 답변 속도 지표입니다.' %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Waiting Reply' : '답변 대기' %></span><strong><%= Number(stats.inquiryOps.pending || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Waiting 24h+' : '24시간 이상 대기' %></span><strong><%= Number(stats.inquiryOps.overdue24h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Replied Today' : '오늘 답변 완료' %></span><strong><%= Number(stats.inquiryOps.repliedToday || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Avg Reply Time' : '평균 답변시간' %></span><strong><%= Number(stats.inquiryOps.avgReplyHours || 0).toLocaleString() %><%= isEn ? 'h' : '시간' %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Payment Performance' : '입금 성과' %></h4>
+        <p class="muted-label"><%= isEn ? 'Order confirm and payment check performance.' : '주문확인(입금확인) 처리 성과입니다.' %></p>
+        <ul class="metric-list">
+          <li>
+            <span><%= isEn ? 'Today' : '오늘' %></span>
+            <strong><%= Number(stats.paymentPerformance.todayCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.todayAmount || 0).toLocaleString('ko-KR') %></strong>
+          </li>
+          <li>
+            <span><%= isEn ? '7 Days' : '일주일' %></span>
+            <strong><%= Number(stats.paymentPerformance.weekCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.weekAmount || 0).toLocaleString('ko-KR') %></strong>
+          </li>
+          <li>
+            <span><%= isEn ? '30 Days' : '한달' %></span>
+            <strong><%= Number(stats.paymentPerformance.monthCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.monthAmount || 0).toLocaleString('ko-KR') %></strong>
+          </li>
+          <li>
+            <span><%= isEn ? 'Total' : '누적' %></span>
+            <strong><%= Number(stats.paymentPerformance.totalCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.totalAmount || 0).toLocaleString('ko-KR') %></strong>
+          </li>
+          <li>
+            <span><%= isEn ? 'Payment Confirm Rate' : '입금확인 전환율' %></span>
+            <strong><%= Number(stats.paymentPerformance.confirmRate || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong>
+          </li>
+        </ul>
+      </div>
+
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Conversion Funnel' : '전환 퍼널' %></h4>
+        <p class="muted-label"><%= isEn ? `${Number(stats.conversionFunnel.windowDays || 30)}-day conversion funnel.` : `최근 ${Number(stats.conversionFunnel.windowDays || 30)}일 전환 퍼널입니다.` %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Product Views' : '상품조회' %></span><strong><%= Number(stats.conversionFunnel.window.productViews || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Purchase Views' : '구매페이지 진입' %></span><strong><%= Number(stats.conversionFunnel.window.purchaseViews || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Orders Created' : '주문생성' %></span><strong><%= Number(stats.conversionFunnel.window.orderCreated || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Payments Confirmed' : '입금확인' %></span><strong><%= Number(stats.conversionFunnel.window.paymentConfirmed || 0).toLocaleString() %></strong></li>
+        </ul>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'View → Purchase' : '상품조회 → 구매진입' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPurchase || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+          <li><span><%= isEn ? 'Purchase → Order' : '구매진입 → 주문생성' %></span><strong><%= Number(stats.conversionFunnel.rates.purchaseToOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+          <li><span><%= isEn ? 'Order → Payment' : '주문생성 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.orderToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+          <li><span><%= isEn ? 'View → Payment' : '상품조회 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
         </ul>
       </div>
 

@@ -12,6 +12,7 @@ import {
   getPostCounts,
   getSetting,
   getVisitCounts,
+  incrementFunnelEvent,
   incrementVisit,
   setSetting,
   SHOP_PRODUCT_GROUPS
@@ -47,6 +48,13 @@ const ORDER_STATUS = Object.freeze({
   READY_TO_SHIP: 'READY_TO_SHIP',
   SHIPPING: 'SHIPPING',
   DELIVERED: 'DELIVERED'
+});
+
+const FUNNEL_EVENT = Object.freeze({
+  PRODUCT_VIEW: 'product_view',
+  PURCHASE_VIEW: 'purchase_view',
+  ORDER_CREATED: 'order_created',
+  PAYMENT_CONFIRMED: 'payment_confirmed'
 });
 
 const ADMIN_MENUS = Object.freeze([
@@ -1215,6 +1223,8 @@ app.get('/shop/item/:id', (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
+  incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.PRODUCT_VIEW);
+
   const imageRows = db
     .prepare(
       `
@@ -1263,6 +1273,8 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     setFlash(req, 'error', '공장제 상품만 해당 구매 페이지를 이용할 수 있습니다.');
     return res.redirect(`/shop/item/${id}`);
   }
+
+  incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.PURCHASE_VIEW);
 
   const formData = {
     buyerName: req.user.username || '',
@@ -1374,6 +1386,8 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     'order:member:created'
   );
 
+  incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.ORDER_CREATED);
+
   return res.redirect(`/shop/order-complete/${orderNo}`);
 });
 
@@ -1457,6 +1471,8 @@ app.post('/order/create', (req, res) => {
     ORDER_STATUS.PENDING_REVIEW,
     req.user ? 'order:member:created' : 'order:guest:created'
   );
+
+  incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.ORDER_CREATED);
 
   res.redirect(`/shop/order-complete/${orderNo}`);
 });
@@ -2019,6 +2035,16 @@ function getMemberSignupRangeSummary(baseDate) {
 
 function buildAdminDashboardStats() {
   const today = toKstDate();
+  const toCount = (value) => Number(value || 0);
+  const toAmount = (value) => Number(value || 0);
+  const toRate = (numerator, denominator) => {
+    const safeDenominator = Number(denominator || 0);
+    if (safeDenominator <= 0) {
+      return 0;
+    }
+    return Number(((Number(numerator || 0) / safeDenominator) * 100).toFixed(1));
+  };
+
   const usersRow = db
     .prepare(
       `
@@ -2027,6 +2053,34 @@ function buildAdminDashboardStats() {
           SUM(CASE WHEN is_admin = 0 AND is_blocked = 1 THEN 1 ELSE 0 END) AS blocked_member_count,
           SUM(CASE WHEN is_admin = 0 THEN 1 ELSE 0 END) AS total_member_count
         FROM users
+      `
+    )
+    .get();
+
+  const actionRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(CASE WHEN o.status = 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS pending_review_count,
+          SUM(
+            CASE
+              WHEN o.status = 'PENDING_REVIEW' AND datetime(o.created_at) <= datetime('now', '-12 hour') THEN 1
+              ELSE 0
+            END
+          ) AS payment_waiting_count,
+          SUM(
+            CASE
+              WHEN o.status IN ('READY_TO_SHIP', 'SHIPPING', 'DELIVERED')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM qc_items q
+                  WHERE q.order_no = o.order_no
+                )
+              THEN 1
+              ELSE 0
+            END
+          ) AS qc_missing_count
+        FROM orders o
       `
     )
     .get();
@@ -2045,6 +2099,213 @@ function buildAdminDashboardStats() {
       `
     )
     .get();
+
+  const delayRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(
+            CASE
+              WHEN status = 'PENDING_REVIEW' AND datetime(created_at) <= datetime('now', '-1 day') THEN 1
+              ELSE 0
+            END
+          ) AS pending_over_24h,
+          SUM(
+            CASE
+              WHEN status = 'ORDER_CONFIRMED'
+                AND datetime(COALESCE(checked_at, created_at)) <= datetime('now', '-2 day')
+              THEN 1
+              ELSE 0
+            END
+          ) AS confirmed_over_48h,
+          SUM(
+            CASE
+              WHEN status = 'READY_TO_SHIP'
+                AND datetime(COALESCE(ready_to_ship_at, checked_at, created_at)) <= datetime('now', '-3 day')
+              THEN 1
+              ELSE 0
+            END
+          ) AS ready_over_72h,
+          SUM(
+            CASE
+              WHEN status = 'SHIPPING'
+                AND datetime(COALESCE(shipping_started_at, ready_to_ship_at, checked_at, created_at)) <= datetime('now', '-7 day')
+              THEN 1
+              ELSE 0
+            END
+          ) AS shipping_over_7d
+        FROM orders
+      `
+    )
+    .get();
+
+  const paymentRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS total_count,
+          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN total_price ELSE 0 END) AS total_amount,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) = date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS today_count,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) = date(?)
+              THEN total_price
+              ELSE 0
+            END
+          ) AS today_amount,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-6 day') AND date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS week_count,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-6 day') AND date(?)
+              THEN total_price
+              ELSE 0
+            END
+          ) AS week_amount,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS month_count,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
+              THEN total_price
+              ELSE 0
+            END
+          ) AS month_amount
+        FROM orders
+      `
+    )
+    .get(today, today, today, today, today, today, today, today, today, today);
+
+  const inquiryOpsRow = db
+    .prepare(
+      `
+        SELECT
+          SUM(CASE WHEN COALESCE(TRIM(reply_content), '') = '' THEN 1 ELSE 0 END) AS waiting_count,
+          SUM(
+            CASE
+              WHEN COALESCE(TRIM(reply_content), '') = ''
+                AND datetime(created_at) <= datetime('now', '-1 day')
+              THEN 1
+              ELSE 0
+            END
+          ) AS over_24h_count,
+          SUM(
+            CASE
+              WHEN COALESCE(TRIM(reply_content), '') != ''
+                AND date(datetime(replied_at, '+9 hours')) = date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS replied_today_count,
+          AVG(
+            CASE
+              WHEN COALESCE(TRIM(reply_content), '') != '' AND replied_at IS NOT NULL
+              THEN (julianday(replied_at) - julianday(created_at)) * 24
+              ELSE NULL
+            END
+          ) AS avg_reply_hours
+        FROM inquiries
+      `
+    )
+    .get(today);
+
+  const funnelRows = db
+    .prepare(
+      `
+        SELECT
+          event_key,
+          SUM(
+            CASE
+              WHEN event_date BETWEEN date(?, '-29 day') AND date(?) THEN event_count
+              ELSE 0
+            END
+          ) AS window_count,
+          SUM(event_count) AS total_count
+        FROM daily_funnel_events
+        GROUP BY event_key
+      `
+    )
+    .all(today, today);
+
+  const funnelFallbackRow = db
+    .prepare(
+      `
+        SELECT
+          COUNT(*) AS order_created_total,
+          SUM(
+            CASE
+              WHEN date(datetime(created_at, '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS order_created_window,
+          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS payment_confirmed_total,
+          SUM(
+            CASE
+              WHEN status != 'PENDING_REVIEW'
+                AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
+              THEN 1
+              ELSE 0
+            END
+          ) AS payment_confirmed_window
+        FROM orders
+      `
+    )
+    .get(today, today, today, today);
+
+  const funnelMap = new Map(
+    funnelRows.map((row) => [
+      String(row.event_key || ''),
+      {
+        windowCount: toCount(row.window_count),
+        totalCount: toCount(row.total_count)
+      }
+    ])
+  );
+
+  const getFunnelCount = (eventKey, scope = 'window') => {
+    const bucket = funnelMap.get(eventKey) || { windowCount: 0, totalCount: 0 };
+    return scope === 'total' ? toCount(bucket.totalCount) : toCount(bucket.windowCount);
+  };
+
+  const orderCreatedWindow = Math.max(
+    getFunnelCount(FUNNEL_EVENT.ORDER_CREATED, 'window'),
+    toCount(funnelFallbackRow?.order_created_window)
+  );
+  const orderCreatedTotal = Math.max(
+    getFunnelCount(FUNNEL_EVENT.ORDER_CREATED, 'total'),
+    toCount(funnelFallbackRow?.order_created_total)
+  );
+  const paymentConfirmedWindow = Math.max(
+    getFunnelCount(FUNNEL_EVENT.PAYMENT_CONFIRMED, 'window'),
+    toCount(funnelFallbackRow?.payment_confirmed_window)
+  );
+  const paymentConfirmedTotal = Math.max(
+    getFunnelCount(FUNNEL_EVENT.PAYMENT_CONFIRMED, 'total'),
+    toCount(funnelFallbackRow?.payment_confirmed_total)
+  );
 
   const orderGroupRows = db
     .prepare(
@@ -2173,40 +2434,107 @@ function buildAdminDashboardStats() {
     )
     .get();
 
+  const pendingInquiries = toCount(inquiryOpsRow?.waiting_count);
+  const overdueInquiries = toCount(inquiryOpsRow?.over_24h_count);
+  const actionsSummary = {
+    uncheckedOrders: toCount(actionRow?.pending_review_count),
+    paymentWaiting: toCount(actionRow?.payment_waiting_count),
+    pendingInquiries,
+    qcPending: toCount(actionRow?.qc_missing_count),
+    totalUrgent:
+      toCount(actionRow?.payment_waiting_count) +
+      overdueInquiries +
+      toCount(actionRow?.qc_missing_count)
+  };
+
   return {
     users: {
-      active: Number(usersRow?.active_member_count || 0),
-      blocked: Number(usersRow?.blocked_member_count || 0),
-      total: Number(usersRow?.total_member_count || 0)
+      active: toCount(usersRow?.active_member_count),
+      blocked: toCount(usersRow?.blocked_member_count),
+      total: toCount(usersRow?.total_member_count)
     },
     signupCounts: getMemberSignupRangeSummary(today),
     memberVisits: getVisitRangeSummary(today, 'member_visit_count'),
     guestVisits: getVisitRangeSummary(today, 'guest_visit_count'),
     totalVisits: getVisitRangeSummary(today, 'visit_count'),
     boardCounts: {
-      notice: Number(boardRow?.notice_count || 0),
-      news: Number(boardRow?.news_count || 0),
-      qc: Number(boardRow?.qc_count || 0),
-      review: Number(boardRow?.review_count || 0),
-      inquiry: Number(boardRow?.inquiry_count || 0)
+      notice: toCount(boardRow?.notice_count),
+      news: toCount(boardRow?.news_count),
+      qc: toCount(boardRow?.qc_count),
+      review: toCount(boardRow?.review_count),
+      inquiry: toCount(boardRow?.inquiry_count)
     },
     shopCounts: {
-      total: Number(shopTotalRow?.total_count || 0),
-      active: Number(shopTotalRow?.active_count || 0),
+      total: toCount(shopTotalRow?.total_count),
+      active: toCount(shopTotalRow?.active_count),
       byGroup: shopByGroup
     },
     orderCounts: {
-      total: Number(orderRow?.total_count || 0),
-      pendingReview: Number(orderRow?.pending_review_count || 0),
-      confirmed: Number(orderRow?.confirmed_count || 0),
-      readyToShip: Number(orderRow?.ready_to_ship_count || 0),
-      shipping: Number(orderRow?.shipping_count || 0),
-      delivered: Number(orderRow?.delivered_count || 0),
+      total: toCount(orderRow?.total_count),
+      pendingReview: toCount(orderRow?.pending_review_count),
+      confirmed: toCount(orderRow?.confirmed_count),
+      readyToShip: toCount(orderRow?.ready_to_ship_count),
+      shipping: toCount(orderRow?.shipping_count),
+      delivered: toCount(orderRow?.delivered_count),
       byGroup: orderByGroup
     },
     orderAlerts: {
-      stalePending: Number(orderAlertRow?.stale_pending_count || 0),
-      longShipping: Number(orderAlertRow?.long_shipping_count || 0)
+      stalePending: toCount(orderAlertRow?.stale_pending_count),
+      longShipping: toCount(orderAlertRow?.long_shipping_count)
+    },
+    actionItems: actionsSummary,
+    delayWarnings: {
+      pendingOver24h: toCount(delayRow?.pending_over_24h),
+      confirmedOver48h: toCount(delayRow?.confirmed_over_48h),
+      readyOver72h: toCount(delayRow?.ready_over_72h),
+      shippingOver7d: toCount(delayRow?.shipping_over_7d)
+    },
+    inquiryOps: {
+      pending: pendingInquiries,
+      overdue24h: overdueInquiries,
+      repliedToday: toCount(inquiryOpsRow?.replied_today_count),
+      avgReplyHours: Number(toCount(inquiryOpsRow?.avg_reply_hours).toFixed(1))
+    },
+    paymentPerformance: {
+      todayCount: toCount(paymentRow?.today_count),
+      todayAmount: toAmount(paymentRow?.today_amount),
+      weekCount: toCount(paymentRow?.week_count),
+      weekAmount: toAmount(paymentRow?.week_amount),
+      monthCount: toCount(paymentRow?.month_count),
+      monthAmount: toAmount(paymentRow?.month_amount),
+      totalCount: toCount(paymentRow?.total_count),
+      totalAmount: toAmount(paymentRow?.total_amount),
+      confirmRate: toRate(paymentRow?.total_count, orderRow?.total_count)
+    },
+    conversionFunnel: {
+      windowDays: 30,
+      window: {
+        productViews: getFunnelCount(FUNNEL_EVENT.PRODUCT_VIEW, 'window'),
+        purchaseViews: getFunnelCount(FUNNEL_EVENT.PURCHASE_VIEW, 'window'),
+        orderCreated: orderCreatedWindow,
+        paymentConfirmed: paymentConfirmedWindow
+      },
+      total: {
+        productViews: getFunnelCount(FUNNEL_EVENT.PRODUCT_VIEW, 'total'),
+        purchaseViews: getFunnelCount(FUNNEL_EVENT.PURCHASE_VIEW, 'total'),
+        orderCreated: orderCreatedTotal,
+        paymentConfirmed: paymentConfirmedTotal
+      },
+      rates: {
+        viewToPurchase: toRate(
+          getFunnelCount(FUNNEL_EVENT.PURCHASE_VIEW, 'window'),
+          getFunnelCount(FUNNEL_EVENT.PRODUCT_VIEW, 'window')
+        ),
+        purchaseToOrder: toRate(
+          orderCreatedWindow,
+          getFunnelCount(FUNNEL_EVENT.PURCHASE_VIEW, 'window')
+        ),
+        orderToPayment: toRate(paymentConfirmedWindow, orderCreatedWindow),
+        viewToPayment: toRate(
+          paymentConfirmedWindow,
+          getFunnelCount(FUNNEL_EVENT.PRODUCT_VIEW, 'window')
+        )
+      }
     }
   };
 }
@@ -3611,6 +3939,7 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   }
 
   appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.PENDING_REVIEW, ORDER_STATUS.ORDER_CONFIRMED, 'admin:confirm');
+  incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.PAYMENT_CONFIRMED);
 
   setFlash(req, 'success', '주문확인 처리되었습니다.');
   return res.redirect(backPath);

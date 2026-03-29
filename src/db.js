@@ -213,6 +213,17 @@ function ensureDailyVisitSplitColumns() {
   }
 }
 
+function ensureDailyFunnelEventsTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_funnel_events (
+      event_date TEXT NOT NULL,
+      event_key TEXT NOT NULL,
+      event_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (event_date, event_key)
+    );
+  `);
+}
+
 function ensureOrderStatusLogTable() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS order_status_logs (
@@ -893,6 +904,7 @@ export function initDb() {
   ensureOrdersCustomsColumn();
   ensureOrdersTrackingColumns();
   ensureDailyVisitSplitColumns();
+  ensureDailyFunnelEventsTable();
   ensureAdminSecurityTables();
   normalizeOrderStatuses();
 
@@ -977,6 +989,23 @@ export function incrementVisit(visitDate, isMember = false) {
   ).run(visitDate, memberCount, guestCount);
 
   db.prepare('UPDATE metrics SET metric_value = metric_value + 1 WHERE metric_key = ?').run('totalVisits');
+}
+
+export function incrementFunnelEvent(eventDate, eventKey, count = 1) {
+  const key = String(eventKey || '').trim().slice(0, 60);
+  const amount = Number(count);
+  if (!key || !Number.isFinite(amount) || amount <= 0) {
+    return;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO daily_funnel_events (event_date, event_key, event_count)
+      VALUES (?, ?, ?)
+      ON CONFLICT(event_date, event_key)
+      DO UPDATE SET event_count = daily_funnel_events.event_count + excluded.event_count
+    `
+  ).run(eventDate, key, Math.floor(amount));
 }
 
 export function getVisitCounts(visitDate) {
