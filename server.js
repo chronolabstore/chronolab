@@ -2046,6 +2046,54 @@ function buildAdminDashboardStats() {
     )
     .get();
 
+  const orderGroupRows = db
+    .prepare(
+      `
+        SELECT
+          p.category_group,
+          COUNT(*) AS total_count,
+          SUM(CASE WHEN o.status = 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS pending_review_count,
+          SUM(CASE WHEN o.status = 'ORDER_CONFIRMED' THEN 1 ELSE 0 END) AS confirmed_count,
+          SUM(CASE WHEN o.status = 'READY_TO_SHIP' THEN 1 ELSE 0 END) AS ready_to_ship_count,
+          SUM(CASE WHEN o.status = 'SHIPPING' THEN 1 ELSE 0 END) AS shipping_count,
+          SUM(CASE WHEN o.status = 'DELIVERED' THEN 1 ELSE 0 END) AS delivered_count
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        GROUP BY p.category_group
+      `
+    )
+    .all();
+
+  const orderGroupMap = new Map(
+    orderGroupRows.map((row) => [
+      String(row.category_group || ''),
+      {
+        groupName: String(row.category_group || ''),
+        totalCount: Number(row.total_count || 0),
+        pendingReview: Number(row.pending_review_count || 0),
+        confirmed: Number(row.confirmed_count || 0),
+        readyToShip: Number(row.ready_to_ship_count || 0),
+        shipping: Number(row.shipping_count || 0),
+        delivered: Number(row.delivered_count || 0)
+      }
+    ])
+  );
+
+  const orderByGroup = SHOP_PRODUCT_GROUPS.map((groupName) => {
+    const found = orderGroupMap.get(groupName);
+    return (
+      found || {
+        groupName,
+        totalCount: 0,
+        pendingReview: 0,
+        confirmed: 0,
+        readyToShip: 0,
+        shipping: 0,
+        delivered: 0
+      }
+    );
+  });
+
   const boardRow = db
     .prepare(
       `
@@ -2098,6 +2146,7 @@ function buildAdminDashboardStats() {
   const groupMap = new Map(
     shopGroupRows.map((row) => [String(row.category_group || ''), {
       groupName: String(row.category_group || ''),
+      totalCount: Number(row.active_count || 0) + Number(row.hidden_count || 0),
       activeCount: Number(row.active_count || 0),
       hiddenCount: Number(row.hidden_count || 0)
     }])
@@ -2107,6 +2156,7 @@ function buildAdminDashboardStats() {
     const found = groupMap.get(groupName);
     return {
       groupName,
+      totalCount: found ? found.totalCount : 0,
       activeCount: found ? found.activeCount : 0,
       hiddenCount: found ? found.hiddenCount : 0
     };
@@ -2151,7 +2201,8 @@ function buildAdminDashboardStats() {
       confirmed: Number(orderRow?.confirmed_count || 0),
       readyToShip: Number(orderRow?.ready_to_ship_count || 0),
       shipping: Number(orderRow?.shipping_count || 0),
-      delivered: Number(orderRow?.delivered_count || 0)
+      delivered: Number(orderRow?.delivered_count || 0),
+      byGroup: orderByGroup
     },
     orderAlerts: {
       stalePending: Number(orderAlertRow?.stale_pending_count || 0),

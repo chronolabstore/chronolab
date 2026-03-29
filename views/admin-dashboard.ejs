@@ -16,7 +16,7 @@
     totalVisits: { today: 0, week: 0, month: 0, year: 0, total: 0 },
     boardCounts: { notice: 0, news: 0, qc: 0, review: 0, inquiry: 0 },
     shopCounts: { total: 0, active: 0, byGroup: [] },
-    orderCounts: { total: 0, pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0 },
+    orderCounts: { total: 0, pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0, byGroup: [] },
     orderAlerts: { stalePending: 0, longShipping: 0 }
   };
   const security = securityPanelData || {
@@ -48,73 +48,95 @@
   <article class="block-card">
     <h3><%= isEn ? 'Admin Dashboard' : '관리자 대시보드' %></h3>
 
-    <div class="admin-dash-columns">
-      <div class="admin-dash-stack">
-        <div class="kpi-card" data-dash-pair="top" data-member-switch-root>
-          <div class="kpi-head-row">
-            <h4><%= isEn ? 'Members' : '회원 수' %></h4>
-            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'member segment switch' : '회원 구분 전환' %>">
-              <button type="button" class="kpi-toggle-btn active" data-member-type="active"><%= isEn ? 'Member' : '회원' %></button>
-              <button type="button" class="kpi-toggle-btn" data-member-type="blocked"><%= isEn ? 'Blacklist' : '블랙리스트' %></button>
-            </div>
-          </div>
-          <strong data-member-value><%= stats.users.active %></strong>
-          <p class="muted-label" data-member-caption><%= isEn ? 'Active members count.' : '활성 회원 수입니다.' %></p>
-          <p class="muted-label"><%= isEn ? `Total members ${stats.users.total}` : `총 회원 ${stats.users.total}` %></p>
-        </div>
+    <%
+      const orderByGroup = Array.isArray(stats.orderCounts.byGroup) ? stats.orderCounts.byGroup : [];
+      const shopByGroup = Array.isArray(stats.shopCounts.byGroup) ? stats.shopCounts.byGroup : [];
+      const defaultOrderGroup = orderByGroup.find((item) => item.groupName === '공장제') || orderByGroup[0] || {
+        groupName: '공장제',
+        totalCount: 0,
+        pendingReview: 0,
+        confirmed: 0,
+        readyToShip: 0,
+        shipping: 0,
+        delivered: 0
+      };
+      const defaultShopGroup = shopByGroup.find((item) => item.groupName === '공장제') || shopByGroup[0] || {
+        groupName: '공장제',
+        totalCount: 0,
+        activeCount: 0,
+        hiddenCount: 0
+      };
+    %>
 
-        <div class="kpi-card">
-          <h4><%= isEn ? 'Signup Summary' : '회원가입 집계' %></h4>
-          <ul class="metric-list">
-            <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.signupCounts.today %></strong></li>
-            <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.signupCounts.week %></strong></li>
-            <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.signupCounts.month %></strong></li>
-            <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.signupCounts.year %></strong></li>
-            <li><span><%= isEn ? 'Total' : '총 가입 회원' %></span><strong><%= stats.signupCounts.total %></strong></li>
-          </ul>
-        </div>
-
-        <div class="kpi-card" data-dash-pair="bottom" data-visit-switch-root>
-          <div class="kpi-head-row">
-            <h4><%= isEn ? 'Visit Summary' : '방문 집계' %></h4>
-            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'visit segment switch' : '방문 구분 전환' %>">
-              <button type="button" class="kpi-toggle-btn active" data-visit-type="member"><%= isEn ? 'Member' : '회원' %></button>
-              <button type="button" class="kpi-toggle-btn" data-visit-type="guest"><%= isEn ? 'Guest' : '비회원' %></button>
-              <button type="button" class="kpi-toggle-btn" data-visit-type="total"><%= isEn ? 'Total' : '전체' %></button>
-            </div>
+    <div class="dashboard-kpi-grid">
+      <div class="kpi-card" data-member-switch-root>
+        <div class="kpi-head-row">
+          <h4><%= isEn ? 'Members' : '회원 수' %></h4>
+          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'member segment switch' : '회원 구분 전환' %>">
+            <button type="button" class="kpi-toggle-btn active" data-member-type="active"><%= isEn ? 'Member' : '회원' %></button>
+            <button type="button" class="kpi-toggle-btn" data-member-type="blocked"><%= isEn ? 'Blacklist' : '블랙리스트' %></button>
           </div>
-          <p class="muted-label" data-visit-caption><%= isEn ? 'Member visits summary.' : '회원 방문 기준 집계입니다.' %></p>
-          <ul class="metric-list">
-            <li><span><%= isEn ? 'Today' : '오늘' %></span><strong data-visit-value="today"><%= stats.memberVisits.today %></strong></li>
-            <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong data-visit-value="week"><%= stats.memberVisits.week %></strong></li>
-            <li><span><%= isEn ? '30 Days' : '한달' %></span><strong data-visit-value="month"><%= stats.memberVisits.month %></strong></li>
-            <li><span><%= isEn ? '1 Year' : '1년' %></span><strong data-visit-value="year"><%= stats.memberVisits.year %></strong></li>
-            <li><span><%= isEn ? 'Total' : '총' %></span><strong data-visit-value="total"><%= stats.memberVisits.total %></strong></li>
-          </ul>
         </div>
+        <strong data-member-value><%= stats.users.active %></strong>
+        <p class="muted-label" data-member-caption><%= isEn ? 'Active members count.' : '활성 회원 수입니다.' %></p>
+        <p class="muted-label"><%= isEn ? `Total members ${stats.users.total}` : `총 회원 ${stats.users.total}` %></p>
       </div>
 
-      <div class="admin-dash-stack">
-        <div class="kpi-card" data-dash-pair="top">
-          <h4><%= isEn ? 'Orders Total' : '총 주문건' %></h4>
-          <strong><%= stats.orderCounts.total %></strong>
-          <p class="muted-label"><%= isEn ? 'Order pipeline summary below.' : '주문 상태 파이프라인은 아래에서 확인하세요.' %></p>
-        </div>
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Orders Total' : '총 주문건' %></h4>
+        <strong><%= stats.orderCounts.total %></strong>
+        <p class="muted-label"><%= isEn ? 'Order pipeline summary below.' : '주문 상태 파이프라인은 아래에서 확인하세요.' %></p>
+      </div>
 
-        <div class="kpi-card" data-dash-pair="bottom">
+      <div class="kpi-card">
+        <h4><%= isEn ? 'Signup Summary' : '회원가입 집계' %></h4>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.signupCounts.today %></strong></li>
+          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.signupCounts.week %></strong></li>
+          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.signupCounts.month %></strong></li>
+          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.signupCounts.year %></strong></li>
+          <li><span><%= isEn ? 'Total' : '총 가입 회원' %></span><strong><%= stats.signupCounts.total %></strong></li>
+        </ul>
+      </div>
+
+      <div class="kpi-card" data-order-switch-root>
+        <div class="kpi-head-row">
           <h4><%= isEn ? 'Order Status Summary' : '주문 상태 집계' %></h4>
-          <ul class="metric-list">
-            <li><span><%= isEn ? 'Unchecked' : '미확인 주문건' %></span><strong><%= stats.orderCounts.pendingReview %></strong></li>
-            <li><span><%= isEn ? 'Confirmed' : '확인 주문건' %></span><strong><%= stats.orderCounts.confirmed %></strong></li>
-            <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong><%= stats.orderCounts.readyToShip %></strong></li>
-            <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong><%= stats.orderCounts.shipping %></strong></li>
-            <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong><%= stats.orderCounts.delivered %></strong></li>
-          </ul>
+          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'order group switch' : '주문 분류 전환' %>">
+            <% ['공장제', '젠파츠', '현지중고'].forEach((groupName, idx) => { %>
+              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-order-group="<%= groupName %>"><%= groupLabelMap[groupName] || groupName %></button>
+            <% }) %>
+          </div>
         </div>
+        <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelMap[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelMap[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Unchecked' : '미확인 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
+          <li><span><%= isEn ? 'Confirmed' : '확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
+          <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
+          <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong data-order-value="shipping"><%= defaultOrderGroup.shipping %></strong></li>
+          <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong data-order-value="delivered"><%= defaultOrderGroup.delivered %></strong></li>
+        </ul>
       </div>
-    </div>
 
-    <div class="admin-kpi-grid two-col">
+      <div class="kpi-card" data-visit-switch-root>
+        <div class="kpi-head-row">
+          <h4><%= isEn ? 'Visit Summary' : '방문 집계' %></h4>
+          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'visit segment switch' : '방문 구분 전환' %>">
+            <button type="button" class="kpi-toggle-btn active" data-visit-type="member"><%= isEn ? 'Member' : '회원' %></button>
+            <button type="button" class="kpi-toggle-btn" data-visit-type="guest"><%= isEn ? 'Guest' : '비회원' %></button>
+            <button type="button" class="kpi-toggle-btn" data-visit-type="total"><%= isEn ? 'Total' : '전체' %></button>
+          </div>
+        </div>
+        <p class="muted-label" data-visit-caption><%= isEn ? 'Member visits summary.' : '회원 방문 기준 집계입니다.' %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong data-visit-value="today"><%= stats.memberVisits.today %></strong></li>
+          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong data-visit-value="week"><%= stats.memberVisits.week %></strong></li>
+          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong data-visit-value="month"><%= stats.memberVisits.month %></strong></li>
+          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong data-visit-value="year"><%= stats.memberVisits.year %></strong></li>
+          <li><span><%= isEn ? 'Total' : '총' %></span><strong data-visit-value="total"><%= stats.memberVisits.total %></strong></li>
+        </ul>
+      </div>
+
       <div class="kpi-card">
         <h4><%= isEn ? 'Board Post Counts' : '게시판 게시물 수' %></h4>
         <ul class="metric-list">
@@ -133,19 +155,22 @@
           <li><span><%= isEn ? 'Shipping 7d+' : '7일 이상 배송중' %></span><strong><%= stats.orderAlerts.longShipping %></strong></li>
         </ul>
       </div>
-    </div>
 
-    <div class="kpi-card dashboard-shop-card">
-      <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
-      <p class="muted-label"><%= isEn ? `Active ${stats.shopCounts.active} / Total ${stats.shopCounts.total}` : `활성 ${stats.shopCounts.active} / 전체 ${stats.shopCounts.total}` %></p>
-      <div class="shop-split-grid">
-        <% stats.shopCounts.byGroup.forEach((groupItem) => { %>
-          <article class="shop-split-card">
-            <h5><%= groupLabelMap[groupItem.groupName] || groupItem.groupName %></h5>
-            <p><strong><%= groupItem.activeCount %></strong> <%= isEn ? 'active' : '활성' %></p>
-            <small><%= isEn ? 'hidden' : '숨김' %>: <%= groupItem.hiddenCount %></small>
-          </article>
-        <% }) %>
+      <div class="kpi-card" data-shop-switch-root>
+        <div class="kpi-head-row">
+          <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
+          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'shop group switch' : '상품 분류 전환' %>">
+            <% ['공장제', '젠파츠', '현지중고'].forEach((groupName, idx) => { %>
+              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-shop-group="<%= groupName %>"><%= groupLabelMap[groupName] || groupName %></button>
+            <% }) %>
+          </div>
+        </div>
+        <p class="muted-label" data-shop-caption><%= isEn ? `${groupLabelMap[defaultShopGroup.groupName] || defaultShopGroup.groupName} inventory summary.` : `${groupLabelMap[defaultShopGroup.groupName] || defaultShopGroup.groupName} 상품 현황입니다.` %></p>
+        <ul class="metric-list">
+          <li><span><%= isEn ? 'Total' : '전체 상품' %></span><strong data-shop-value="totalCount"><%= defaultShopGroup.totalCount %></strong></li>
+          <li><span><%= isEn ? 'Active' : '활성' %></span><strong data-shop-value="activeCount"><%= defaultShopGroup.activeCount %></strong></li>
+          <li><span><%= isEn ? 'Hidden' : '숨김' %></span><strong data-shop-value="hiddenCount"><%= defaultShopGroup.hiddenCount %></strong></li>
+        </ul>
       </div>
     </div>
 
@@ -154,36 +179,56 @@
       blocked: stats.users.blocked,
       total: stats.users.total
     }) %></script>
+    <script id="order-group-kpi-payload" type="application/json"><%- JSON.stringify(orderByGroup) %></script>
     <script id="visit-kpi-payload" type="application/json"><%- JSON.stringify({
       member: stats.memberVisits,
       guest: stats.guestVisits,
       total: stats.totalVisits
     }) %></script>
+    <script id="shop-group-kpi-payload" type="application/json"><%- JSON.stringify(shopByGroup) %></script>
     <script>
       (() => {
         const memberRoot = document.querySelector('[data-member-switch-root]');
         const memberPayloadNode = document.getElementById('member-kpi-payload');
-        const root = document.querySelector('[data-visit-switch-root]');
-        const payloadNode = document.getElementById('visit-kpi-payload');
-        if (!memberRoot || !memberPayloadNode || !root || !payloadNode) return;
+        const orderRoot = document.querySelector('[data-order-switch-root]');
+        const orderPayloadNode = document.getElementById('order-group-kpi-payload');
+        const visitRoot = document.querySelector('[data-visit-switch-root]');
+        const visitPayloadNode = document.getElementById('visit-kpi-payload');
+        const shopRoot = document.querySelector('[data-shop-switch-root]');
+        const shopPayloadNode = document.getElementById('shop-group-kpi-payload');
+        if (!memberRoot || !memberPayloadNode || !visitRoot || !visitPayloadNode || !orderRoot || !orderPayloadNode || !shopRoot || !shopPayloadNode) return;
 
         let memberDataset = {};
-        let dataset = {};
+        let orderDataset = [];
+        let visitDataset = {};
+        let shopDataset = [];
         try {
           memberDataset = JSON.parse(memberPayloadNode.textContent || '{}');
         } catch {
           memberDataset = {};
         }
         try {
-          dataset = JSON.parse(payloadNode.textContent || '{}');
+          orderDataset = JSON.parse(orderPayloadNode.textContent || '[]');
         } catch {
-          dataset = {};
+          orderDataset = [];
+        }
+        try {
+          visitDataset = JSON.parse(visitPayloadNode.textContent || '{}');
+        } catch {
+          visitDataset = {};
+        }
+        try {
+          shopDataset = JSON.parse(shopPayloadNode.textContent || '[]');
+        } catch {
+          shopDataset = [];
         }
 
         const memberLabelMap = {
           active: <%- JSON.stringify(isEn ? 'Active members count.' : '활성 회원 수입니다.') %>,
           blocked: <%- JSON.stringify(isEn ? 'Blocked members count.' : '블락 회원 수입니다.') %>
         };
+        const isEnMode = <%= isEn ? 'true' : 'false' %>;
+        const groupLabelMapJs = <%- JSON.stringify(groupLabelMap) %>;
 
         const memberButtons = Array.from(memberRoot.querySelectorAll('[data-member-type]'));
         const memberValueNode = memberRoot.querySelector('[data-member-value]');
@@ -208,71 +253,127 @@
           });
         };
 
-        const labelMap = {
+        const orderButtons = Array.from(orderRoot.querySelectorAll('[data-order-group]'));
+        const orderCaptionNode = orderRoot.querySelector('[data-order-caption]');
+        const orderFields = ['pendingReview', 'confirmed', 'readyToShip', 'shipping', 'delivered'];
+        const orderValueNodes = orderFields.reduce((acc, field) => {
+          acc[field] = orderRoot.querySelector(`[data-order-value="${field}"]`);
+          return acc;
+        }, {});
+
+        const applyOrderGroup = (groupName) => {
+          const target =
+            orderDataset.find((item) => item && item.groupName === groupName) ||
+            orderDataset[0] ||
+            { groupName: '공장제', pendingReview: 0, confirmed: 0, readyToShip: 0, shipping: 0, delivered: 0 };
+
+          orderFields.forEach((field) => {
+            if (orderValueNodes[field]) {
+              orderValueNodes[field].textContent = Number(target[field] || 0).toLocaleString();
+            }
+          });
+
+          if (orderCaptionNode) {
+            const label = groupLabelMapJs[target.groupName] || target.groupName;
+            orderCaptionNode.textContent = isEnMode
+              ? `${label} order status summary.`
+              : `${label} 주문 상태 집계입니다.`;
+          }
+
+          orderButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.orderGroup === target.groupName);
+          });
+        };
+
+        const visitLabelMap = {
           member: <%- JSON.stringify(isEn ? 'Member visits summary.' : '회원 방문 기준 집계입니다.') %>,
           guest: <%- JSON.stringify(isEn ? 'Guest visits summary.' : '비회원 방문 기준 집계입니다.') %>,
           total: <%- JSON.stringify(isEn ? 'All visits summary.' : '회원+비회원 전체 방문 집계입니다.') %>
         };
 
-        const fields = ['today', 'week', 'month', 'year', 'total'];
-        const buttons = Array.from(root.querySelectorAll('[data-visit-type]'));
-        const captionNode = root.querySelector('[data-visit-caption]');
-        const valueNodes = fields.reduce((acc, field) => {
-          acc[field] = root.querySelector(`[data-visit-value="${field}"]`);
+        const visitFields = ['today', 'week', 'month', 'year', 'total'];
+        const visitButtons = Array.from(visitRoot.querySelectorAll('[data-visit-type]'));
+        const visitCaptionNode = visitRoot.querySelector('[data-visit-caption]');
+        const visitValueNodes = visitFields.reduce((acc, field) => {
+          acc[field] = visitRoot.querySelector(`[data-visit-value="${field}"]`);
           return acc;
         }, {});
 
-        const applyType = (type) => {
-          const target = dataset[type] || dataset.member || { today: 0, week: 0, month: 0, year: 0, total: 0 };
-          fields.forEach((field) => {
-            if (valueNodes[field]) {
-              valueNodes[field].textContent = Number(target[field] || 0).toLocaleString();
+        const applyVisitType = (type) => {
+          const target = visitDataset[type] || visitDataset.member || { today: 0, week: 0, month: 0, year: 0, total: 0 };
+          visitFields.forEach((field) => {
+            if (visitValueNodes[field]) {
+              visitValueNodes[field].textContent = Number(target[field] || 0).toLocaleString();
             }
           });
-          if (captionNode) {
-            captionNode.textContent = labelMap[type] || labelMap.member;
+          if (visitCaptionNode) {
+            visitCaptionNode.textContent = visitLabelMap[type] || visitLabelMap.member;
           }
-          buttons.forEach((btn) => {
+          visitButtons.forEach((btn) => {
             btn.classList.toggle('active', btn.dataset.visitType === type);
+          });
+        };
+
+        const shopButtons = Array.from(shopRoot.querySelectorAll('[data-shop-group]'));
+        const shopCaptionNode = shopRoot.querySelector('[data-shop-caption]');
+        const shopFields = ['totalCount', 'activeCount', 'hiddenCount'];
+        const shopValueNodes = shopFields.reduce((acc, field) => {
+          acc[field] = shopRoot.querySelector(`[data-shop-value="${field}"]`);
+          return acc;
+        }, {});
+
+        const applyShopGroup = (groupName) => {
+          const target =
+            shopDataset.find((item) => item && item.groupName === groupName) ||
+            shopDataset[0] ||
+            { groupName: '공장제', totalCount: 0, activeCount: 0, hiddenCount: 0 };
+
+          shopFields.forEach((field) => {
+            if (shopValueNodes[field]) {
+              shopValueNodes[field].textContent = Number(target[field] || 0).toLocaleString();
+            }
+          });
+
+          if (shopCaptionNode) {
+            const label = groupLabelMapJs[target.groupName] || target.groupName;
+            shopCaptionNode.textContent = isEnMode
+              ? `${label} inventory summary.`
+              : `${label} 상품 현황입니다.`;
+          }
+
+          shopButtons.forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.shopGroup === target.groupName);
           });
         };
 
         memberButtons.forEach((btn) => {
           btn.addEventListener('click', () => {
             applyMemberType(btn.dataset.memberType || 'active');
-            syncPairHeights();
           });
         });
 
-        buttons.forEach((btn) => {
+        orderButtons.forEach((btn) => {
           btn.addEventListener('click', () => {
-            applyType(btn.dataset.visitType || 'member');
-            syncPairHeights();
+            applyOrderGroup(btn.dataset.orderGroup || '공장제');
+          });
+        });
+
+        visitButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            applyVisitType(btn.dataset.visitType || 'member');
+          });
+        });
+
+        shopButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            applyShopGroup(btn.dataset.shopGroup || '공장제');
           });
         });
 
         applyMemberType('active');
-        applyType('member');
-
-        const syncPairHeights = () => {
-          const groups = ['top', 'bottom'];
-          groups.forEach((groupName) => {
-            const cards = Array.from(document.querySelectorAll(`[data-dash-pair="${groupName}"]`));
-            cards.forEach((card) => {
-              card.style.minHeight = '';
-            });
-            if (window.innerWidth < 980 || cards.length < 2) {
-              return;
-            }
-            const maxHeight = Math.max(...cards.map((card) => card.offsetHeight));
-            cards.forEach((card) => {
-              card.style.minHeight = `${maxHeight}px`;
-            });
-          });
-        };
-
-        syncPairHeights();
-        window.addEventListener('resize', syncPairHeights);
+        applyOrderGroup('공장제');
+        applyVisitType('member');
+        applyShopGroup('공장제');
       })();
     </script>
   </article>
