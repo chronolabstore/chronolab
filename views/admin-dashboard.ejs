@@ -22,6 +22,20 @@
     if (candidate === 'all') return 'all';
     return productGroupKeys.includes(candidate) ? candidate : 'all';
   })();
+  const activeOrderStatusFilterKey = (() => {
+    const candidate = String(orderStatusFilter || 'all').toUpperCase();
+    const supported = ['PENDING_REVIEW', 'ORDER_CONFIRMED', 'READY_TO_SHIP', 'SHIPPING', 'DELIVERED'];
+    if (!candidate || candidate === 'ALL') return 'all';
+    return supported.includes(candidate) ? candidate : 'all';
+  })();
+  const orderStatusFilterOptions = [
+    { key: 'all', labelKo: '전체', labelEn: 'All' },
+    { key: 'PENDING_REVIEW', labelKo: '입금확인중', labelEn: 'Awaiting Payment' },
+    { key: 'ORDER_CONFIRMED', labelKo: '입금확인', labelEn: 'Payment Confirmed' },
+    { key: 'READY_TO_SHIP', labelKo: '출고중', labelEn: 'Preparing Shipment' },
+    { key: 'SHIPPING', labelKo: '배송중', labelEn: 'Shipping' },
+    { key: 'DELIVERED', labelKo: '배송완료', labelEn: 'Delivered' }
+  ];
 
   const stats = dashboardStats || {
     users: { active: 0, blocked: 0, total: 0 },
@@ -1847,9 +1861,22 @@
     <div class="admin-order-toolbar">
       <span class="muted-label"><%= isEn ? 'Category Filter' : '쇼핑몰 분류' %></span>
       <div class="chip-row admin-order-filter-row">
-        <a href="/admin/orders?orderGroup=all" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
+        <a href="/admin/orders?orderGroup=all&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
         <% productGroupKeys.forEach((groupName) => { %>
-          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
+          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
+        <% }) %>
+      </div>
+    </div>
+    <div class="admin-order-toolbar">
+      <span class="muted-label"><%= isEn ? 'Status Filter' : '주문 상태' %></span>
+      <div class="chip-row admin-order-filter-row">
+        <% orderStatusFilterOptions.forEach((statusFilter) => { %>
+          <a
+            href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(statusFilter.key) %>"
+            class="chip <%= activeOrderStatusFilterKey === statusFilter.key ? 'dark' : '' %>"
+          >
+            <%= isEn ? statusFilter.labelEn : statusFilter.labelKo %>
+          </a>
         <% }) %>
       </div>
     </div>

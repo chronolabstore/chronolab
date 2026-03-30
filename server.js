@@ -1144,6 +1144,78 @@ function normalizeAdminOrderGroupFilter(rawGroup = '', availableGroupKeys = []) 
   return 'all';
 }
 
+function normalizeAdminOrderStatusFilter(rawStatus = '') {
+  const value = String(rawStatus || '').trim();
+  if (!value) {
+    return 'all';
+  }
+
+  const lower = value.toLowerCase();
+  if (lower === 'all') {
+    return 'all';
+  }
+
+  const aliasMap = {
+    pending: ORDER_STATUS.PENDING_REVIEW,
+    awaiting: ORDER_STATUS.PENDING_REVIEW,
+    unpaid: ORDER_STATUS.PENDING_REVIEW,
+    pending_review: ORDER_STATUS.PENDING_REVIEW,
+    confirmed: ORDER_STATUS.ORDER_CONFIRMED,
+    paid: ORDER_STATUS.ORDER_CONFIRMED,
+    payment_confirmed: ORDER_STATUS.ORDER_CONFIRMED,
+    order_confirmed: ORDER_STATUS.ORDER_CONFIRMED,
+    ready: ORDER_STATUS.READY_TO_SHIP,
+    ready_to_ship: ORDER_STATUS.READY_TO_SHIP,
+    preparing: ORDER_STATUS.READY_TO_SHIP,
+    shipping: ORDER_STATUS.SHIPPING,
+    shipped: ORDER_STATUS.SHIPPING,
+    delivered: ORDER_STATUS.DELIVERED,
+    done: ORDER_STATUS.DELIVERED
+  };
+
+  if (aliasMap[lower]) {
+    return aliasMap[lower];
+  }
+
+  const normalized = normalizeOrderStatus(value);
+  const supported = new Set([
+    ORDER_STATUS.PENDING_REVIEW,
+    ORDER_STATUS.ORDER_CONFIRMED,
+    ORDER_STATUS.READY_TO_SHIP,
+    ORDER_STATUS.SHIPPING,
+    ORDER_STATUS.DELIVERED
+  ]);
+  if (supported.has(normalized)) {
+    return normalized;
+  }
+
+  return 'all';
+}
+
+function getOrderStatusFilterDbValues(statusFilter = 'all') {
+  const normalized = normalizeAdminOrderStatusFilter(statusFilter);
+  if (normalized === 'all') {
+    return [];
+  }
+
+  if (normalized === ORDER_STATUS.PENDING_REVIEW) {
+    return ['PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED'];
+  }
+  if (normalized === ORDER_STATUS.ORDER_CONFIRMED) {
+    return ['ORDER_CONFIRMED', 'PAID_PREPARING', 'TRANSFER_CONFIRMED', 'PREPARING'];
+  }
+  if (normalized === ORDER_STATUS.READY_TO_SHIP) {
+    return ['READY_TO_SHIP', 'PACKING', 'PRE_SHIPPING'];
+  }
+  if (normalized === ORDER_STATUS.SHIPPING) {
+    return ['SHIPPING', 'SHIPPED'];
+  }
+  if (normalized === ORDER_STATUS.DELIVERED) {
+    return ['DELIVERED', 'DONE'];
+  }
+  return [];
+}
+
 function normalizeHexColor(rawColor = '', fallback = '#000000') {
   const value = String(rawColor || '').trim();
   if (HEX_COLOR_REGEX.test(value)) {
@@ -3878,6 +3950,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupKeys = productGroupConfigs.map((group) => group.key);
   const orderGroupFilter = normalizeAdminOrderGroupFilter(options.orderGroupFilter || '', productGroupKeys);
+  const orderStatusFilter = normalizeAdminOrderStatusFilter(options.orderStatusFilter || '');
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
   const products = db
@@ -3925,9 +3998,18 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     'JOIN products p ON p.id = o.product_id'
   ];
   const orderParams = [];
+  const orderWhereParts = [];
   if (orderGroupFilter !== 'all') {
-    ordersQuery.push('WHERE p.category_group = ?');
+    orderWhereParts.push('p.category_group = ?');
     orderParams.push(orderGroupFilter);
+  }
+  const orderStatusDbValues = getOrderStatusFilterDbValues(orderStatusFilter);
+  if (orderStatusDbValues.length > 0) {
+    orderWhereParts.push(`UPPER(TRIM(o.status)) IN (${orderStatusDbValues.map(() => '?').join(', ')})`);
+    orderParams.push(...orderStatusDbValues);
+  }
+  if (orderWhereParts.length > 0) {
+    ordersQuery.push(`WHERE ${orderWhereParts.join(' AND ')}`);
   }
   ordersQuery.push('ORDER BY o.id DESC');
   ordersQuery.push('LIMIT 100');
@@ -4020,6 +4102,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     editingProduct,
     orders: ordersWithTimeline,
     orderGroupFilter,
+    orderStatusFilter,
     notices,
     newsPosts,
     qcs,
@@ -4041,6 +4124,9 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     extraData.orderGroupFilter || req.query.orderGroup || '',
     productGroupConfigs.map((group) => group.key)
   );
+  const orderStatusFilter = normalizeAdminOrderStatusFilter(
+    extraData.orderStatusFilter || req.query.orderStatus || ''
+  );
 
   const viewData = buildAdminDashboardViewData(
     res.locals.ctx.lang,
@@ -4049,7 +4135,8 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
       memberOptions: extraData.memberOptions || parseMemberManageQuery(req.query || {}),
       includeDashboardStats: activeTab === 'dashboard',
       productEditId: extraData.productEditId || 0,
-      orderGroupFilter
+      orderGroupFilter,
+      orderStatusFilter
     }
   );
   return res.render('admin-dashboard', {
@@ -4060,6 +4147,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
     productSection: normalizeProductManageSection(extraData.productSection || ''),
     orderGroupFilter,
+    orderStatusFilter,
     ...viewData
   });
 }
@@ -4681,7 +4769,8 @@ app.get('/admin/news', requireAdmin, (req, res) => renderAdminDashboard(req, res
 app.get('/admin/qc', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'qc'));
 app.get('/admin/orders', requireAdmin, (req, res) =>
   renderAdminDashboard(req, res, 'orders', {
-    orderGroupFilter: req.query.orderGroup || 'all'
+    orderGroupFilter: req.query.orderGroup || 'all',
+    orderStatusFilter: req.query.orderStatus || 'all'
   })
 );
 app.get('/admin/inquiries', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'inquiries'));
