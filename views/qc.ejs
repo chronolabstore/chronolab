@@ -10,19 +10,23 @@
     </form>
   </div>
 
-  <div class="qc-grid">
+  <ul class="media-line-list qc-media-list">
     <% if (items.length === 0) { %>
-      <p><%= isEn ? 'No QC images found.' : '등록된 QC 이미지가 없습니다.' %></p>
+      <li class="media-line-empty"><%= isEn ? 'No QC images found.' : '등록된 QC 이미지가 없습니다.' %></li>
     <% } %>
     <% items.forEach((item) => { %>
-      <article class="qc-card">
-        <img src="<%= item.image_path %>" alt="qc image" />
-        <strong><%= isEn ? 'Order No.' : '구매번호' %>: <%= item.order_no %></strong>
-        <p><%= item.note || '-' %></p>
-        <small><%= item.created_at.slice(0, 10) %></small>
-      </article>
+      <li class="media-line-item">
+        <span class="media-line-thumb">
+          <img src="<%= item.image_path %>" alt="qc image" loading="lazy" />
+        </span>
+        <div class="media-line-body">
+          <strong class="media-line-title"><%= isEn ? 'Order No.' : '구매번호' %>: <%= item.order_no %></strong>
+          <p class="media-line-note"><%= item.note || '-' %></p>
+          <small class="media-line-meta"><%= item.created_at.slice(0, 10) %></small>
+        </div>
+      </li>
     <% }) %>
-  </div>
+  </ul>
 </section>
 
 <%- include('partials/layout-end') %>
