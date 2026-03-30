@@ -96,9 +96,16 @@
   const productsTab = ['upload', 'list'].includes(String(productSection || ''))
     ? String(productSection)
     : 'upload';
+  const noticesTab = String(noticeSection || '') === 'list' ? 'list' : 'create';
+  const newsTab = String(newsSection || '') === 'list' ? 'list' : 'create';
+  const qcTab = String(qcSection || '') === 'list' ? 'list' : 'create';
+  const inquiriesTab = String(inquirySection || '') === 'list' ? 'list' : 'reply';
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
   const uploadActiveGroupKey =
     String(editingItem?.category_group || productGroupKeys[0] || defaultGroupKey);
+  const activeOrderDateFrom = String(orderDateFrom || '');
+  const activeOrderDateTo = String(orderDateTo || '');
+  const orderDateQuerySuffix = `${activeOrderDateFrom ? `&orderDateFrom=${encodeURIComponent(activeOrderDateFrom)}` : ''}${activeOrderDateTo ? `&orderDateTo=${encodeURIComponent(activeOrderDateTo)}` : ''}`;
 %>
 
 <section class="admin-grid single">
@@ -1771,86 +1778,205 @@
 
   <% if (tab === 'notices') { %>
   <article class="block-card">
-    <h3><%= isEn ? 'Notice Upload (Popup Optional)' : '공지사항 업로드 (팝업 선택 가능)' %></h3>
-    <form method="post" action="/admin/notice/create" enctype="multipart/form-data" class="form-grid">
-      <label><%= isEn ? 'Title' : '제목' %>
-        <input type="text" name="title" required />
-      </label>
-      <label><%= isEn ? 'Content' : '내용' %>
-        <textarea name="content" rows="4" required></textarea>
-      </label>
-      <label><%= isEn ? 'Image' : '이미지' %>
-        <input type="file" name="image" accept="image/*" />
-      </label>
-      <label class="check-row">
-        <input type="checkbox" name="isPopup" />
-        <span><%= isEn ? 'Show as popup notice' : '팝업 공지로 노출' %></span>
-      </label>
-      <button type="submit" class="cta-main"><%= isEn ? 'Add Notice' : '공지 등록' %></button>
-    </form>
+    <h3><%= isEn ? 'Notice Management' : '공지사항 관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/notices?section=create" class="menu-pill <%= noticesTab === 'create' ? 'active' : '' %>"><%= isEn ? 'Add Notice' : '공지 등록' %></a>
+      <a href="/admin/notices?section=list" class="menu-pill <%= noticesTab === 'list' ? 'active' : '' %>"><%= isEn ? 'Notice List' : '등록 공지 목록' %></a>
+    </div>
 
-    <ul class="line-list compact">
-      <% notices.forEach((item) => { %>
-        <li>
-          <span><%= item.title %></span>
-          <em><%= item.is_popup ? (isEn ? 'Popup' : '팝업') : (isEn ? 'Normal' : '일반') %></em>
-        </li>
-      <% }) %>
-    </ul>
+    <% if (noticesTab === 'create') { %>
+      <form method="post" action="/admin/notice/create" enctype="multipart/form-data" class="form-grid">
+        <label><%= isEn ? 'Title' : '제목' %>
+          <input type="text" name="title" required />
+        </label>
+        <label><%= isEn ? 'Content' : '내용' %>
+          <textarea name="content" rows="4" required></textarea>
+        </label>
+        <label><%= isEn ? 'Image' : '이미지' %>
+          <input type="file" name="image" accept="image/*" />
+        </label>
+        <label class="check-row">
+          <input type="checkbox" name="isPopup" />
+          <span><%= isEn ? 'Show as popup notice' : '팝업 공지로 노출' %></span>
+        </label>
+        <button type="submit" class="cta-main"><%= isEn ? 'Add Notice' : '공지 등록' %></button>
+      </form>
+    <% } else { %>
+      <div class="admin-list">
+        <% notices.forEach((item) => { %>
+          <details class="admin-list-item">
+            <summary>
+              <strong><%= item.title %></strong>
+              <small><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></small>
+              <small><%= item.is_popup ? (isEn ? 'Popup' : '팝업') : (isEn ? 'Normal' : '일반') %></small>
+              <small><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '노출중') %></small>
+            </summary>
+            <form method="post" action="/admin/notice/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
+              <label><span><%= isEn ? 'Title' : '제목' %></span>
+                <input type="text" name="title" value="<%= item.title %>" required />
+              </label>
+              <label><span><%= isEn ? 'Content' : '내용' %></span>
+                <textarea name="content" rows="4" required><%= item.content %></textarea>
+              </label>
+              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" />
+              </label>
+              <label class="check-row">
+                <input type="checkbox" name="isPopup" <%= item.is_popup ? 'checked' : '' %> />
+                <span><%= isEn ? 'Popup Notice' : '팝업 공지' %></span>
+              </label>
+              <% if (item.image_path) { %>
+                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% } %>
+              <div class="admin-field-chip-row">
+                <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+              </div>
+            </form>
+            <div class="admin-field-chip-row">
+              <form method="post" action="/admin/notice/<%= item.id %>/toggle" class="inline-form">
+                <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
+              </form>
+              <form method="post" action="/admin/notice/<%= item.id %>/delete" class="inline-form">
+                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this notice?' : '이 공지사항을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              </form>
+            </div>
+          </details>
+        <% }) %>
+        <% if (notices.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No notices registered.' : '등록된 공지사항이 없습니다.' %></p>
+        <% } %>
+      </div>
+    <% } %>
   </article>
   <% } %>
 
   <% if (tab === 'news') { %>
   <article class="block-card">
-    <h3><%= isEn ? 'News Upload' : '뉴스 업로드' %></h3>
-    <form method="post" action="/admin/news/create" enctype="multipart/form-data" class="form-grid">
-      <label><%= isEn ? 'Title' : '제목' %>
-        <input type="text" name="title" required />
-      </label>
-      <label><%= isEn ? 'Content' : '내용' %>
-        <textarea name="content" rows="4" required></textarea>
-      </label>
-      <label><%= isEn ? 'Image' : '이미지' %>
-        <input type="file" name="image" accept="image/*" />
-      </label>
-      <button type="submit" class="cta-main"><%= isEn ? 'Add News' : '뉴스 등록' %></button>
-    </form>
+    <h3><%= isEn ? 'News Management' : '뉴스 관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/news?section=create" class="menu-pill <%= newsTab === 'create' ? 'active' : '' %>"><%= isEn ? 'Add News' : '뉴스 등록' %></a>
+      <a href="/admin/news?section=list" class="menu-pill <%= newsTab === 'list' ? 'active' : '' %>"><%= isEn ? 'News List' : '등록 뉴스 목록' %></a>
+    </div>
 
-    <ul class="line-list compact">
-      <% newsPosts.forEach((item) => { %>
-        <li>
-          <span><%= item.title %></span>
-          <em><%= item.created_at.slice(0, 10) %></em>
-        </li>
-      <% }) %>
-    </ul>
+    <% if (newsTab === 'create') { %>
+      <form method="post" action="/admin/news/create" enctype="multipart/form-data" class="form-grid">
+        <label><%= isEn ? 'Title' : '제목' %>
+          <input type="text" name="title" required />
+        </label>
+        <label><%= isEn ? 'Content' : '내용' %>
+          <textarea name="content" rows="4" required></textarea>
+        </label>
+        <label><%= isEn ? 'Image' : '이미지' %>
+          <input type="file" name="image" accept="image/*" />
+        </label>
+        <button type="submit" class="cta-main"><%= isEn ? 'Add News' : '뉴스 등록' %></button>
+      </form>
+    <% } else { %>
+      <div class="admin-list">
+        <% newsPosts.forEach((item) => { %>
+          <details class="admin-list-item">
+            <summary>
+              <strong><%= item.title %></strong>
+              <small><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></small>
+              <small><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '노출중') %></small>
+            </summary>
+            <form method="post" action="/admin/news/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
+              <label><span><%= isEn ? 'Title' : '제목' %></span>
+                <input type="text" name="title" value="<%= item.title %>" required />
+              </label>
+              <label><span><%= isEn ? 'Content' : '내용' %></span>
+                <textarea name="content" rows="4" required><%= item.content %></textarea>
+              </label>
+              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" />
+              </label>
+              <% if (item.image_path) { %>
+                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% } %>
+              <div class="admin-field-chip-row">
+                <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+              </div>
+            </form>
+            <div class="admin-field-chip-row">
+              <form method="post" action="/admin/news/<%= item.id %>/toggle" class="inline-form">
+                <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
+              </form>
+              <form method="post" action="/admin/news/<%= item.id %>/delete" class="inline-form">
+                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this news post?' : '이 뉴스 게시글을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              </form>
+            </div>
+          </details>
+        <% }) %>
+        <% if (newsPosts.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No news posts registered.' : '등록된 뉴스 게시글이 없습니다.' %></p>
+        <% } %>
+      </div>
+    <% } %>
   </article>
   <% } %>
 
   <% if (tab === 'qc') { %>
   <article class="block-card">
-    <h3><%= isEn ? 'QC Upload' : 'QC 업로드' %></h3>
-    <form method="post" action="/admin/qc/create" enctype="multipart/form-data" class="form-grid">
-      <label><%= isEn ? 'Order No.' : '구매번호' %>
-        <input type="text" name="orderNo" required />
-      </label>
-      <label><%= isEn ? 'QC Image' : 'QC 이미지' %>
-        <input type="file" name="image" accept="image/*" required />
-      </label>
-      <label><%= isEn ? 'Memo' : '메모' %>
-        <input type="text" name="note" />
-      </label>
-      <button type="submit" class="cta-main"><%= isEn ? 'Add QC' : 'QC 등록' %></button>
-    </form>
+    <h3><%= isEn ? 'QC Management' : 'QC 관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/qc?section=create" class="menu-pill <%= qcTab === 'create' ? 'active' : '' %>"><%= isEn ? 'Add QC' : 'QC 등록' %></a>
+      <a href="/admin/qc?section=list" class="menu-pill <%= qcTab === 'list' ? 'active' : '' %>"><%= isEn ? 'QC List' : '등록 QC 목록' %></a>
+    </div>
 
-    <ul class="line-list compact">
-      <% qcs.forEach((item) => { %>
-        <li>
-          <span><%= item.order_no %> / <%= item.note || '-' %></span>
-          <em><%= item.created_at.slice(0, 10) %></em>
-        </li>
-      <% }) %>
-    </ul>
+    <% if (qcTab === 'create') { %>
+      <form method="post" action="/admin/qc/create" enctype="multipart/form-data" class="form-grid">
+        <label><%= isEn ? 'Order No.' : '구매번호' %>
+          <input type="text" name="orderNo" required />
+        </label>
+        <label><%= isEn ? 'QC Image' : 'QC 이미지' %>
+          <input type="file" name="image" accept="image/*" required />
+        </label>
+        <label><%= isEn ? 'Memo' : '메모' %>
+          <input type="text" name="note" />
+        </label>
+        <button type="submit" class="cta-main"><%= isEn ? 'Add QC' : 'QC 등록' %></button>
+      </form>
+    <% } else { %>
+      <div class="admin-list">
+        <% qcs.forEach((item) => { %>
+          <details class="admin-list-item">
+            <summary>
+              <strong><%= item.order_no %></strong>
+              <small><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></small>
+              <small><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '노출중') %></small>
+            </summary>
+            <form method="post" action="/admin/qc/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
+              <label><span><%= isEn ? 'Order No.' : '구매번호' %></span>
+                <input type="text" name="orderNo" value="<%= item.order_no %>" required />
+              </label>
+              <label><span><%= isEn ? 'Memo' : '메모' %></span>
+                <input type="text" name="note" value="<%= item.note || '' %>" />
+              </label>
+              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" />
+              </label>
+              <% if (item.image_path) { %>
+                <img src="<%= item.image_path %>" alt="<%= item.order_no %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% } %>
+              <div class="admin-field-chip-row">
+                <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+              </div>
+            </form>
+            <div class="admin-field-chip-row">
+              <form method="post" action="/admin/qc/<%= item.id %>/toggle" class="inline-form">
+                <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
+              </form>
+              <form method="post" action="/admin/qc/<%= item.id %>/delete" class="inline-form">
+                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this QC item?' : '이 QC 항목을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              </form>
+            </div>
+          </details>
+        <% }) %>
+        <% if (qcs.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No QC items registered.' : '등록된 QC 항목이 없습니다.' %></p>
+        <% } %>
+      </div>
+    <% } %>
   </article>
   <% } %>
 
@@ -1861,9 +1987,9 @@
     <div class="admin-order-toolbar">
       <span class="muted-label"><%= isEn ? 'Category Filter' : '쇼핑몰 분류' %></span>
       <div class="chip-row admin-order-filter-row">
-        <a href="/admin/orders?orderGroup=all&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
+        <a href="/admin/orders?orderGroup=all&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
         <% productGroupKeys.forEach((groupName) => { %>
-          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
+          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
         <% }) %>
       </div>
     </div>
@@ -1872,7 +1998,7 @@
       <div class="chip-row admin-order-filter-row">
         <% orderStatusFilterOptions.forEach((statusFilter) => { %>
           <a
-            href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(statusFilter.key) %>"
+            href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(statusFilter.key) %><%= orderDateQuerySuffix %>"
             class="chip <%= activeOrderStatusFilterKey === statusFilter.key ? 'dark' : '' %>"
           >
             <%= isEn ? statusFilter.labelEn : statusFilter.labelKo %>
@@ -1880,6 +2006,22 @@
         <% }) %>
       </div>
     </div>
+    <form method="get" action="/admin/orders" class="admin-filter-row">
+      <input type="hidden" name="orderGroup" value="<%= activeOrderFilterKey %>" />
+      <input type="hidden" name="orderStatus" value="<%= activeOrderStatusFilterKey %>" />
+      <label class="admin-filter-item">
+        <span><%= isEn ? 'From Date' : '시작일' %></span>
+        <input type="date" name="orderDateFrom" value="<%= activeOrderDateFrom %>" />
+      </label>
+      <label class="admin-filter-item">
+        <span><%= isEn ? 'To Date' : '종료일' %></span>
+        <input type="date" name="orderDateTo" value="<%= activeOrderDateTo %>" />
+      </label>
+      <div class="admin-filter-actions">
+        <button type="submit" class="chip dark"><%= isEn ? 'Apply' : '조회' %></button>
+        <a href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip"><%= isEn ? 'Reset Date' : '날짜 초기화' %></a>
+      </div>
+    </form>
     <div class="table-wrap">
       <table>
         <thead>
@@ -2023,22 +2165,81 @@
 
   <% if (tab === 'inquiries') { %>
   <article class="block-card">
-    <h3><%= isEn ? 'Inquiry Replies' : '문의 답변' %></h3>
-    <div class="admin-list">
-      <% inquiries.forEach((item) => { %>
-        <div class="inquiry-admin-item">
-          <strong><%= item.title %></strong>
-          <p><%= isEn ? 'Writer' : '작성자' %>: <%= item.username %></p>
-          <p><%= isEn ? 'Content' : '내용' %>: <%= item.content %></p>
-          <form method="post" action="/admin/inquiry/<%= item.id %>/reply" class="form-grid">
-            <label><%= isEn ? 'Reply' : '답변' %>
-              <textarea name="replyContent" rows="3"><%= item.reply_content || '' %></textarea>
-            </label>
-            <button type="submit" class="chip dark"><%= isEn ? 'Save Reply' : '답변 저장' %></button>
-          </form>
-        </div>
-      <% }) %>
+    <h3><%= isEn ? 'Inquiry Answer Management' : '문의 답변 관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/inquiries?section=reply" class="menu-pill <%= inquiriesTab === 'reply' ? 'active' : '' %>"><%= isEn ? 'Reply Queue' : '답변 등록' %></a>
+      <a href="/admin/inquiries?section=list" class="menu-pill <%= inquiriesTab === 'list' ? 'active' : '' %>"><%= isEn ? 'Inquiry List' : '문의 목록 관리' %></a>
     </div>
+
+    <% if (inquiriesTab === 'reply') { %>
+      <% const replyTargets = inquiries.filter((item) => !String(item.reply_content || '').trim()); %>
+      <div class="admin-list">
+        <% replyTargets.forEach((item) => { %>
+          <div class="inquiry-admin-item">
+            <strong><%= item.title %></strong>
+            <p><%= isEn ? 'Writer' : '작성자' %>: <%= item.username %></p>
+            <p><%= isEn ? 'Created' : '작성일' %>: <%= item.created_at ? item.created_at.slice(0, 16) : '-' %></p>
+            <p><%= isEn ? 'Content' : '내용' %>: <%= item.content %></p>
+            <% if (item.image_path) { %>
+              <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+            <% } %>
+            <form method="post" action="/admin/inquiry/<%= item.id %>/reply" class="form-grid">
+              <label><%= isEn ? 'Reply' : '답변' %>
+                <textarea name="replyContent" rows="3" required></textarea>
+              </label>
+              <button type="submit" class="chip dark"><%= isEn ? 'Save Reply' : '답변 저장' %></button>
+            </form>
+          </div>
+        <% }) %>
+        <% if (replyTargets.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No pending inquiries for reply.' : '답변 대기 중인 문의가 없습니다.' %></p>
+        <% } %>
+      </div>
+    <% } else { %>
+      <div class="admin-list">
+        <% inquiries.forEach((item) => { %>
+          <details class="admin-list-item">
+            <summary>
+              <strong><%= item.title %></strong>
+              <small><%= isEn ? 'Writer' : '작성자' %>: <%= item.username %></small>
+              <small><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></small>
+              <small><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '노출중') %></small>
+            </summary>
+            <form method="post" action="/admin/inquiry/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
+              <label><span><%= isEn ? 'Title' : '제목' %></span>
+                <input type="text" name="title" value="<%= item.title %>" required />
+              </label>
+              <label><span><%= isEn ? 'Content' : '내용' %></span>
+                <textarea name="content" rows="3" required><%= item.content %></textarea>
+              </label>
+              <label><span><%= isEn ? 'Reply' : '답변' %></span>
+                <textarea name="replyContent" rows="3"><%= item.reply_content || '' %></textarea>
+              </label>
+              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" />
+              </label>
+              <% if (item.image_path) { %>
+                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% } %>
+              <div class="admin-field-chip-row">
+                <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+              </div>
+            </form>
+            <div class="admin-field-chip-row">
+              <form method="post" action="/admin/inquiry/<%= item.id %>/toggle" class="inline-form">
+                <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
+              </form>
+              <form method="post" action="/admin/inquiry/<%= item.id %>/delete" class="inline-form">
+                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this inquiry?' : '이 문의 항목을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              </form>
+            </div>
+          </details>
+        <% }) %>
+        <% if (inquiries.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No inquiries found.' : '문의 항목이 없습니다.' %></p>
+        <% } %>
+      </div>
+    <% } %>
   </article>
   <% } %>
 </section>

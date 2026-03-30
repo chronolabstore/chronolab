@@ -1131,6 +1131,22 @@ function normalizeProductManageSection(rawSection = '') {
   return 'upload';
 }
 
+function normalizeContentManageSection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  if (section === 'list') {
+    return 'list';
+  }
+  return 'create';
+}
+
+function normalizeInquiryManageSection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  if (section === 'list') {
+    return 'list';
+  }
+  return 'reply';
+}
+
 function normalizeAdminOrderGroupFilter(rawGroup = '', availableGroupKeys = []) {
   const normalized = normalizeProductGroupKey(rawGroup || '');
   if (!normalized || normalized === 'all') {
@@ -1214,6 +1230,26 @@ function getOrderStatusFilterDbValues(statusFilter = 'all') {
     return ['DELIVERED', 'DONE'];
   }
   return [];
+}
+
+function parseAdminOrderManageQuery(query = {}, availableGroupKeys = []) {
+  const orderGroupFilter = normalizeAdminOrderGroupFilter(query.orderGroup || '', availableGroupKeys);
+  const orderStatusFilter = normalizeAdminOrderStatusFilter(query.orderStatus || '');
+  let orderDateFrom = normalizeDateInput(query.orderDateFrom || '');
+  let orderDateTo = normalizeDateInput(query.orderDateTo || '');
+
+  if (orderDateFrom && orderDateTo && orderDateFrom > orderDateTo) {
+    const temp = orderDateFrom;
+    orderDateFrom = orderDateTo;
+    orderDateTo = temp;
+  }
+
+  return {
+    orderGroupFilter,
+    orderStatusFilter,
+    orderDateFrom,
+    orderDateTo
+  };
 }
 
 function normalizeHexColor(rawColor = '', fallback = '#000000') {
@@ -1901,10 +1937,26 @@ app.use((req, res, next) => {
   }
 
   const popupNotice = db
-    .prepare('SELECT id, title, content, image_path FROM notices WHERE is_popup = 1 ORDER BY id DESC LIMIT 1')
+    .prepare(
+      `
+        SELECT id, title, content, image_path
+        FROM notices
+        WHERE is_popup = 1 AND COALESCE(is_hidden, 0) = 0
+        ORDER BY id DESC
+        LIMIT 1
+      `
+    )
     .get();
   const footerNotices = db
-    .prepare('SELECT id, title FROM notices ORDER BY id DESC LIMIT 5')
+    .prepare(
+      `
+        SELECT id, title
+        FROM notices
+        WHERE COALESCE(is_hidden, 0) = 0
+        ORDER BY id DESC
+        LIMIT 5
+      `
+    )
     .all();
 
   const visitCounts = getVisitCounts(today);
@@ -2100,6 +2152,7 @@ app.get('/main', (req, res) => {
       `
         SELECT id, title, created_at
         FROM notices
+        WHERE COALESCE(is_hidden, 0) = 0
         ORDER BY id DESC
         LIMIT 5
       `
@@ -2111,6 +2164,7 @@ app.get('/main', (req, res) => {
       `
         SELECT id, title, content, image_path, created_at
         FROM news_posts
+        WHERE COALESCE(is_hidden, 0) = 0
         ORDER BY id DESC
         LIMIT 3
       `
@@ -2614,31 +2668,61 @@ app.get('/mypage', requireAuth, (req, res) => {
 });
 
 app.get('/notice', (req, res) => {
-  const notices = db
-    .prepare('SELECT id, title, image_path, is_popup, created_at FROM notices ORDER BY id DESC')
-    .all();
+  const isAdminViewer = Boolean(req.user?.isAdmin);
+  const notices = isAdminViewer
+    ? db
+        .prepare(
+          `
+            SELECT id, title, image_path, is_popup, created_at
+            FROM notices
+            ORDER BY id DESC
+          `
+        )
+        .all()
+    : db
+        .prepare(
+          `
+            SELECT id, title, image_path, is_popup, created_at
+            FROM notices
+            WHERE COALESCE(is_hidden, 0) = 0
+            ORDER BY id DESC
+          `
+        )
+        .all();
   res.render('notice-list', { title: 'Notice', notices });
 });
 
 app.get('/notice/:id', (req, res) => {
   const id = Number(req.params.id);
   const notice = db.prepare('SELECT * FROM notices WHERE id = ? LIMIT 1').get(id);
-  if (!notice) {
+  if (!notice || (Number(notice.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '공지사항이 없습니다.' });
   }
   res.render('notice-detail', { title: 'Notice Detail', notice });
 });
 
 app.get('/news', (req, res) => {
-  const newsPosts = db
-    .prepare(
-      `
-        SELECT id, title, content, image_path, created_at
-        FROM news_posts
-        ORDER BY id DESC
-      `
-    )
-    .all();
+  const isAdminViewer = Boolean(req.user?.isAdmin);
+  const newsPosts = isAdminViewer
+    ? db
+        .prepare(
+          `
+            SELECT id, title, content, image_path, created_at
+            FROM news_posts
+            ORDER BY id DESC
+          `
+        )
+        .all()
+    : db
+        .prepare(
+          `
+            SELECT id, title, content, image_path, created_at
+            FROM news_posts
+            WHERE COALESCE(is_hidden, 0) = 0
+            ORDER BY id DESC
+          `
+        )
+        .all();
 
   res.render('news-list', { title: 'News', newsPosts });
 });
@@ -2647,16 +2731,17 @@ app.get('/news/:id', (req, res) => {
   const id = Number(req.params.id);
   const newsPost = db.prepare('SELECT * FROM news_posts WHERE id = ? LIMIT 1').get(id);
 
-  if (!newsPost) {
+  if (!newsPost || (Number(newsPost.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '뉴스 게시글이 없습니다.' });
   }
 
+  const relatedNewsWhere = req.user?.isAdmin ? 'WHERE id != ?' : 'WHERE id != ? AND COALESCE(is_hidden, 0) = 0';
   const relatedNews = db
     .prepare(
       `
         SELECT id, title, created_at
         FROM news_posts
-        WHERE id != ?
+        ${relatedNewsWhere}
         ORDER BY id DESC
         LIMIT 5
       `
@@ -2668,11 +2753,21 @@ app.get('/news/:id', (req, res) => {
 
 app.get('/qc', (req, res) => {
   const orderNo = String(req.query.orderNo || '').trim();
-  const items = orderNo
-    ? db
-        .prepare('SELECT * FROM qc_items WHERE order_no = ? ORDER BY id DESC')
-        .all(orderNo)
-    : db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 30').all();
+  const isAdminViewer = Boolean(req.user?.isAdmin);
+  let items = [];
+  if (orderNo) {
+    items = isAdminViewer
+      ? db
+          .prepare('SELECT * FROM qc_items WHERE order_no = ? ORDER BY id DESC')
+          .all(orderNo)
+      : db
+          .prepare('SELECT * FROM qc_items WHERE order_no = ? AND COALESCE(is_hidden, 0) = 0 ORDER BY id DESC')
+          .all(orderNo);
+  } else {
+    items = isAdminViewer
+      ? db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 30').all()
+      : db.prepare('SELECT * FROM qc_items WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id DESC LIMIT 30').all();
+  }
 
   res.render('qc', { title: 'QC', orderNo, items });
 });
@@ -2722,12 +2817,15 @@ app.post('/review/new', requireAuth, upload.single('image'), (req, res) => {
 });
 
 app.get('/inquiry', (req, res) => {
+  const isAdminViewer = Boolean(req.user?.isAdmin);
+  const inquiryWhere = isAdminViewer ? '' : 'WHERE COALESCE(i.is_hidden, 0) = 0';
   const inquiries = db
     .prepare(
       `
-        SELECT i.id, i.title, i.created_at, i.reply_content, u.username, i.user_id
+        SELECT i.id, i.title, i.created_at, i.reply_content, u.username, i.user_id, i.is_hidden
         FROM inquiries i
         JOIN users u ON u.id = i.user_id
+        ${inquiryWhere}
         ORDER BY i.id DESC
       `
     )
@@ -2779,7 +2877,7 @@ app.get('/inquiry/:id', (req, res) => {
     )
     .get(id);
 
-  if (!inquiry) {
+  if (!inquiry || (Number(inquiry.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '문의를 찾을 수 없습니다.' });
   }
 
@@ -3951,6 +4049,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const productGroupKeys = productGroupConfigs.map((group) => group.key);
   const orderGroupFilter = normalizeAdminOrderGroupFilter(options.orderGroupFilter || '', productGroupKeys);
   const orderStatusFilter = normalizeAdminOrderStatusFilter(options.orderStatusFilter || '');
+  const orderDateFrom = normalizeDateInput(options.orderDateFrom || '');
+  const orderDateTo = normalizeDateInput(options.orderDateTo || '');
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
   const products = db
@@ -4007,6 +4107,14 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   if (orderStatusDbValues.length > 0) {
     orderWhereParts.push(`UPPER(TRIM(o.status)) IN (${orderStatusDbValues.map(() => '?').join(', ')})`);
     orderParams.push(...orderStatusDbValues);
+  }
+  if (orderDateFrom) {
+    orderWhereParts.push("date(datetime(o.created_at, '+9 hours')) >= ?");
+    orderParams.push(orderDateFrom);
+  }
+  if (orderDateTo) {
+    orderWhereParts.push("date(datetime(o.created_at, '+9 hours')) <= ?");
+    orderParams.push(orderDateTo);
   }
   if (orderWhereParts.length > 0) {
     ordersQuery.push(`WHERE ${orderWhereParts.join(' AND ')}`);
@@ -4103,6 +4211,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     orders: ordersWithTimeline,
     orderGroupFilter,
     orderStatusFilter,
+    orderDateFrom,
+    orderDateTo,
     notices,
     newsPosts,
     qcs,
@@ -4120,12 +4230,14 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 
 function renderAdminDashboard(req, res, activeTab, extraData = {}) {
   const productGroupConfigs = getProductGroupConfigs();
-  const orderGroupFilter = normalizeAdminOrderGroupFilter(
-    extraData.orderGroupFilter || req.query.orderGroup || '',
+  const orderFilters = parseAdminOrderManageQuery(
+    {
+      orderGroup: extraData.orderGroupFilter || req.query.orderGroup || '',
+      orderStatus: extraData.orderStatusFilter || req.query.orderStatus || '',
+      orderDateFrom: extraData.orderDateFrom || req.query.orderDateFrom || '',
+      orderDateTo: extraData.orderDateTo || req.query.orderDateTo || ''
+    },
     productGroupConfigs.map((group) => group.key)
-  );
-  const orderStatusFilter = normalizeAdminOrderStatusFilter(
-    extraData.orderStatusFilter || req.query.orderStatus || ''
   );
 
   const viewData = buildAdminDashboardViewData(
@@ -4135,8 +4247,10 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
       memberOptions: extraData.memberOptions || parseMemberManageQuery(req.query || {}),
       includeDashboardStats: activeTab === 'dashboard',
       productEditId: extraData.productEditId || 0,
-      orderGroupFilter,
-      orderStatusFilter
+      orderGroupFilter: orderFilters.orderGroupFilter,
+      orderStatusFilter: orderFilters.orderStatusFilter,
+      orderDateFrom: orderFilters.orderDateFrom,
+      orderDateTo: orderFilters.orderDateTo
     }
   );
   return res.render('admin-dashboard', {
@@ -4146,8 +4260,14 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     securityAccessDenied: Boolean(extraData.securityAccessDenied),
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
     productSection: normalizeProductManageSection(extraData.productSection || ''),
-    orderGroupFilter,
-    orderStatusFilter,
+    noticeSection: normalizeContentManageSection(extraData.noticeSection || req.query.section || ''),
+    newsSection: normalizeContentManageSection(extraData.newsSection || req.query.section || ''),
+    qcSection: normalizeContentManageSection(extraData.qcSection || req.query.section || ''),
+    inquirySection: normalizeInquiryManageSection(extraData.inquirySection || req.query.section || ''),
+    orderGroupFilter: orderFilters.orderGroupFilter,
+    orderStatusFilter: orderFilters.orderStatusFilter,
+    orderDateFrom: orderFilters.orderDateFrom,
+    orderDateTo: orderFilters.orderDateTo,
     ...viewData
   });
 }
@@ -4764,16 +4884,34 @@ app.get('/admin/products', requireAdmin, (req, res) =>
     productEditId: normalizeOptionalId(req.query.editId || '')
   })
 );
-app.get('/admin/notices', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'notices'));
-app.get('/admin/news', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'news'));
-app.get('/admin/qc', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'qc'));
+app.get('/admin/notices', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'notices', {
+    noticeSection: req.query.section || 'create'
+  })
+);
+app.get('/admin/news', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'news', {
+    newsSection: req.query.section || 'create'
+  })
+);
+app.get('/admin/qc', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'qc', {
+    qcSection: req.query.section || 'create'
+  })
+);
 app.get('/admin/orders', requireAdmin, (req, res) =>
   renderAdminDashboard(req, res, 'orders', {
     orderGroupFilter: req.query.orderGroup || 'all',
-    orderStatusFilter: req.query.orderStatus || 'all'
+    orderStatusFilter: req.query.orderStatus || 'all',
+    orderDateFrom: req.query.orderDateFrom || '',
+    orderDateTo: req.query.orderDateTo || ''
   })
 );
-app.get('/admin/inquiries', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'inquiries'));
+app.get('/admin/inquiries', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'inquiries', {
+    inquirySection: req.query.section || 'reply'
+  })
+);
 
 app.post('/admin/menu/add', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/menus');
@@ -5557,7 +5695,7 @@ app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
 });
 
 app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res) => {
-  const backPath = safeBackPath(req, '/admin/notices');
+  const backPath = safeBackPath(req, '/admin/notices?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
   const isPopup = req.body.isPopup === 'on' ? 1 : 0;
@@ -5578,8 +5716,72 @@ app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res
   res.redirect(backPath);
 });
 
+app.post('/admin/notice/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/notices?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 공지입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db.prepare('SELECT id, image_path FROM notices WHERE id = ? LIMIT 1').get(id);
+  if (!existing) {
+    setFlash(req, 'error', '공지사항을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const title = String(req.body.title || '').trim();
+  const content = String(req.body.content || '').trim();
+  const isPopup = req.body.isPopup === 'on' ? 1 : 0;
+  if (!title || !content) {
+    setFlash(req, 'error', '공지 제목과 내용을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  db.prepare(
+    `
+      UPDATE notices
+      SET title = ?, content = ?, image_path = ?, is_popup = ?
+      WHERE id = ?
+    `
+  ).run(title, content, nextImagePath, isPopup, id);
+
+  setFlash(req, 'success', '공지사항이 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/notice/:id/toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/notices?section=list');
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT id, is_hidden FROM notices WHERE id = ? LIMIT 1').get(id);
+  if (!item) {
+    setFlash(req, 'error', '공지사항을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHidden = Number(item.is_hidden || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE notices SET is_hidden = ? WHERE id = ?').run(nextHidden, id);
+  setFlash(req, 'success', nextHidden ? '공지사항을 숨김 처리했습니다.' : '공지사항을 다시 표시합니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/notice/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/notices?section=list');
+  const id = Number(req.params.id);
+  const exists = db.prepare('SELECT id FROM notices WHERE id = ? LIMIT 1').get(id);
+  if (!exists) {
+    setFlash(req, 'error', '공지사항을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM notices WHERE id = ?').run(id);
+  setFlash(req, 'success', '공지사항이 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
 app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) => {
-  const backPath = safeBackPath(req, '/admin/news');
+  const backPath = safeBackPath(req, '/admin/news?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
 
@@ -5598,8 +5800,71 @@ app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) 
   res.redirect(backPath);
 });
 
+app.post('/admin/news/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/news?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 뉴스입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db.prepare('SELECT id, image_path FROM news_posts WHERE id = ? LIMIT 1').get(id);
+  if (!existing) {
+    setFlash(req, 'error', '뉴스 게시글을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const title = String(req.body.title || '').trim();
+  const content = String(req.body.content || '').trim();
+  if (!title || !content) {
+    setFlash(req, 'error', '뉴스 제목과 내용을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  db.prepare(
+    `
+      UPDATE news_posts
+      SET title = ?, content = ?, image_path = ?
+      WHERE id = ?
+    `
+  ).run(title, content, nextImagePath, id);
+
+  setFlash(req, 'success', '뉴스 게시글이 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/news/:id/toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/news?section=list');
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT id, is_hidden FROM news_posts WHERE id = ? LIMIT 1').get(id);
+  if (!item) {
+    setFlash(req, 'error', '뉴스 게시글을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHidden = Number(item.is_hidden || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE news_posts SET is_hidden = ? WHERE id = ?').run(nextHidden, id);
+  setFlash(req, 'success', nextHidden ? '뉴스 게시글을 숨김 처리했습니다.' : '뉴스 게시글을 다시 표시합니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/news/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/news?section=list');
+  const id = Number(req.params.id);
+  const exists = db.prepare('SELECT id FROM news_posts WHERE id = ? LIMIT 1').get(id);
+  if (!exists) {
+    setFlash(req, 'error', '뉴스 게시글을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM news_posts WHERE id = ?').run(id);
+  setFlash(req, 'success', '뉴스 게시글이 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
 app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) => {
-  const backPath = safeBackPath(req, '/admin/qc');
+  const backPath = safeBackPath(req, '/admin/qc?section=create');
   const orderNo = String(req.body.orderNo || '').trim();
   const note = String(req.body.note || '').trim();
 
@@ -5616,6 +5881,74 @@ app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) =>
 
   setFlash(req, 'success', 'QC 항목이 등록되었습니다.');
   res.redirect(backPath);
+});
+
+app.post('/admin/qc/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/qc?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 QC 항목입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db.prepare('SELECT id, image_path FROM qc_items WHERE id = ? LIMIT 1').get(id);
+  if (!existing) {
+    setFlash(req, 'error', 'QC 항목을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const orderNo = String(req.body.orderNo || '').trim();
+  const note = String(req.body.note || '').trim();
+  if (!orderNo) {
+    setFlash(req, 'error', '주문번호를 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  if (!nextImagePath) {
+    setFlash(req, 'error', 'QC 이미지를 등록해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE qc_items
+      SET order_no = ?, note = ?, image_path = ?
+      WHERE id = ?
+    `
+  ).run(orderNo, note, nextImagePath, id);
+
+  setFlash(req, 'success', 'QC 항목이 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/qc/:id/toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/qc?section=list');
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT id, is_hidden FROM qc_items WHERE id = ? LIMIT 1').get(id);
+  if (!item) {
+    setFlash(req, 'error', 'QC 항목을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHidden = Number(item.is_hidden || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE qc_items SET is_hidden = ? WHERE id = ?').run(nextHidden, id);
+  setFlash(req, 'success', nextHidden ? 'QC 항목을 숨김 처리했습니다.' : 'QC 항목을 다시 표시합니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/qc/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/qc?section=list');
+  const id = Number(req.params.id);
+  const exists = db.prepare('SELECT id FROM qc_items WHERE id = ? LIMIT 1').get(id);
+  if (!exists) {
+    setFlash(req, 'error', 'QC 항목을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM qc_items WHERE id = ?').run(id);
+  setFlash(req, 'success', 'QC 항목이 삭제되었습니다.');
+  return res.redirect(backPath);
 });
 
 app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
@@ -5879,8 +6212,14 @@ app.post('/admin/order/:id/mark-delivered', requireAdmin, (req, res) => {
 });
 
 app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
-  const backPath = safeBackPath(req, '/admin/inquiries');
+  const backPath = safeBackPath(req, '/admin/inquiries?section=reply');
   const id = Number(req.params.id);
+  const exists = db.prepare('SELECT id FROM inquiries WHERE id = ? LIMIT 1').get(id);
+  if (!exists) {
+    setFlash(req, 'error', '문의를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
   const replyContent = String(req.body.replyContent || '').trim();
 
   if (!replyContent) {
@@ -5895,6 +6234,80 @@ app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
 
   setFlash(req, 'success', '문의 답변이 등록되었습니다.');
   res.redirect(backPath);
+});
+
+app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+  const backPath = safeBackPath(req, '/admin/inquiries?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 문의입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db
+    .prepare('SELECT id, image_path FROM inquiries WHERE id = ? LIMIT 1')
+    .get(id);
+  if (!existing) {
+    setFlash(req, 'error', '문의를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const title = String(req.body.title || '').trim();
+  const content = String(req.body.content || '').trim();
+  const replyContent = String(req.body.replyContent || '').trim();
+  if (!title || !content) {
+    setFlash(req, 'error', '문의 제목과 내용을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  db.prepare(
+    `
+      UPDATE inquiries
+      SET
+        title = ?,
+        content = ?,
+        image_path = ?,
+        reply_content = ?,
+        replied_at = CASE
+          WHEN ? != '' THEN COALESCE(replied_at, datetime('now'))
+          ELSE NULL
+        END
+      WHERE id = ?
+    `
+  ).run(title, content, nextImagePath, replyContent, replyContent, id);
+
+  setFlash(req, 'success', '문의 항목이 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/inquiry/:id/toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/inquiries?section=list');
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT id, is_hidden FROM inquiries WHERE id = ? LIMIT 1').get(id);
+  if (!item) {
+    setFlash(req, 'error', '문의를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextHidden = Number(item.is_hidden || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE inquiries SET is_hidden = ? WHERE id = ?').run(nextHidden, id);
+  setFlash(req, 'success', nextHidden ? '문의 항목을 숨김 처리했습니다.' : '문의 항목을 다시 표시합니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/inquiry/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/inquiries?section=list');
+  const id = Number(req.params.id);
+  const exists = db.prepare('SELECT id FROM inquiries WHERE id = ? LIMIT 1').get(id);
+  if (!exists) {
+    setFlash(req, 'error', '문의를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM inquiries WHERE id = ?').run(id);
+  setFlash(req, 'success', '문의 항목이 삭제되었습니다.');
+  return res.redirect(backPath);
 });
 
 app.use((req, res) => {

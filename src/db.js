@@ -353,6 +353,23 @@ function ensureDailyVisitSplitColumns() {
   }
 }
 
+function ensureContentVisibilityColumns() {
+  const contentTargets = [
+    { table: 'notices', column: 'is_hidden' },
+    { table: 'news_posts', column: 'is_hidden' },
+    { table: 'qc_items', column: 'is_hidden' },
+    { table: 'inquiries', column: 'is_hidden' }
+  ];
+
+  for (const target of contentTargets) {
+    const columns = db.prepare(`PRAGMA table_info(${target.table})`).all();
+    const hasColumn = columns.some((column) => column.name === target.column);
+    if (!hasColumn) {
+      db.prepare(`ALTER TABLE ${target.table} ADD COLUMN ${target.column} INTEGER NOT NULL DEFAULT 0`).run();
+    }
+  }
+}
+
 function ensureDailyFunnelEventsTable() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS daily_funnel_events (
@@ -1079,6 +1096,7 @@ export function initDb() {
   ensureOrdersCustomsColumn();
   ensureOrdersTrackingColumns();
   ensureDailyVisitSplitColumns();
+  ensureContentVisibilityColumns();
   ensureDailyFunnelEventsTable();
   ensureAdminSecurityTables();
   normalizeOrderStatuses();
