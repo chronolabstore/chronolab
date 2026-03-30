@@ -971,7 +971,7 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
   if (status === ORDER_STATUS.PENDING_REVIEW) {
     return {
       code: status,
-      label: isEn ? 'Unchecked' : '미확인',
+      label: isEn ? 'Awaiting Payment Verification' : '입금확인중',
       detail: ''
     };
   }
@@ -979,7 +979,7 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
   if (status === ORDER_STATUS.ORDER_CONFIRMED) {
     return {
       code: status,
-      label: isEn ? 'Order Confirmed' : '주문확인',
+      label: isEn ? 'Payment Confirmed' : '입금확인',
       detail: ''
     };
   }
@@ -995,8 +995,8 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
   if (status === ORDER_STATUS.SHIPPING) {
     return {
       code: status,
-      label: isEn ? 'Shipped' : '출고완료',
-      detail: isEn ? 'In Transit' : '배송중'
+      label: isEn ? 'Shipping' : '배송중',
+      detail: ''
     };
   }
 
@@ -1019,9 +1019,9 @@ function getNextOrderStatus(rawStatus) {
 function getNextOrderActionLabel(rawStatus, lang = 'ko') {
   const current = normalizeOrderStatus(rawStatus);
   const isEn = lang === 'en';
-  if (current === ORDER_STATUS.PENDING_REVIEW) return isEn ? 'Confirm Order' : '주문확인';
+  if (current === ORDER_STATUS.PENDING_REVIEW) return isEn ? 'Confirm Payment' : '입금확인';
   if (current === ORDER_STATUS.ORDER_CONFIRMED) return isEn ? 'Mark Preparing Shipment' : '출고중 처리';
-  if (current === ORDER_STATUS.READY_TO_SHIP) return isEn ? 'Mark Shipping' : '출고완료(배송시작)';
+  if (current === ORDER_STATUS.READY_TO_SHIP) return isEn ? 'Register Tracking & Start Shipping' : '송장등록(배송시작)';
   return '';
 }
 
@@ -1129,6 +1129,19 @@ function normalizeProductManageSection(rawSection = '') {
     return 'list';
   }
   return 'upload';
+}
+
+function normalizeAdminOrderGroupFilter(rawGroup = '', availableGroupKeys = []) {
+  const normalized = normalizeProductGroupKey(rawGroup || '');
+  if (!normalized || normalized === 'all') {
+    return 'all';
+  }
+
+  if (Array.isArray(availableGroupKeys) && availableGroupKeys.includes(normalized)) {
+    return normalized;
+  }
+
+  return 'all';
 }
 
 function normalizeHexColor(rawColor = '', fallback = '#000000') {
@@ -2240,12 +2253,9 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
-  const productGroupMap = getProductGroupMap(getProductGroupConfigs());
-  const selectedGroupConfig = productGroupMap.get(product.category_group);
-  if (!selectedGroupConfig || !isFactoryLikeGroup(selectedGroupConfig)) {
-    setFlash(req, 'error', '상세 스펙형 상품만 해당 구매 페이지를 이용할 수 있습니다.');
-    return res.redirect(`/shop/item/${id}`);
-  }
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
+  const productGroupLabel = productGroupLabelMap[product.category_group] || product.category_group;
 
   incrementFunnelEventUniqueInSession(req, FUNNEL_EVENT.PURCHASE_VIEW, `product:${id}`);
 
@@ -2257,7 +2267,7 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     quantity: 1
   };
 
-  return res.render('purchase-form', { title: 'Purchase', product, formData });
+  return res.render('purchase-form', { title: 'Purchase', product, formData, productGroupLabel });
 });
 
 app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
@@ -2274,12 +2284,9 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
   }
 
-  const productGroupMap = getProductGroupMap(getProductGroupConfigs());
-  const selectedGroupConfig = productGroupMap.get(product.category_group);
-  if (!selectedGroupConfig || !isFactoryLikeGroup(selectedGroupConfig)) {
-    setFlash(req, 'error', '상세 스펙형 상품만 해당 구매 페이지를 이용할 수 있습니다.');
-    return res.redirect(`/shop/item/${id}`);
-  }
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
+  const productGroupLabel = productGroupLabelMap[product.category_group] || product.category_group;
 
   const buyerName = String(req.body.buyerName || '').trim();
   const buyerContact = String(req.body.buyerContact || '').trim();
@@ -2297,7 +2304,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
 
   const renderWithError = (message) => {
     res.locals.ctx.flash = { type: 'error', message };
-    return res.render('purchase-form', { title: 'Purchase', product, formData });
+    return res.render('purchase-form', { title: 'Purchase', product, formData, productGroupLabel });
   };
 
   if (!buyerName || !buyerContact || !buyerAddress || !customsClearanceNo) {
@@ -3869,6 +3876,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   };
 
   const productGroupConfigs = getProductGroupConfigs();
+  const productGroupKeys = productGroupConfigs.map((group) => group.key);
+  const orderGroupFilter = normalizeAdminOrderGroupFilter(options.orderGroupFilter || '', productGroupKeys);
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
   const products = db
@@ -3910,17 +3919,22 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
       };
     }
   }
+  const ordersQuery = [
+    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
+    'FROM orders o',
+    'JOIN products p ON p.id = o.product_id'
+  ];
+  const orderParams = [];
+  if (orderGroupFilter !== 'all') {
+    ordersQuery.push('WHERE p.category_group = ?');
+    orderParams.push(orderGroupFilter);
+  }
+  ordersQuery.push('ORDER BY o.id DESC');
+  ordersQuery.push('LIMIT 100');
+
   const orders = db
-    .prepare(
-      `
-        SELECT o.*, p.brand, p.model, p.sub_model
-        FROM orders o
-        JOIN products p ON p.id = o.product_id
-        ORDER BY o.id DESC
-        LIMIT 100
-      `
-    )
-    .all()
+    .prepare(ordersQuery.join('\n'))
+    .all(...orderParams)
     .map((order) => {
       const normalizedStatus = normalizeOrderStatus(order.status);
       const statusMeta = getOrderStatusMeta(normalizedStatus, lang);
@@ -3934,7 +3948,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
         status_detail: statusMeta.detail,
         next_status: nextStatus,
         next_action_label: nextActionLabel,
-        tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier)
+        tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier),
+        category_group_label: groupLabelMap[order.category_group] || order.category_group
       };
     });
 
@@ -4004,6 +4019,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     products,
     editingProduct,
     orders: ordersWithTimeline,
+    orderGroupFilter,
     notices,
     newsPosts,
     qcs,
@@ -4020,13 +4036,20 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 }
 
 function renderAdminDashboard(req, res, activeTab, extraData = {}) {
+  const productGroupConfigs = getProductGroupConfigs();
+  const orderGroupFilter = normalizeAdminOrderGroupFilter(
+    extraData.orderGroupFilter || req.query.orderGroup || '',
+    productGroupConfigs.map((group) => group.key)
+  );
+
   const viewData = buildAdminDashboardViewData(
     res.locals.ctx.lang,
     {
       securityOptions: extraData.securityOptions || parseSecurityQuery(req.query || {}),
       memberOptions: extraData.memberOptions || parseMemberManageQuery(req.query || {}),
       includeDashboardStats: activeTab === 'dashboard',
-      productEditId: extraData.productEditId || 0
+      productEditId: extraData.productEditId || 0,
+      orderGroupFilter
     }
   );
   return res.render('admin-dashboard', {
@@ -4036,6 +4059,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     securityAccessDenied: Boolean(extraData.securityAccessDenied),
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
     productSection: normalizeProductManageSection(extraData.productSection || ''),
+    orderGroupFilter,
     ...viewData
   });
 }
@@ -4655,7 +4679,11 @@ app.get('/admin/products', requireAdmin, (req, res) =>
 app.get('/admin/notices', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'notices'));
 app.get('/admin/news', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'news'));
 app.get('/admin/qc', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'qc'));
-app.get('/admin/orders', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'orders'));
+app.get('/admin/orders', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'orders', {
+    orderGroupFilter: req.query.orderGroup || 'all'
+  })
+);
 app.get('/admin/inquiries', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'inquiries'));
 
 app.post('/admin/menu/add', requireAdmin, (req, res) => {
@@ -5513,7 +5541,7 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
 
   const current = normalizeOrderStatus(order.status);
   if (current !== ORDER_STATUS.PENDING_REVIEW) {
-    setFlash(req, 'error', '미확인 주문건만 주문확인 처리할 수 있습니다.');
+    setFlash(req, 'error', '입금확인중 상태에서만 입금확인 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
@@ -5533,7 +5561,7 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.PENDING_REVIEW, ORDER_STATUS.ORDER_CONFIRMED, 'admin:confirm');
   incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.PAYMENT_CONFIRMED);
 
-  setFlash(req, 'success', '주문확인 처리되었습니다.');
+  setFlash(req, 'success', '입금확인 처리되었습니다.');
   return res.redirect(backPath);
 });
 
@@ -5549,7 +5577,7 @@ app.post('/admin/order/:id/ready', requireAdmin, (req, res) => {
 
   const current = normalizeOrderStatus(order.status);
   if (current !== ORDER_STATUS.ORDER_CONFIRMED) {
-    setFlash(req, 'error', '주문확인 상태에서만 출고중 처리할 수 있습니다.');
+    setFlash(req, 'error', '입금확인 상태에서만 출고중 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
@@ -5584,7 +5612,7 @@ app.post('/admin/order/:id/start-shipping', requireAdmin, (req, res) => {
 
   const current = normalizeOrderStatus(order.status);
   if (current !== ORDER_STATUS.READY_TO_SHIP) {
-    setFlash(req, 'error', '출고중 상태에서만 배송시작 처리할 수 있습니다.');
+    setFlash(req, 'error', '출고중 상태에서만 송장등록(배송시작) 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
@@ -5628,7 +5656,7 @@ app.post('/admin/order/:id/start-shipping', requireAdmin, (req, res) => {
     `admin:shipping-start:${trackingCarrier}:${trackingNumber}`
   );
 
-  setFlash(req, 'success', '출고완료(배송시작) 처리되었습니다. 송장 자동 조회를 시작합니다.');
+  setFlash(req, 'success', '송장등록(배송시작) 처리되었습니다. 자동 배송조회가 시작됩니다.');
   void pollTrackingAndAutoCompleteOrders(true);
   return res.redirect(backPath);
 });

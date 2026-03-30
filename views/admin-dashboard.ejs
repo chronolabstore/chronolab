@@ -17,6 +17,11 @@
     return generated;
   })();
   const defaultGroupKey = productGroupKeys[0] || '공장제';
+  const activeOrderFilterKey = (() => {
+    const candidate = String(orderGroupFilter || 'all');
+    if (candidate === 'all') return 'all';
+    return productGroupKeys.includes(candidate) ? candidate : 'all';
+  })();
 
   const stats = dashboardStats || {
     users: { active: 0, blocked: 0, total: 0 },
@@ -149,8 +154,8 @@
         </div>
         <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
         <ul class="metric-list">
-          <li><span><%= isEn ? 'Unchecked' : '미확인 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
-          <li><span><%= isEn ? 'Confirmed' : '확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
+          <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
+          <li><span><%= isEn ? 'Payment Confirmed' : '입금확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
           <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
           <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong data-order-value="shipping"><%= defaultOrderGroup.shipping %></strong></li>
           <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong data-order-value="delivered"><%= defaultOrderGroup.delivered %></strong></li>
@@ -181,7 +186,7 @@
         <strong><%= Number(stats.actionItems.totalUrgent || 0).toLocaleString() %></strong>
         <p class="muted-label"><%= isEn ? 'Priority tasks requiring immediate handling.' : '바로 처리해야 할 핵심 작업 건수입니다.' %></p>
         <ul class="metric-list">
-          <li><span><%= isEn ? 'Unchecked Orders' : '미확인 주문건' %></span><strong><%= Number(stats.actionItems.uncheckedOrders || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong><%= Number(stats.actionItems.uncheckedOrders || 0).toLocaleString() %></strong></li>
           <li><span><%= isEn ? 'Payment Check Wait 12h+' : '입금확인 대기 12시간+' %></span><strong><%= Number(stats.actionItems.paymentWaiting || 0).toLocaleString() %></strong></li>
           <li><span><%= isEn ? 'Unreplied Inquiries' : '미답변 문의' %></span><strong><%= Number(stats.actionItems.pendingInquiries || 0).toLocaleString() %></strong></li>
           <li><span><%= isEn ? 'QC Missing Orders' : 'QC 미등록 주문' %></span><strong><%= Number(stats.actionItems.qcPending || 0).toLocaleString() %></strong></li>
@@ -192,8 +197,8 @@
         <h4><%= isEn ? 'Order Delay Warnings' : '주문 지연 경고' %></h4>
         <p class="muted-label"><%= isEn ? 'SLA delay alerts by order pipeline stage.' : '주문 단계별 지연 건수입니다.' %></p>
         <ul class="metric-list">
-          <li><span><%= isEn ? 'Pending Review 24h+' : '미확인 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Confirmed 48h+' : '확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Awaiting Payment 24h+' : '입금확인중 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
+          <li><span><%= isEn ? 'Payment Confirmed 48h+' : '입금확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
           <li><span><%= isEn ? 'Ready 72h+' : '출고중 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
           <li><span><%= isEn ? 'Shipping 7d+' : '배송중 7일+' %></span><strong><%= Number(stats.delayWarnings.shippingOver7d || 0).toLocaleString() %></strong></li>
         </ul>
@@ -268,7 +273,7 @@
       <div class="kpi-card">
         <h4><%= isEn ? 'Operational Alerts' : '운영 알림' %></h4>
         <ul class="metric-list">
-          <li><span><%= isEn ? 'Unchecked 24h+' : '24시간 이상 미확인' %></span><strong><%= stats.orderAlerts.stalePending %></strong></li>
+          <li><span><%= isEn ? 'Awaiting Payment 24h+' : '24시간 이상 입금확인중' %></span><strong><%= stats.orderAlerts.stalePending %></strong></li>
           <li><span><%= isEn ? 'Shipping 7d+' : '7일 이상 배송중' %></span><strong><%= stats.orderAlerts.longShipping %></strong></li>
         </ul>
       </div>
@@ -1838,7 +1843,16 @@
   <% if (tab === 'orders') { %>
   <article class="block-card">
     <h3><%= isEn ? 'Order Management' : '주문관리' %></h3>
-    <p class="muted-label"><%= isEn ? 'Flow: Unchecked -> Confirmed -> Preparing Shipment -> Shipped (In Transit) -> Delivered(auto)' : '프로세스: 미확인 -> 주문확인 -> 출고중 -> 출고완료(배송중) -> 배송완료(자동)' %></p>
+    <p class="muted-label"><%= isEn ? 'Flow: Awaiting Payment Verification -> Payment Confirmed -> Preparing Shipment -> Shipping (Tracking Auto Sync) -> Delivered(auto)' : '프로세스: 입금확인중 -> 입금확인 -> 출고중 -> 배송중(송장 자동조회) -> 배송완료(자동)' %></p>
+    <div class="admin-order-toolbar">
+      <span class="muted-label"><%= isEn ? 'Category Filter' : '쇼핑몰 분류' %></span>
+      <div class="chip-row admin-order-filter-row">
+        <a href="/admin/orders?orderGroup=all" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
+        <% productGroupKeys.forEach((groupName) => { %>
+          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
+        <% }) %>
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1855,6 +1869,8 @@
             <tr>
               <td><%= item.order_no %></td>
               <td>
+                <small><%= item.category_group_label || item.category_group %></small><br />
+                <strong><%= item.brand %> <%= item.model %> <%= item.sub_model %></strong><br />
                 <strong><%= item.buyer_name %></strong><br />
                 <small><%= item.buyer_contact %></small><br />
                 <small><%= isEn ? 'Customs No.' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small><br />
@@ -1872,13 +1888,13 @@
                   <small><%= isEn ? 'Timeline' : '타임라인' %>:</small>
                   <ul class="status-mini-list">
                     <% if (item.checked_at) { %>
-                      <li><small><%= isEn ? 'Confirmed' : '주문확인' %> · <%= item.checked_at.slice(0, 16) %></small></li>
+                      <li><small><%= isEn ? 'Payment Confirmed' : '입금확인' %> · <%= item.checked_at.slice(0, 16) %></small></li>
                     <% } %>
                     <% if (item.ready_to_ship_at) { %>
-                      <li><small><%= isEn ? 'Preparing' : '출고중' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
+                      <li><small><%= isEn ? 'Preparing Shipment' : '출고중' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
                     <% } %>
                     <% if (item.shipping_started_at) { %>
-                      <li><small><%= isEn ? 'Shipping Start' : '배송시작' %> · <%= item.shipping_started_at.slice(0, 16) %></small></li>
+                      <li><small><%= isEn ? 'Shipping Started' : '배송시작' %> · <%= item.shipping_started_at.slice(0, 16) %></small></li>
                     <% } %>
                     <% if (item.delivered_at) { %>
                       <li><small><%= isEn ? 'Delivered' : '배송완료' %> · <%= item.delivered_at.slice(0, 16) %></small></li>
@@ -1910,59 +1926,68 @@
                 <% } %>
               </td>
               <td>
-                <% if (item.status_code === 'PENDING_REVIEW') { %>
-                  <form method="post" action="/admin/order/<%= item.id %>/confirm" class="inline-form">
-                    <button type="submit" class="chip dark"><%= isEn ? 'Confirm Order' : '주문확인' %></button>
-                  </form>
-                <% } else if (item.status_code === 'ORDER_CONFIRMED') { %>
-                  <form method="post" action="/admin/order/<%= item.id %>/ready" class="inline-form">
-                    <button type="submit" class="chip dark"><%= isEn ? 'Mark Preparing' : '출고중 처리' %></button>
-                  </form>
-                <% } else if (item.status_code === 'READY_TO_SHIP') { %>
-                  <form method="post" action="/admin/order/<%= item.id %>/start-shipping" class="form-grid compact">
-                    <label>
-                      <span><%= isEn ? 'Carrier' : '택배사' %></span>
-                      <select name="trackingCarrier" required>
-                        <% trackingCarriers.forEach((carrier) => { %>
-                          <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
-                        <% }) %>
-                      </select>
-                    </label>
-                    <label>
-                      <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
-                      <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
-                    </label>
-                    <button type="submit" class="chip dark"><%= isEn ? 'Shipped (Start)' : '출고완료(배송시작)' %></button>
-                  </form>
-                <% } else if (item.status_code === 'SHIPPING') { %>
-                  <form method="post" action="/admin/order/<%= item.id %>/update-tracking" class="form-grid compact">
-                    <label>
-                      <span><%= isEn ? 'Carrier' : '택배사' %></span>
-                      <select name="trackingCarrier" required>
-                        <% trackingCarriers.forEach((carrier) => { %>
-                          <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
-                        <% }) %>
-                      </select>
-                    </label>
-                    <label>
-                      <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
-                      <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
-                    </label>
-                    <button type="submit" class="chip"><%= isEn ? 'Update Tracking' : '송장 수정' %></button>
-                  </form>
-                  <form method="post" action="/admin/order/<%= item.id %>/sync-tracking" class="inline-form">
-                    <button type="submit" class="chip"><%= isEn ? 'Sync Tracking' : '송장 상태 조회' %></button>
-                  </form>
-                  <form method="post" action="/admin/order/<%= item.id %>/mark-delivered" class="inline-form">
-                    <button type="submit" class="chip"><%= isEn ? 'Mark Delivered' : '수동 배송완료' %></button>
-                  </form>
-                  <small class="muted-label"><%= isEn ? 'Auto delivery sync enabled.' : '배송완료 자동 반영 활성화됨' %></small>
-                <% } else { %>
-                  <span class="muted-label"><%= isEn ? 'Done' : '완료' %></span>
-                <% } %>
+                <div class="admin-order-actions">
+                  <% if (item.status_code === 'PENDING_REVIEW') { %>
+                    <form method="post" action="/admin/order/<%= item.id %>/confirm" class="inline-form">
+                      <button type="submit" class="chip dark"><%= isEn ? 'Confirm Payment' : '입금확인' %></button>
+                    </form>
+                  <% } else if (item.status_code === 'ORDER_CONFIRMED') { %>
+                    <form method="post" action="/admin/order/<%= item.id %>/ready" class="inline-form">
+                      <button type="submit" class="chip dark"><%= isEn ? 'Mark Preparing' : '출고중 처리' %></button>
+                    </form>
+                  <% } else if (item.status_code === 'READY_TO_SHIP') { %>
+                    <form method="post" action="/admin/order/<%= item.id %>/start-shipping" class="form-grid compact">
+                      <label>
+                        <span><%= isEn ? 'Carrier' : '택배사' %></span>
+                        <select name="trackingCarrier" required>
+                          <% trackingCarriers.forEach((carrier) => { %>
+                            <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
+                          <% }) %>
+                        </select>
+                      </label>
+                      <label>
+                        <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
+                        <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
+                      </label>
+                      <button type="submit" class="chip dark"><%= isEn ? 'Register Tracking & Start Shipping' : '송장등록(배송시작)' %></button>
+                    </form>
+                  <% } else if (item.status_code === 'SHIPPING') { %>
+                    <form method="post" action="/admin/order/<%= item.id %>/update-tracking" class="form-grid compact">
+                      <label>
+                        <span><%= isEn ? 'Carrier' : '택배사' %></span>
+                        <select name="trackingCarrier" required>
+                          <% trackingCarriers.forEach((carrier) => { %>
+                            <option value="<%= carrier.id %>" <%= item.tracking_carrier === carrier.id ? 'selected' : '' %>><%= carrier.label %></option>
+                          <% }) %>
+                        </select>
+                      </label>
+                      <label>
+                        <span><%= isEn ? 'Tracking No.' : '송장번호' %></span>
+                        <input type="text" name="trackingNumber" value="<%= item.tracking_number || '' %>" required />
+                      </label>
+                      <button type="submit" class="chip"><%= isEn ? 'Update Tracking' : '송장 수정' %></button>
+                    </form>
+                    <form method="post" action="/admin/order/<%= item.id %>/sync-tracking" class="inline-form">
+                      <button type="submit" class="chip"><%= isEn ? 'Sync Tracking' : '송장 상태 조회' %></button>
+                    </form>
+                    <form method="post" action="/admin/order/<%= item.id %>/mark-delivered" class="inline-form">
+                      <button type="submit" class="chip"><%= isEn ? 'Mark Delivered' : '수동 배송완료' %></button>
+                    </form>
+                    <small class="muted-label"><%= isEn ? 'Auto delivery sync enabled.' : '배송완료 자동 반영 활성화됨' %></small>
+                  <% } else { %>
+                    <span class="muted-label"><%= isEn ? 'Done' : '완료' %></span>
+                  <% } %>
+                </div>
               </td>
             </tr>
           <% }) %>
+          <% if (orders.length === 0) { %>
+            <tr>
+              <td colspan="5">
+                <span class="muted-label"><%= isEn ? 'No orders found in this category.' : '해당 분류의 주문이 없습니다.' %></span>
+              </td>
+            </tr>
+          <% } %>
         </tbody>
       </table>
     </div>

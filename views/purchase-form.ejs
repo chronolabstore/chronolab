@@ -1,7 +1,10 @@
 <%- include('partials/layout-start') %>
 
 <section class="block-card narrow">
-  <h2><%= ctx.lang === 'en' ? 'Factory Purchase' : '공장제 구매 신청' %></h2>
+  <h2><%= ctx.lang === 'en' ? 'Purchase Request' : '구매 신청' %></h2>
+  <% if (productGroupLabel) { %>
+    <p class="muted-label"><%= productGroupLabel %></p>
+  <% } %>
 
   <div class="line-list-box">
     <p><%= ctx.lang === 'en' ? 'Product' : '상품' %>: <strong><%= product.brand %> <%= product.model %> <%= product.sub_model %></strong></p>
