@@ -367,12 +367,17 @@ body.theme-night .hero-badge {
   flex: 1 1 calc(33.333% - 10px);
   min-width: 92px;
   max-width: 160px;
+  min-height: 46px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
   padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   font-size: 0.83rem;
   font-weight: 600;
+  line-height: 1.25;
   background: rgba(255, 255, 255, 0.04);
   transition: background 0.16s ease, border-color 0.16s ease;
 }
@@ -1931,6 +1936,62 @@ body.theme-night .inline-file-preview-image {
 }
 
 @media (max-width: 767px) {
+  .app-shell {
+    padding: 10px 10px 24px;
+  }
+
+  .site-header {
+    border-radius: 22px;
+  }
+
+  .header-top {
+    padding: 12px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-actions .icon-action,
+  .header-actions .chip {
+    min-height: 42px;
+  }
+
+  .header-actions .icon-action {
+    padding: 7px 11px;
+  }
+
+  .menu-scroller {
+    padding: 10px;
+  }
+
+  .hero-dark-card {
+    margin-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    padding: 16px;
+  }
+
+  .hero-quick-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+    align-items: stretch;
+  }
+
+  .hero-quick-grid a {
+    flex: initial;
+    min-width: 0;
+    max-width: none;
+    min-height: 48px;
+    padding: 8px 10px;
+  }
+
   .section-head {
     align-items: flex-start;
     flex-direction: column;
@@ -1967,9 +2028,27 @@ body.theme-night .inline-file-preview-image {
     gap: 8px;
   }
 
-  .hero-quick-grid a {
-    flex: 1 1 calc(50% - 10px);
-    max-width: none;
+  .admin-account-actions {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .admin-filter-row {
+    align-items: stretch;
+  }
+
+  .admin-filter-item {
+    width: 100%;
+  }
+
+  .admin-filter-item input,
+  .admin-filter-item select {
+    min-width: 0;
+  }
+
+  .admin-filter-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .section-head .inline-search {
