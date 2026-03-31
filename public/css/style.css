@@ -1525,6 +1525,25 @@ body.theme-night .watermark-preview-canvas {
   align-items: stretch;
 }
 
+.dashboard-group {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-group + .dashboard-group {
+  margin-top: 6px;
+}
+
+.dashboard-group-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.dashboard-kpi-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .shop-split-grid {
   margin-top: 10px;
   display: grid;
@@ -2206,6 +2225,10 @@ body.theme-night .inline-file-preview-image {
 
   .dashboard-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-kpi-grid-single {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .security-panel-grid {

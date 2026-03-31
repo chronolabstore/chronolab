@@ -133,187 +133,186 @@
       };
     %>
 
-    <div class="dashboard-kpi-grid">
-      <div class="kpi-card" data-member-switch-root>
-        <div class="kpi-head-row">
-          <h4><%= isEn ? 'Members' : '회원 수' %></h4>
-          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'member segment switch' : '회원 구분 전환' %>">
-            <button type="button" class="kpi-toggle-btn active" data-member-type="active"><%= isEn ? 'Member' : '회원' %></button>
-            <button type="button" class="kpi-toggle-btn" data-member-type="blocked"><%= isEn ? 'Blacklist' : '블랙리스트' %></button>
+    <div class="dashboard-group">
+      <h4 class="dashboard-group-title"><%= isEn ? 'Members' : '회원' %></h4>
+      <div class="dashboard-kpi-grid">
+        <div class="kpi-card" data-member-switch-root>
+          <div class="kpi-head-row">
+            <h4><%= isEn ? 'Members' : '회원 수' %></h4>
+            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'member segment switch' : '회원 구분 전환' %>">
+              <button type="button" class="kpi-toggle-btn active" data-member-type="active"><%= isEn ? 'Member' : '회원' %></button>
+              <button type="button" class="kpi-toggle-btn" data-member-type="blocked"><%= isEn ? 'Blacklist' : '블랙리스트' %></button>
+            </div>
           </div>
+          <strong data-member-value><%= stats.users.active %></strong>
+          <p class="muted-label" data-member-caption><%= isEn ? 'Active members count.' : '활성 회원 수입니다.' %></p>
+          <p class="muted-label"><%= isEn ? `Total members ${stats.users.total}` : `총 회원 ${stats.users.total}` %></p>
         </div>
-        <strong data-member-value><%= stats.users.active %></strong>
-        <p class="muted-label" data-member-caption><%= isEn ? 'Active members count.' : '활성 회원 수입니다.' %></p>
-        <p class="muted-label"><%= isEn ? `Total members ${stats.users.total}` : `총 회원 ${stats.users.total}` %></p>
-      </div>
 
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Orders Total' : '총 주문건' %></h4>
-        <strong><%= stats.orderCounts.total %></strong>
-        <p class="muted-label"><%= isEn ? 'Order pipeline summary below.' : '주문 상태 파이프라인은 아래에서 확인하세요.' %></p>
-      </div>
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Signup Summary' : '회원가입 집계' %></h4>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.signupCounts.today %></strong></li>
+            <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.signupCounts.week %></strong></li>
+            <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.signupCounts.month %></strong></li>
+            <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.signupCounts.year %></strong></li>
+            <li><span><%= isEn ? 'Total' : '총 가입 회원' %></span><strong><%= stats.signupCounts.total %></strong></li>
+          </ul>
+        </div>
 
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Signup Summary' : '회원가입 집계' %></h4>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong><%= stats.signupCounts.today %></strong></li>
-          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong><%= stats.signupCounts.week %></strong></li>
-          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong><%= stats.signupCounts.month %></strong></li>
-          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong><%= stats.signupCounts.year %></strong></li>
-          <li><span><%= isEn ? 'Total' : '총 가입 회원' %></span><strong><%= stats.signupCounts.total %></strong></li>
-        </ul>
-      </div>
-
-      <div class="kpi-card" data-order-switch-root>
-        <div class="kpi-head-row">
-          <h4><%= isEn ? 'Order Status Summary' : '주문 상태 집계' %></h4>
-          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'order group switch' : '주문 분류 전환' %>">
-            <% productGroupKeys.forEach((groupName, idx) => { %>
-              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-order-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
-            <% }) %>
+        <div class="kpi-card" data-visit-switch-root>
+          <div class="kpi-head-row">
+            <h4><%= isEn ? 'Visit Summary' : '방문 집계' %></h4>
+            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'visit segment switch' : '방문 구분 전환' %>">
+              <button type="button" class="kpi-toggle-btn active" data-visit-type="member"><%= isEn ? 'Member' : '회원' %></button>
+              <button type="button" class="kpi-toggle-btn" data-visit-type="guest"><%= isEn ? 'Guest' : '비회원' %></button>
+              <button type="button" class="kpi-toggle-btn" data-visit-type="total"><%= isEn ? 'Total' : '전체' %></button>
+            </div>
           </div>
+          <p class="muted-label" data-visit-caption><%= isEn ? 'Member visits summary.' : '회원 방문 기준 집계입니다.' %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Today' : '오늘' %></span><strong data-visit-value="today"><%= stats.memberVisits.today %></strong></li>
+            <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong data-visit-value="week"><%= stats.memberVisits.week %></strong></li>
+            <li><span><%= isEn ? '30 Days' : '한달' %></span><strong data-visit-value="month"><%= stats.memberVisits.month %></strong></li>
+            <li><span><%= isEn ? '1 Year' : '1년' %></span><strong data-visit-value="year"><%= stats.memberVisits.year %></strong></li>
+            <li><span><%= isEn ? 'Total' : '총' %></span><strong data-visit-value="total"><%= stats.memberVisits.total %></strong></li>
+          </ul>
         </div>
-        <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
-          <li><span><%= isEn ? 'Payment Confirmed' : '입금확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
-          <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
-          <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong data-order-value="shipping"><%= defaultOrderGroup.shipping %></strong></li>
-          <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong data-order-value="delivered"><%= defaultOrderGroup.delivered %></strong></li>
-        </ul>
       </div>
+    </div>
 
-      <div class="kpi-card" data-visit-switch-root>
-        <div class="kpi-head-row">
-          <h4><%= isEn ? 'Visit Summary' : '방문 집계' %></h4>
-          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'visit segment switch' : '방문 구분 전환' %>">
-            <button type="button" class="kpi-toggle-btn active" data-visit-type="member"><%= isEn ? 'Member' : '회원' %></button>
-            <button type="button" class="kpi-toggle-btn" data-visit-type="guest"><%= isEn ? 'Guest' : '비회원' %></button>
-            <button type="button" class="kpi-toggle-btn" data-visit-type="total"><%= isEn ? 'Total' : '전체' %></button>
+    <div class="dashboard-group">
+      <h4 class="dashboard-group-title"><%= isEn ? 'Orders' : '주문' %></h4>
+      <div class="dashboard-kpi-grid">
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Orders Total' : '총 주문건' %></h4>
+          <strong><%= stats.orderCounts.total %></strong>
+          <p class="muted-label"><%= isEn ? 'Order pipeline summary below.' : '주문 상태 파이프라인은 아래에서 확인하세요.' %></p>
+        </div>
+
+        <div class="kpi-card" data-order-switch-root>
+          <div class="kpi-head-row">
+            <h4><%= isEn ? 'Order Status Summary' : '주문 상태 집계' %></h4>
+            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'order group switch' : '주문 분류 전환' %>">
+              <% productGroupKeys.forEach((groupName, idx) => { %>
+                <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-order-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
+              <% }) %>
+            </div>
           </div>
+          <p class="muted-label" data-order-caption><%= isEn ? `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} order status summary.` : `${groupLabelByKey[defaultOrderGroup.groupName] || defaultOrderGroup.groupName} 주문 상태 집계입니다.` %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
+            <li><span><%= isEn ? 'Payment Confirmed' : '입금확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
+            <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
+            <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong data-order-value="shipping"><%= defaultOrderGroup.shipping %></strong></li>
+            <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong data-order-value="delivered"><%= defaultOrderGroup.delivered %></strong></li>
+          </ul>
         </div>
-        <p class="muted-label" data-visit-caption><%= isEn ? 'Member visits summary.' : '회원 방문 기준 집계입니다.' %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Today' : '오늘' %></span><strong data-visit-value="today"><%= stats.memberVisits.today %></strong></li>
-          <li><span><%= isEn ? '7 Days' : '일주일' %></span><strong data-visit-value="week"><%= stats.memberVisits.week %></strong></li>
-          <li><span><%= isEn ? '30 Days' : '한달' %></span><strong data-visit-value="month"><%= stats.memberVisits.month %></strong></li>
-          <li><span><%= isEn ? '1 Year' : '1년' %></span><strong data-visit-value="year"><%= stats.memberVisits.year %></strong></li>
-          <li><span><%= isEn ? 'Total' : '총' %></span><strong data-visit-value="total"><%= stats.memberVisits.total %></strong></li>
-        </ul>
-      </div>
 
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Today Action Queue' : '오늘 우선 처리' %></h4>
-        <strong><%= Number(stats.actionItems.totalUrgent || 0).toLocaleString() %></strong>
-        <p class="muted-label"><%= isEn ? 'Priority tasks requiring immediate handling.' : '바로 처리해야 할 핵심 작업 건수입니다.' %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong><%= Number(stats.actionItems.uncheckedOrders || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Payment Check Wait 12h+' : '입금확인 대기 12시간+' %></span><strong><%= Number(stats.actionItems.paymentWaiting || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Unreplied Inquiries' : '미답변 문의' %></span><strong><%= Number(stats.actionItems.pendingInquiries || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'QC Missing Orders' : 'QC 미등록 주문' %></span><strong><%= Number(stats.actionItems.qcPending || 0).toLocaleString() %></strong></li>
-        </ul>
-      </div>
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Today Action Queue' : '오늘 우선 처리' %></h4>
+          <strong><%= Number(stats.actionItems.totalUrgent || 0).toLocaleString() %></strong>
+          <p class="muted-label"><%= isEn ? 'Priority tasks requiring immediate handling.' : '바로 처리해야 할 핵심 작업 건수입니다.' %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong><%= Number(stats.actionItems.uncheckedOrders || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Payment Check Wait 12h+' : '입금확인 대기 12시간+' %></span><strong><%= Number(stats.actionItems.paymentWaiting || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Unreplied Inquiries' : '미답변 문의' %></span><strong><%= Number(stats.actionItems.pendingInquiries || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'QC Missing Orders' : 'QC 미등록 주문' %></span><strong><%= Number(stats.actionItems.qcPending || 0).toLocaleString() %></strong></li>
+          </ul>
+        </div>
 
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Order Delay Warnings' : '주문 지연 경고' %></h4>
-        <p class="muted-label"><%= isEn ? 'SLA delay alerts by order pipeline stage.' : '주문 단계별 지연 건수입니다.' %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Awaiting Payment 24h+' : '입금확인중 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Payment Confirmed 48h+' : '입금확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Ready 72h+' : '출고중 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Shipping 7d+' : '배송중 7일+' %></span><strong><%= Number(stats.delayWarnings.shippingOver7d || 0).toLocaleString() %></strong></li>
-        </ul>
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Order Delay Warnings' : '주문 지연 경고' %></h4>
+          <p class="muted-label"><%= isEn ? 'SLA delay alerts by order pipeline stage.' : '주문 단계별 지연 건수입니다.' %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Awaiting Payment 24h+' : '입금확인중 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Payment Confirmed 48h+' : '입금확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Ready 72h+' : '출고중 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Shipping 7d+' : '배송중 7일+' %></span><strong><%= Number(stats.delayWarnings.shippingOver7d || 0).toLocaleString() %></strong></li>
+          </ul>
+        </div>
       </div>
+    </div>
 
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Inquiry Operations' : '문의 운영 상태' %></h4>
-        <p class="muted-label"><%= isEn ? 'Inquiry backlog and response speed.' : '문의 적체와 답변 속도 지표입니다.' %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Waiting Reply' : '답변 대기' %></span><strong><%= Number(stats.inquiryOps.pending || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Waiting 24h+' : '24시간 이상 대기' %></span><strong><%= Number(stats.inquiryOps.overdue24h || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Replied Today' : '오늘 답변 완료' %></span><strong><%= Number(stats.inquiryOps.repliedToday || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Avg Reply Time' : '평균 답변시간' %></span><strong><%= Number(stats.inquiryOps.avgReplyHours || 0).toLocaleString() %><%= isEn ? 'h' : '시간' %></strong></li>
-        </ul>
-      </div>
-
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Payment Performance' : '입금 성과' %></h4>
-        <p class="muted-label"><%= isEn ? 'Order confirm and payment check performance.' : '주문확인(입금확인) 처리 성과입니다.' %></p>
-        <ul class="metric-list">
-          <li>
-            <span><%= isEn ? 'Today' : '오늘' %></span>
-            <strong><%= Number(stats.paymentPerformance.todayCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.todayAmount || 0).toLocaleString('ko-KR') %></strong>
-          </li>
-          <li>
-            <span><%= isEn ? '7 Days' : '일주일' %></span>
-            <strong><%= Number(stats.paymentPerformance.weekCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.weekAmount || 0).toLocaleString('ko-KR') %></strong>
-          </li>
-          <li>
-            <span><%= isEn ? '30 Days' : '한달' %></span>
-            <strong><%= Number(stats.paymentPerformance.monthCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.monthAmount || 0).toLocaleString('ko-KR') %></strong>
-          </li>
-          <li>
-            <span><%= isEn ? 'Total' : '누적' %></span>
-            <strong><%= Number(stats.paymentPerformance.totalCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.totalAmount || 0).toLocaleString('ko-KR') %></strong>
-          </li>
-          <li>
-            <span><%= isEn ? 'Payment Confirm Rate' : '입금확인 전환율' %></span>
-            <strong><%= Number(stats.paymentPerformance.confirmRate || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong>
-          </li>
-        </ul>
-      </div>
-
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Conversion Funnel' : '전환 퍼널' %></h4>
-        <p class="muted-label"><%= isEn ? `${Number(stats.conversionFunnel.windowDays || 30)}-day conversion funnel (refresh deduplicated).` : `최근 ${Number(stats.conversionFunnel.windowDays || 30)}일 전환 퍼널입니다. (새로고침 중복 집계 보정)` %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Product Views' : '상품조회' %></span><strong><%= Number(stats.conversionFunnel.window.productViews || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Purchase Views' : '구매페이지 진입' %></span><strong><%= Number(stats.conversionFunnel.window.purchaseViews || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Orders Created' : '주문생성' %></span><strong><%= Number(stats.conversionFunnel.window.orderCreated || 0).toLocaleString() %></strong></li>
-          <li><span><%= isEn ? 'Payments Confirmed' : '입금확인' %></span><strong><%= Number(stats.conversionFunnel.window.paymentConfirmed || 0).toLocaleString() %></strong></li>
-        </ul>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'View → Purchase' : '상품조회 → 구매진입' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPurchase || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
-          <li><span><%= isEn ? 'Purchase → Order' : '구매진입 → 주문생성' %></span><strong><%= Number(stats.conversionFunnel.rates.purchaseToOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
-          <li><span><%= isEn ? 'Order → Payment' : '주문생성 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.orderToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
-          <li><span><%= isEn ? 'View → Payment' : '상품조회 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
-        </ul>
-      </div>
-
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Board Post Counts' : '게시판 게시물 수' %></h4>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Notice' : '공지사항' %></span><strong><%= stats.boardCounts.notice %></strong></li>
-          <li><span><%= isEn ? 'News' : '뉴스' %></span><strong><%= stats.boardCounts.news %></strong></li>
-          <li><span>QC</span><strong><%= stats.boardCounts.qc %></strong></li>
-          <li><span><%= isEn ? 'Reviews' : '구매후기' %></span><strong><%= stats.boardCounts.review %></strong></li>
-          <li><span><%= isEn ? 'Inquiry' : '문의' %></span><strong><%= stats.boardCounts.inquiry %></strong></li>
-        </ul>
-      </div>
-
-      <div class="kpi-card">
-        <h4><%= isEn ? 'Operational Alerts' : '운영 알림' %></h4>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Awaiting Payment 24h+' : '24시간 이상 입금확인중' %></span><strong><%= stats.orderAlerts.stalePending %></strong></li>
-          <li><span><%= isEn ? 'Shipping 7d+' : '7일 이상 배송중' %></span><strong><%= stats.orderAlerts.longShipping %></strong></li>
-        </ul>
-      </div>
-
-      <div class="kpi-card" data-shop-switch-root>
-        <div class="kpi-head-row">
-          <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
-          <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'shop group switch' : '상품 분류 전환' %>">
-            <% productGroupKeys.forEach((groupName, idx) => { %>
-              <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-shop-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
-            <% }) %>
+    <div class="dashboard-group">
+      <h4 class="dashboard-group-title"><%= isEn ? 'Sales' : '매출' %></h4>
+      <div class="dashboard-kpi-grid">
+        <div class="kpi-card" data-shop-switch-root>
+          <div class="kpi-head-row">
+            <h4><%= isEn ? 'Shop Inventory' : '쇼핑몰 상품 현황' %></h4>
+            <div class="kpi-toggle-row" role="tablist" aria-label="<%= isEn ? 'shop group switch' : '상품 분류 전환' %>">
+              <% productGroupKeys.forEach((groupName, idx) => { %>
+                <button type="button" class="kpi-toggle-btn <%= idx === 0 ? 'active' : '' %>" data-shop-group="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
+              <% }) %>
+            </div>
           </div>
+          <p class="muted-label" data-shop-caption><%= isEn ? `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} inventory summary.` : `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} 상품 현황입니다.` %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Total' : '전체 상품' %></span><strong data-shop-value="totalCount"><%= defaultShopGroup.totalCount %></strong></li>
+            <li><span><%= isEn ? 'Active' : '활성' %></span><strong data-shop-value="activeCount"><%= defaultShopGroup.activeCount %></strong></li>
+            <li><span><%= isEn ? 'Hidden' : '숨김' %></span><strong data-shop-value="hiddenCount"><%= defaultShopGroup.hiddenCount %></strong></li>
+          </ul>
         </div>
-        <p class="muted-label" data-shop-caption><%= isEn ? `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} inventory summary.` : `${groupLabelByKey[defaultShopGroup.groupName] || defaultShopGroup.groupName} 상품 현황입니다.` %></p>
-        <ul class="metric-list">
-          <li><span><%= isEn ? 'Total' : '전체 상품' %></span><strong data-shop-value="totalCount"><%= defaultShopGroup.totalCount %></strong></li>
-          <li><span><%= isEn ? 'Active' : '활성' %></span><strong data-shop-value="activeCount"><%= defaultShopGroup.activeCount %></strong></li>
-          <li><span><%= isEn ? 'Hidden' : '숨김' %></span><strong data-shop-value="hiddenCount"><%= defaultShopGroup.hiddenCount %></strong></li>
-        </ul>
+
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Sales Performance' : '매출 성과' %></h4>
+          <p class="muted-label"><%= isEn ? 'Sales and confirmation performance.' : '주문 대비 매출 및 확정 성과입니다.' %></p>
+          <ul class="metric-list">
+            <li>
+              <span><%= isEn ? 'Today' : '오늘' %></span>
+              <strong><%= Number(stats.paymentPerformance.todayCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.todayAmount || 0).toLocaleString('ko-KR') %></strong>
+            </li>
+            <li>
+              <span><%= isEn ? '7 Days' : '일주일' %></span>
+              <strong><%= Number(stats.paymentPerformance.weekCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.weekAmount || 0).toLocaleString('ko-KR') %></strong>
+            </li>
+            <li>
+              <span><%= isEn ? '30 Days' : '한달' %></span>
+              <strong><%= Number(stats.paymentPerformance.monthCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.monthAmount || 0).toLocaleString('ko-KR') %></strong>
+            </li>
+            <li>
+              <span><%= isEn ? 'Total' : '누적' %></span>
+              <strong><%= Number(stats.paymentPerformance.totalCount || 0).toLocaleString() %> / <%= isEn ? 'KRW ' : '₩' %><%= Number(stats.paymentPerformance.totalAmount || 0).toLocaleString('ko-KR') %></strong>
+            </li>
+            <li>
+              <span><%= isEn ? 'Payment Confirm Rate' : '입금확인 전환율' %></span>
+              <strong><%= Number(stats.paymentPerformance.confirmRate || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong>
+            </li>
+          </ul>
+        </div>
+
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Conversion Funnel' : '전환 퍼널' %></h4>
+          <p class="muted-label"><%= isEn ? `${Number(stats.conversionFunnel.windowDays || 30)}-day conversion funnel (refresh deduplicated).` : `최근 ${Number(stats.conversionFunnel.windowDays || 30)}일 전환 퍼널입니다. (새로고침 중복 집계 보정)` %></p>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Product Views' : '상품조회' %></span><strong><%= Number(stats.conversionFunnel.window.productViews || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Purchase Views' : '구매페이지 진입' %></span><strong><%= Number(stats.conversionFunnel.window.purchaseViews || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Orders Created' : '주문생성' %></span><strong><%= Number(stats.conversionFunnel.window.orderCreated || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Payments Confirmed' : '입금확인' %></span><strong><%= Number(stats.conversionFunnel.window.paymentConfirmed || 0).toLocaleString() %></strong></li>
+          </ul>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'View → Purchase' : '상품조회 → 구매진입' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPurchase || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+            <li><span><%= isEn ? 'Purchase → Order' : '구매진입 → 주문생성' %></span><strong><%= Number(stats.conversionFunnel.rates.purchaseToOrder || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+            <li><span><%= isEn ? 'Order → Payment' : '주문생성 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.orderToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+            <li><span><%= isEn ? 'View → Payment' : '상품조회 → 입금확인' %></span><strong><%= Number(stats.conversionFunnel.rates.viewToPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }) %>%</strong></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-group">
+      <h4 class="dashboard-group-title"><%= isEn ? 'Others' : '기타' %></h4>
+      <div class="dashboard-kpi-grid dashboard-kpi-grid-single">
+        <div class="kpi-card">
+          <h4><%= isEn ? 'Board Post Counts' : '게시판 게시물 수' %></h4>
+          <ul class="metric-list">
+            <li><span><%= isEn ? 'Notice' : '공지사항' %></span><strong><%= stats.boardCounts.notice %></strong></li>
+            <li><span><%= isEn ? 'News' : '뉴스' %></span><strong><%= stats.boardCounts.news %></strong></li>
+            <li><span>QC</span><strong><%= stats.boardCounts.qc %></strong></li>
+            <li><span><%= isEn ? 'Reviews' : '구매후기' %></span><strong><%= stats.boardCounts.review %></strong></li>
+            <li><span><%= isEn ? 'Inquiry' : '문의' %></span><strong><%= stats.boardCounts.inquiry %></strong></li>
+          </ul>
+        </div>
       </div>
     </div>
 
