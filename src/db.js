@@ -309,9 +309,59 @@ function ensureUserMemberProfileColumns() {
 
   addColumnIfMissing('customs_clearance_no', "customs_clearance_no TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('default_address', "default_address TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('default_postcode', "default_postcode TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('default_address_base', "default_address_base TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('default_address_detail', "default_address_detail TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('nickname', "nickname TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('profile_image_path', "profile_image_path TEXT NOT NULL DEFAULT ''");
   db.prepare("UPDATE users SET nickname = username WHERE COALESCE(TRIM(nickname), '') = ''").run();
+  db.prepare(
+    `
+      UPDATE users
+      SET default_address_base = default_address
+      WHERE COALESCE(TRIM(default_address_base), '') = ''
+        AND COALESCE(TRIM(default_address), '') != ''
+    `
+  ).run();
+}
+
+function ensureAddressBookTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS address_book (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      postcode TEXT NOT NULL DEFAULT '',
+      address_base TEXT NOT NULL DEFAULT '',
+      address_detail TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_address_book_user_id ON address_book (user_id);
+    CREATE INDEX IF NOT EXISTS idx_address_book_user_default ON address_book (user_id, is_default);
+  `);
+
+  const columns = db.prepare('PRAGMA table_info(address_book)').all();
+  if (columns.length > 0) {
+    const columnNames = new Set(columns.map((column) => column.name));
+
+    if (!columnNames.has('postcode')) {
+      db.prepare("ALTER TABLE address_book ADD COLUMN postcode TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!columnNames.has('address_base')) {
+      db.prepare("ALTER TABLE address_book ADD COLUMN address_base TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!columnNames.has('address_detail')) {
+      db.prepare("ALTER TABLE address_book ADD COLUMN address_detail TEXT NOT NULL DEFAULT ''").run();
+    }
+    if (!columnNames.has('updated_at')) {
+      db.prepare("ALTER TABLE address_book ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''").run();
+      db.prepare("UPDATE address_book SET updated_at = datetime('now') WHERE COALESCE(TRIM(updated_at), '') = ''").run();
+    }
+  }
 }
 
 function ensureUserPointColumns() {
@@ -998,6 +1048,9 @@ export function initDb() {
       phone TEXT NOT NULL DEFAULT '',
       customs_clearance_no TEXT NOT NULL DEFAULT '',
       default_address TEXT NOT NULL DEFAULT '',
+      default_postcode TEXT NOT NULL DEFAULT '',
+      default_address_base TEXT NOT NULL DEFAULT '',
+      default_address_detail TEXT NOT NULL DEFAULT '',
       profile_image_path TEXT NOT NULL DEFAULT '',
       reward_points INTEGER NOT NULL DEFAULT 0,
       password_hash TEXT NOT NULL,
@@ -1085,6 +1138,22 @@ export function initDb() {
       UNIQUE (user_id, product_id)
     );
 
+    CREATE TABLE IF NOT EXISTS address_book (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      postcode TEXT NOT NULL DEFAULT '',
+      address_base TEXT NOT NULL DEFAULT '',
+      address_detail TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_address_book_user_id ON address_book (user_id);
+    CREATE INDEX IF NOT EXISTS idx_address_book_user_default ON address_book (user_id, is_default);
+
     CREATE TABLE IF NOT EXISTS notices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -1156,6 +1225,7 @@ export function initDb() {
   ensureProductsExtraFieldsColumn();
   ensureUserAdminProfileColumns();
   ensureUserMemberProfileColumns();
+  ensureAddressBookTable();
   ensureUserPointColumns();
   ensureUserBlockColumns();
   ensureOrdersCustomsColumn();

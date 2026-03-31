@@ -1897,6 +1897,113 @@ function normalizePhone(rawPhone = '') {
   return String(rawPhone).replace(/[^0-9]/g, '');
 }
 
+function normalizePostcode(rawPostcode = '') {
+  return String(rawPostcode || '')
+    .replace(/[^0-9]/g, '')
+    .slice(0, 5);
+}
+
+function normalizeAddressText(rawValue = '', maxLength = 160) {
+  return String(rawValue || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLength);
+}
+
+function composeFullAddress(postcode = '', addressBase = '', addressDetail = '') {
+  const safePostcode = normalizePostcode(postcode);
+  const safeAddressBase = normalizeAddressText(addressBase, 160);
+  const safeAddressDetail = normalizeAddressText(addressDetail, 120);
+
+  const chunks = [];
+  if (safePostcode) {
+    chunks.push(`[${safePostcode}]`);
+  }
+  if (safeAddressBase) {
+    chunks.push(safeAddressBase);
+  }
+  if (safeAddressDetail) {
+    chunks.push(safeAddressDetail);
+  }
+  return chunks.join(' ').trim();
+}
+
+function validateStructuredAddress({ postcode = '', addressBase = '', addressDetail = '' }, options = {}) {
+  const requireFilled = options.requireFilled !== false;
+  const safePostcode = normalizePostcode(postcode);
+  const safeAddressBase = normalizeAddressText(addressBase, 160);
+  const safeAddressDetail = normalizeAddressText(addressDetail, 120);
+  const hasAny = Boolean(safePostcode || safeAddressBase || safeAddressDetail);
+
+  if (!hasAny && !requireFilled) {
+    return { ok: true, empty: true, postcode: '', addressBase: '', addressDetail: '' };
+  }
+
+  if (!hasAny && requireFilled) {
+    return { ok: false, message: '주소를 입력해 주세요.' };
+  }
+
+  if (!safePostcode || safePostcode.length !== 5) {
+    return { ok: false, message: '우편번호 5자리를 입력해 주세요.' };
+  }
+
+  if (!safeAddressBase || safeAddressBase.length < 4 || safeAddressBase.length > 160) {
+    return { ok: false, message: '기본주소는 4~160자 범위로 입력해 주세요.' };
+  }
+
+  if (safeAddressDetail.length > 120) {
+    return { ok: false, message: '상세주소는 120자 이하로 입력해 주세요.' };
+  }
+
+  return {
+    ok: true,
+    empty: false,
+    postcode: safePostcode,
+    addressBase: safeAddressBase,
+    addressDetail: safeAddressDetail
+  };
+}
+
+function getAddressBookEntries(userId) {
+  return db
+    .prepare(
+      `
+        SELECT id, label, postcode, address_base, address_detail, is_default
+        FROM address_book
+        WHERE user_id = ?
+        ORDER BY is_default DESC, updated_at DESC, id DESC
+      `
+    )
+    .all(userId)
+    .map((row) => ({
+      id: Number(row.id),
+      label: String(row.label || ''),
+      postcode: String(row.postcode || ''),
+      addressBase: String(row.address_base || ''),
+      addressDetail: String(row.address_detail || ''),
+      isDefault: Number(row.is_default) === 1,
+      fullAddress: composeFullAddress(row.postcode, row.address_base, row.address_detail)
+    }));
+}
+
+function updateUserDefaultAddress(userId, postcode = '', addressBase = '', addressDetail = '') {
+  const safePostcode = normalizePostcode(postcode);
+  const safeAddressBase = normalizeAddressText(addressBase, 160);
+  const safeAddressDetail = normalizeAddressText(addressDetail, 120);
+  const fullAddress = composeFullAddress(safePostcode, safeAddressBase, safeAddressDetail);
+
+  db.prepare(
+    `
+      UPDATE users
+      SET default_postcode = ?,
+          default_address_base = ?,
+          default_address_detail = ?,
+          default_address = ?
+      WHERE id = ?
+    `
+  ).run(safePostcode, safeAddressBase, safeAddressDetail, fullAddress, userId);
+}
+
 function incrementFunnelEventUniqueInSession(req, eventKey, scopeKey = '') {
   const key = String(eventKey || '').trim();
   if (!key) {
@@ -2026,6 +2133,9 @@ function loadUser(req, res, next) {
           phone,
           customs_clearance_no,
           default_address,
+          default_postcode,
+          default_address_base,
+          default_address_detail,
           profile_image_path,
           reward_points,
           is_admin,
@@ -2067,6 +2177,9 @@ function loadUser(req, res, next) {
     phone: user.phone || '',
     customsClearanceNo: user.customs_clearance_no || '',
     defaultAddress: user.default_address || '',
+    defaultPostcode: user.default_postcode || '',
+    defaultAddressBase: user.default_address_base || '',
+    defaultAddressDetail: user.default_address_detail || '',
     profileImagePath: user.profile_image_path || '',
     rewardPoints: Number(user.reward_points || 0),
     isAdmin: Number(user.is_admin) === 1,
@@ -2692,12 +2805,23 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
 
   incrementFunnelEventUniqueInSession(req, FUNNEL_EVENT.PURCHASE_VIEW, `product:${id}`);
   const purchasePointRate = getPurchasePointRateSetting();
+  const addressBookEntries = getAddressBookEntries(req.user.id);
+  const defaultAddressEntry = addressBookEntries.find((entry) => entry.isDefault) || null;
+  const defaultPostcode = req.user.defaultPostcode || defaultAddressEntry?.postcode || '';
+  const defaultAddressBase = req.user.defaultAddressBase || defaultAddressEntry?.addressBase || '';
+  const defaultAddressDetail = req.user.defaultAddressDetail || defaultAddressEntry?.addressDetail || '';
 
   const formData = {
     buyerName: req.user.fullName || '',
     buyerContact: req.user.phone || '',
     customsClearanceNo: req.user.customsClearanceNo || '',
-    buyerAddress: req.user.defaultAddress || '',
+    buyerPostcode: defaultPostcode,
+    buyerAddressBase: defaultAddressBase,
+    buyerAddressDetail: defaultAddressDetail,
+    addressBookId: defaultAddressEntry ? String(defaultAddressEntry.id) : '',
+    addressLabel: '',
+    saveToAddressBook: '',
+    setAsDefaultAddress: '',
     quantity: 1
   };
 
@@ -2705,6 +2829,7 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     title: 'Purchase',
     product,
     formData,
+    addressBookEntries,
     productGroupLabel,
     purchasePointRate,
     expectedPoints: calculateEarnedPoints(product.price, purchasePointRate)
@@ -2731,15 +2856,48 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
 
   const buyerName = String(req.body.buyerName || '').trim();
   const buyerContact = String(req.body.buyerContact || '').trim();
-  const buyerAddress = String(req.body.buyerAddress || '').trim();
+  const addressBookIdRaw = String(req.body.addressBookId || '').trim();
+  const selectedAddressBookId = parsePositiveInt(addressBookIdRaw, 0);
+  let buyerPostcode = normalizePostcode(req.body.buyerPostcode || '');
+  let buyerAddressBase = normalizeAddressText(req.body.buyerAddressBase || '', 160);
+  let buyerAddressDetail = normalizeAddressText(req.body.buyerAddressDetail || '', 120);
   const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
+  const addressLabel = normalizeAddressText(req.body.addressLabel || '', 40);
+  const saveToAddressBook = String(req.body.saveToAddressBook || '') === '1';
+  const setAsDefaultAddress = String(req.body.setAsDefaultAddress || '') === '1';
   const quantity = parsePositiveInt(req.body.quantity, 1);
+  const addressBookEntries = getAddressBookEntries(req.user.id);
+  const selectedAddressBookEntry =
+    selectedAddressBookId > 0
+      ? addressBookEntries.find((entry) => entry.id === selectedAddressBookId) || null
+      : null;
+
+  if ((!buyerPostcode || !buyerAddressBase) && selectedAddressBookEntry) {
+    buyerPostcode = selectedAddressBookEntry.postcode;
+    buyerAddressBase = selectedAddressBookEntry.addressBase;
+    buyerAddressDetail = selectedAddressBookEntry.addressDetail;
+  }
+
+  const validatedAddress = validateStructuredAddress({
+    postcode: buyerPostcode,
+    addressBase: buyerAddressBase,
+    addressDetail: buyerAddressDetail
+  });
+  const buyerAddress = validatedAddress.ok
+    ? composeFullAddress(validatedAddress.postcode, validatedAddress.addressBase, validatedAddress.addressDetail)
+    : '';
 
   const formData = {
     buyerName,
     buyerContact,
     customsClearanceNo,
-    buyerAddress,
+    buyerPostcode,
+    buyerAddressBase,
+    buyerAddressDetail,
+    addressBookId: selectedAddressBookId > 0 ? String(selectedAddressBookId) : '',
+    addressLabel,
+    saveToAddressBook: saveToAddressBook ? '1' : '',
+    setAsDefaultAddress: setAsDefaultAddress ? '1' : '',
     quantity
   };
   const purchasePointRate = getPurchasePointRateSetting();
@@ -2750,13 +2908,14 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
       title: 'Purchase',
       product,
       formData,
+      addressBookEntries,
       productGroupLabel,
       purchasePointRate,
       expectedPoints: calculateEarnedPoints(product.price * quantity, purchasePointRate)
     });
   };
 
-  if (!buyerName || !buyerContact || !buyerAddress || !customsClearanceNo) {
+  if (!buyerName || !buyerContact || !customsClearanceNo) {
     return renderWithError('필수 입력값을 모두 작성해 주세요.');
   }
 
@@ -2765,8 +2924,12 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return renderWithError('연락처 형식이 올바르지 않습니다.');
   }
 
-  if (buyerAddress.length < 5 || buyerAddress.length > 200) {
-    return renderWithError('주소는 5~200자 범위로 입력해 주세요.');
+  if (!validatedAddress.ok) {
+    return renderWithError(validatedAddress.message || '주소를 확인해 주세요.');
+  }
+
+  if (buyerAddress.length < 5 || buyerAddress.length > 220) {
+    return renderWithError('주소는 5~220자 범위로 입력해 주세요.');
   }
 
   if (!CUSTOMS_NO_REGEX.test(customsClearanceNo)) {
@@ -2816,6 +2979,76 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     ORDER_STATUS.PENDING_REVIEW,
     'order:member:created'
   );
+
+  if (saveToAddressBook || setAsDefaultAddress) {
+    const fallbackLabel = addressLabel || selectedAddressBookEntry?.label || '기본주소';
+    const saveAddressTx = db.transaction(() => {
+      const now = db.prepare("SELECT datetime('now') AS now").get().now;
+      let targetAddressId = selectedAddressBookEntry?.id || 0;
+
+      if (targetAddressId > 0) {
+        db.prepare(
+          `
+            UPDATE address_book
+            SET label = ?, postcode = ?, address_base = ?, address_detail = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+          `
+        ).run(
+          fallbackLabel,
+          validatedAddress.postcode,
+          validatedAddress.addressBase,
+          validatedAddress.addressDetail,
+          now,
+          targetAddressId,
+          req.user.id
+        );
+      } else {
+        const inserted = db.prepare(
+          `
+            INSERT INTO address_book (
+              user_id,
+              label,
+              postcode,
+              address_base,
+              address_detail,
+              is_default,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+          `
+        ).run(
+          req.user.id,
+          fallbackLabel,
+          validatedAddress.postcode,
+          validatedAddress.addressBase,
+          validatedAddress.addressDetail,
+          now,
+          now
+        );
+        targetAddressId = Number(inserted.lastInsertRowid);
+      }
+
+      const currentDefault = db
+        .prepare('SELECT id FROM address_book WHERE user_id = ? AND is_default = 1 LIMIT 1')
+        .get(req.user.id);
+      const shouldSetDefault = setAsDefaultAddress || !currentDefault;
+      if (shouldSetDefault && targetAddressId > 0) {
+        db.prepare('UPDATE address_book SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+        db.prepare('UPDATE address_book SET is_default = 1, updated_at = ? WHERE id = ? AND user_id = ?').run(
+          now,
+          targetAddressId,
+          req.user.id
+        );
+        updateUserDefaultAddress(
+          req.user.id,
+          validatedAddress.postcode,
+          validatedAddress.addressBase,
+          validatedAddress.addressDetail
+        );
+      }
+    });
+    saveAddressTx();
+  }
 
   incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.ORDER_CREATED);
 
@@ -2961,6 +3194,9 @@ app.get('/mypage', requireAuth, (req, res) => {
           phone,
           customs_clearance_no,
           default_address,
+          default_postcode,
+          default_address_base,
+          default_address_detail,
           profile_image_path,
           reward_points
         FROM users
@@ -2992,6 +3228,7 @@ app.get('/mypage', requireAuth, (req, res) => {
 
   const usedPoints = 0;
   const availablePoints = Number(profile.reward_points || 0);
+  const addressBookEntries = getAddressBookEntries(req.user.id);
   const myPageSummary = {
     totalPurchaseAmount: Number(summaryRow?.total_purchase_amount || 0),
     totalEarnedPoints: Number(summaryRow?.total_earned_points || 0),
@@ -3090,9 +3327,13 @@ app.get('/mypage', requireAuth, (req, res) => {
       phone: profile.phone || '',
       customsClearanceNo: profile.customs_clearance_no || '',
       defaultAddress: profile.default_address || '',
+      defaultPostcode: profile.default_postcode || '',
+      defaultAddressBase: profile.default_address_base || '',
+      defaultAddressDetail: profile.default_address_detail || '',
       rewardPoints: Number(profile.reward_points || 0),
       profileImagePath: profile.profile_image_path || ''
-    }
+    },
+    addressBookEntries
   });
 });
 
@@ -3101,7 +3342,17 @@ app.post('/mypage/profile/update', requireAuth, (req, res) => {
   const fullName = String(req.body.fullName || '').trim();
   const phone = normalizePhone(req.body.phone || '');
   const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
-  const defaultAddress = String(req.body.defaultAddress || '').trim();
+  const defaultPostcode = normalizePostcode(req.body.defaultPostcode || '');
+  const defaultAddressBase = normalizeAddressText(req.body.defaultAddressBase || '', 160);
+  const defaultAddressDetail = normalizeAddressText(req.body.defaultAddressDetail || '', 120);
+  const addressValidation = validateStructuredAddress(
+    {
+      postcode: defaultPostcode,
+      addressBase: defaultAddressBase,
+      addressDetail: defaultAddressDetail
+    },
+    { requireFilled: false }
+  );
 
   if (fullName.length > 80) {
     setFlash(req, 'error', '이름은 80자 이하로 입력해 주세요.');
@@ -3118,20 +3369,271 @@ app.post('/mypage/profile/update', requireAuth, (req, res) => {
     return res.redirect(backPath);
   }
 
-  if (defaultAddress && (defaultAddress.length < 5 || defaultAddress.length > 200)) {
-    setFlash(req, 'error', '주소는 5~200자 범위로 입력해 주세요.');
+  if (!addressValidation.ok) {
+    setFlash(req, 'error', addressValidation.message || '주소를 확인해 주세요.');
     return res.redirect(backPath);
   }
+
+  const safePostcode = addressValidation.postcode || '';
+  const safeAddressBase = addressValidation.addressBase || '';
+  const safeAddressDetail = addressValidation.addressDetail || '';
+  const defaultAddress = composeFullAddress(safePostcode, safeAddressBase, safeAddressDetail);
 
   db.prepare(
     `
       UPDATE users
-      SET full_name = ?, phone = ?, customs_clearance_no = ?, default_address = ?
+      SET full_name = ?,
+          phone = ?,
+          customs_clearance_no = ?,
+          default_address = ?,
+          default_postcode = ?,
+          default_address_base = ?,
+          default_address_detail = ?
       WHERE id = ?
     `
-  ).run(fullName, phone, customsClearanceNo, defaultAddress, req.user.id);
+  ).run(
+    fullName,
+    phone,
+    customsClearanceNo,
+    defaultAddress,
+    safePostcode,
+    safeAddressBase,
+    safeAddressDetail,
+    req.user.id
+  );
+
+  if (!addressValidation.empty) {
+    const syncDefaultAddressTx = db.transaction(() => {
+      const now = db.prepare("SELECT datetime('now') AS now").get().now;
+      const existingDefault = db
+        .prepare(
+          `
+            SELECT id, label
+            FROM address_book
+            WHERE user_id = ? AND is_default = 1
+            ORDER BY id DESC
+            LIMIT 1
+          `
+        )
+        .get(req.user.id);
+      const baseLabel = String(existingDefault?.label || '').trim() || '기본주소';
+      let targetId = Number(existingDefault?.id || 0);
+
+      if (targetId > 0) {
+        db.prepare(
+          `
+            UPDATE address_book
+            SET label = ?, postcode = ?, address_base = ?, address_detail = ?, updated_at = ?
+            WHERE id = ? AND user_id = ?
+          `
+        ).run(baseLabel, safePostcode, safeAddressBase, safeAddressDetail, now, targetId, req.user.id);
+      } else {
+        const inserted = db.prepare(
+          `
+            INSERT INTO address_book (
+              user_id,
+              label,
+              postcode,
+              address_base,
+              address_detail,
+              is_default,
+              created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+          `
+        ).run(req.user.id, baseLabel, safePostcode, safeAddressBase, safeAddressDetail, now, now);
+        targetId = Number(inserted.lastInsertRowid || 0);
+      }
+
+      if (targetId > 0) {
+        db.prepare('UPDATE address_book SET is_default = 0 WHERE user_id = ? AND id != ?').run(req.user.id, targetId);
+      }
+    });
+    syncDefaultAddressTx();
+  }
 
   setFlash(req, 'success', '정보 설정이 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/mypage/address-book/add', requireAuth, (req, res) => {
+  const backPath = '/mypage?section=profile';
+  const label = normalizeAddressText(req.body.label || '', 40);
+  const postcode = normalizePostcode(req.body.postcode || '');
+  const addressBase = normalizeAddressText(req.body.addressBase || '', 160);
+  const addressDetail = normalizeAddressText(req.body.addressDetail || '', 120);
+  const setAsDefault = String(req.body.setAsDefault || '') === '1';
+
+  if (!label) {
+    setFlash(req, 'error', '주소록 이름을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const addressValidation = validateStructuredAddress({
+    postcode,
+    addressBase,
+    addressDetail
+  });
+  if (!addressValidation.ok) {
+    setFlash(req, 'error', addressValidation.message || '주소를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const createAddressTx = db.transaction(() => {
+    const now = db.prepare("SELECT datetime('now') AS now").get().now;
+    const inserted = db.prepare(
+      `
+        INSERT INTO address_book (
+          user_id,
+          label,
+          postcode,
+          address_base,
+          address_detail,
+          is_default,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+      `
+    ).run(
+      req.user.id,
+      label,
+      addressValidation.postcode,
+      addressValidation.addressBase,
+      addressValidation.addressDetail,
+      now,
+      now
+    );
+
+    const newAddressId = Number(inserted.lastInsertRowid || 0);
+    const existingDefault = db
+      .prepare('SELECT id FROM address_book WHERE user_id = ? AND is_default = 1 LIMIT 1')
+      .get(req.user.id);
+    const shouldSetDefault = setAsDefault || !existingDefault;
+
+    if (shouldSetDefault && newAddressId > 0) {
+      db.prepare('UPDATE address_book SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+      db.prepare('UPDATE address_book SET is_default = 1, updated_at = ? WHERE id = ? AND user_id = ?').run(
+        now,
+        newAddressId,
+        req.user.id
+      );
+      updateUserDefaultAddress(
+        req.user.id,
+        addressValidation.postcode,
+        addressValidation.addressBase,
+        addressValidation.addressDetail
+      );
+    }
+  });
+  createAddressTx();
+
+  setFlash(req, 'success', '주소록이 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/mypage/address-book/:id/default', requireAuth, (req, res) => {
+  const backPath = '/mypage?section=profile';
+  const addressId = Number(req.params.id);
+  if (!Number.isInteger(addressId) || addressId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 주소록 항목입니다.');
+    return res.redirect(backPath);
+  }
+
+  const targetAddress = db
+    .prepare(
+      `
+        SELECT id, postcode, address_base, address_detail
+        FROM address_book
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(addressId, req.user.id);
+  if (!targetAddress) {
+    setFlash(req, 'error', '주소록 항목을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const setDefaultTx = db.transaction(() => {
+    const now = db.prepare("SELECT datetime('now') AS now").get().now;
+    db.prepare('UPDATE address_book SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+    db.prepare('UPDATE address_book SET is_default = 1, updated_at = ? WHERE id = ? AND user_id = ?').run(
+      now,
+      addressId,
+      req.user.id
+    );
+    updateUserDefaultAddress(
+      req.user.id,
+      targetAddress.postcode,
+      targetAddress.address_base,
+      targetAddress.address_detail
+    );
+  });
+  setDefaultTx();
+
+  setFlash(req, 'success', '기본주소로 설정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/mypage/address-book/:id/delete', requireAuth, (req, res) => {
+  const backPath = '/mypage?section=profile';
+  const addressId = Number(req.params.id);
+  if (!Number.isInteger(addressId) || addressId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 주소록 항목입니다.');
+    return res.redirect(backPath);
+  }
+
+  const targetAddress = db
+    .prepare(
+      `
+        SELECT id, is_default
+        FROM address_book
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(addressId, req.user.id);
+  if (!targetAddress) {
+    setFlash(req, 'error', '주소록 항목을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const deleteAddressTx = db.transaction(() => {
+    db.prepare('DELETE FROM address_book WHERE id = ? AND user_id = ?').run(addressId, req.user.id);
+
+    if (Number(targetAddress.is_default) !== 1) {
+      return;
+    }
+
+    const nextAddress = db
+      .prepare(
+        `
+          SELECT id, postcode, address_base, address_detail
+          FROM address_book
+          WHERE user_id = ?
+          ORDER BY updated_at DESC, id DESC
+          LIMIT 1
+        `
+      )
+      .get(req.user.id);
+
+    if (!nextAddress) {
+      updateUserDefaultAddress(req.user.id, '', '', '');
+      return;
+    }
+
+    const now = db.prepare("SELECT datetime('now') AS now").get().now;
+    db.prepare('UPDATE address_book SET is_default = 0 WHERE user_id = ?').run(req.user.id);
+    db.prepare('UPDATE address_book SET is_default = 1, updated_at = ? WHERE id = ? AND user_id = ?').run(
+      now,
+      nextAddress.id,
+      req.user.id
+    );
+    updateUserDefaultAddress(req.user.id, nextAddress.postcode, nextAddress.address_base, nextAddress.address_detail);
+  });
+  deleteAddressTx();
+
+  setFlash(req, 'success', '주소록 항목이 삭제되었습니다.');
   return res.redirect(backPath);
 });
 

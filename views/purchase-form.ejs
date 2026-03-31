@@ -2,6 +2,7 @@
 <% const isEn = ctx.lang === 'en'; %>
 <% const pointRate = Number(purchasePointRate || 0); %>
 <% const pointAmount = Number(expectedPoints || 0); %>
+<% const addressBook = Array.isArray(addressBookEntries) ? addressBookEntries : []; %>
 
 <section class="block-card narrow">
   <h2><%= ctx.lang === 'en' ? 'Purchase Request' : '구매 신청' %></h2>
@@ -38,13 +39,56 @@
       <input type="text" name="customsClearanceNo" value="<%= formData.customsClearanceNo || '' %>" required />
     </label>
 
-    <label><%= isEn ? 'Address' : '주소' %>
-      <textarea name="buyerAddress" rows="3" required><%= formData.buyerAddress || '' %></textarea>
+    <label><%= isEn ? 'Address Book' : '주소록' %>
+      <select name="addressBookId" id="purchaseAddressBookSelect">
+        <option value=""><%= isEn ? 'Use current input' : '직접 입력 사용' %></option>
+        <% addressBook.forEach((item) => { %>
+          <option
+            value="<%= item.id %>"
+            data-postcode="<%= item.postcode %>"
+            data-address-base="<%= item.addressBase %>"
+            data-address-detail="<%= item.addressDetail %>"
+            <%= String(formData.addressBookId || '') === String(item.id) ? 'selected' : '' %>
+          >
+            <%= item.label %> - <%= item.fullAddress %>
+          </option>
+        <% }) %>
+      </select>
+    </label>
+
+    <label><%= isEn ? 'Postcode' : '우편번호' %>
+      <div class="field-inline">
+        <input type="text" name="buyerPostcode" id="buyerPostcode" value="<%= formData.buyerPostcode || '' %>" maxlength="5" required readonly />
+        <button type="button" class="chip field-inline-btn" id="buyerAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+      </div>
+    </label>
+
+    <label><%= isEn ? 'Main Address' : '기본주소' %>
+      <input type="text" name="buyerAddressBase" id="buyerAddressBase" value="<%= formData.buyerAddressBase || '' %>" maxlength="160" required readonly />
+    </label>
+
+    <label><%= isEn ? 'Detailed Address' : '상세주소' %>
+      <input type="text" name="buyerAddressDetail" id="buyerAddressDetail" value="<%= formData.buyerAddressDetail || '' %>" maxlength="120" />
     </label>
 
     <label><%= isEn ? 'Quantity' : '수량' %>
       <input type="number" name="quantity" min="1" value="<%= formData.quantity || 1 %>" required />
     </label>
+
+    <div class="address-book-save-box">
+      <label class="check-row">
+        <input type="checkbox" name="saveToAddressBook" value="1" <%= String(formData.saveToAddressBook || '') === '1' ? 'checked' : '' %> />
+        <span><%= isEn ? 'Save this address to address book' : '이번 주소를 주소록에 저장' %></span>
+      </label>
+      <label>
+        <span><%= isEn ? 'Address Label' : '주소록 이름' %></span>
+        <input type="text" name="addressLabel" value="<%= formData.addressLabel || '' %>" maxlength="40" placeholder="<%= isEn ? 'e.g. Home / Office' : '예: 집 / 회사' %>" />
+      </label>
+      <label class="check-row">
+        <input type="checkbox" name="setAsDefaultAddress" value="1" <%= String(formData.setAsDefaultAddress || '') === '1' ? 'checked' : '' %> />
+        <span><%= isEn ? 'Set as default address' : '기본주소로 설정' %></span>
+      </label>
+    </div>
 
     <button type="submit" class="cta-main full"><%= isEn ? 'Submit Purchase' : '구매 신청하기' %></button>
   </form>
@@ -54,5 +98,59 @@
     <p><%= ctx.settings.bankAccountInfo %></p>
   </div>
 </section>
+
+<script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script>
+  (() => {
+    const isEn = <%= isEn ? 'true' : 'false' %>;
+    const select = document.getElementById('purchaseAddressBookSelect');
+    const postcodeInput = document.getElementById('buyerPostcode');
+    const baseInput = document.getElementById('buyerAddressBase');
+    const detailInput = document.getElementById('buyerAddressDetail');
+    const searchBtn = document.getElementById('buyerAddressSearchBtn');
+
+    const applyAddressFromOption = (option) => {
+      if (!option) return;
+      const postcode = option.getAttribute('data-postcode') || '';
+      const base = option.getAttribute('data-address-base') || '';
+      const detail = option.getAttribute('data-address-detail') || '';
+      if (!postcode && !base) return;
+      postcodeInput.value = postcode;
+      baseInput.value = base;
+      detailInput.value = detail;
+    };
+
+    if (select) {
+      if (select.value) {
+        const selected = select.options[select.selectedIndex];
+        applyAddressFromOption(selected);
+      }
+      select.addEventListener('change', () => {
+        const selected = select.options[select.selectedIndex];
+        applyAddressFromOption(selected);
+      });
+    }
+
+    if (searchBtn) {
+      searchBtn.addEventListener('click', () => {
+        if (!window.daum || !window.daum.Postcode) {
+          window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+          return;
+        }
+
+        new window.daum.Postcode({
+          oncomplete(data) {
+            const roadAddress = data.roadAddress || data.jibunAddress || '';
+            postcodeInput.value = data.zonecode || '';
+            baseInput.value = roadAddress;
+            if (detailInput) {
+              detailInput.focus();
+            }
+          }
+        }).open();
+      });
+    }
+  })();
+</script>
 
 <%- include('partials/layout-end') %>

@@ -4,6 +4,7 @@
 <% const filters = myPageFilters || { group: 'all', dateFrom: '', dateTo: '' }; %>
 <% const groups = Array.isArray(myPageGroups) ? myPageGroups : []; %>
 <% const profile = profileForm || {}; %>
+<% const addressBook = Array.isArray(addressBookEntries) ? addressBookEntries : []; %>
 <% const summary = myPageSummary || { totalPurchaseAmount: 0, totalEarnedPoints: 0, usedPoints: 0, availablePoints: 0, cartCount: 0 }; %>
 <% const profileImage = profile.profileImagePath || ''; %>
 <% const nickname = profile.nickname || profile.username || (ctx.currentUser && ctx.currentUser.username) || '-'; %>
@@ -81,7 +82,7 @@
         <h3><%= isEn ? 'Profile Information' : '기본 정보 설정' %></h3>
         <p class="muted-label"><%= isEn ? 'Saved values are used as defaults on purchase request pages.' : '여기에 저장한 값은 구매신청 페이지 기본값으로 사용됩니다.' %></p>
 
-        <form method="post" action="/mypage/profile/update" class="form-grid">
+        <form method="post" action="/mypage/profile/update" class="form-grid mypage-form-grid">
           <label><%= isEn ? 'Name' : '이름' %>
             <input type="text" name="fullName" maxlength="80" value="<%= profile.fullName || '' %>" />
           </label>
@@ -94,19 +95,91 @@
             <input type="text" name="customsClearanceNo" maxlength="30" value="<%= profile.customsClearanceNo || '' %>" />
           </label>
 
-          <label><%= isEn ? 'Address' : '주소' %>
-            <textarea name="defaultAddress" rows="3" maxlength="200"><%= profile.defaultAddress || '' %></textarea>
+          <label><%= isEn ? 'Postcode' : '우편번호' %>
+            <div class="field-inline">
+              <input type="text" name="defaultPostcode" id="defaultPostcode" maxlength="5" value="<%= profile.defaultPostcode || '' %>" readonly />
+              <button type="button" class="chip field-inline-btn" id="defaultAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+            </div>
           </label>
 
-          <button type="submit" class="cta-main full"><%= isEn ? 'Save Profile' : '정보 저장' %></button>
+          <label><%= isEn ? 'Main Address' : '기본주소' %>
+            <input type="text" name="defaultAddressBase" id="defaultAddressBase" maxlength="160" value="<%= profile.defaultAddressBase || '' %>" readonly />
+          </label>
+
+          <label><%= isEn ? 'Detailed Address' : '상세주소' %>
+            <input type="text" name="defaultAddressDetail" id="defaultAddressDetail" maxlength="120" value="<%= profile.defaultAddressDetail || '' %>" />
+          </label>
+
+          <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Save Profile' : '정보 저장' %></button>
         </form>
+
+        <div class="mypage-addressbook-section">
+          <h4><%= isEn ? 'Address Book' : '주소록' %></h4>
+          <p class="muted-label"><%= isEn ? 'Save extra addresses and select them quickly during purchase.' : '추가 주소를 저장해 두고 주문서에서 빠르게 선택할 수 있습니다.' %></p>
+
+          <form method="post" action="/mypage/address-book/add" class="form-grid mypage-form-grid">
+            <label><%= isEn ? 'Address Label' : '주소록 이름' %>
+              <input type="text" name="label" maxlength="40" placeholder="<%= isEn ? 'e.g. Home / Office' : '예: 집 / 회사' %>" required />
+            </label>
+
+            <label><%= isEn ? 'Postcode' : '우편번호' %>
+              <div class="field-inline">
+                <input type="text" name="postcode" id="addressBookPostcode" maxlength="5" readonly required />
+                <button type="button" class="chip field-inline-btn" id="addressBookSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+              </div>
+            </label>
+
+            <label><%= isEn ? 'Main Address' : '기본주소' %>
+              <input type="text" name="addressBase" id="addressBookBase" maxlength="160" readonly required />
+            </label>
+
+            <label><%= isEn ? 'Detailed Address' : '상세주소' %>
+              <input type="text" name="addressDetail" id="addressBookDetail" maxlength="120" />
+            </label>
+
+            <label class="check-row">
+              <input type="checkbox" name="setAsDefault" value="1" />
+              <span><%= isEn ? 'Set as default address' : '기본주소로 설정' %></span>
+            </label>
+
+            <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Add Address' : '주소록 추가' %></button>
+          </form>
+
+          <div class="mypage-addressbook-list">
+            <% if (addressBook.length === 0) { %>
+              <div class="muted-label"><%= isEn ? 'No saved addresses.' : '저장된 주소록이 없습니다.' %></div>
+            <% } %>
+
+            <% addressBook.forEach((entry) => { %>
+              <article class="mypage-addressbook-item <%= entry.isDefault ? 'is-default' : '' %>">
+                <div class="mypage-addressbook-head">
+                  <strong><%= entry.label %></strong>
+                  <% if (entry.isDefault) { %>
+                    <span class="chip dark"><%= isEn ? 'Default' : '기본주소' %></span>
+                  <% } %>
+                </div>
+                <p><%= entry.fullAddress %></p>
+                <div class="mypage-addressbook-actions">
+                  <% if (!entry.isDefault) { %>
+                    <form method="post" action="/mypage/address-book/<%= entry.id %>/default">
+                      <button type="submit" class="chip"><%= isEn ? 'Set Default' : '기본으로' %></button>
+                    </form>
+                  <% } %>
+                  <form method="post" action="/mypage/address-book/<%= entry.id %>/delete" onsubmit="return confirm('<%= isEn ? 'Delete this address?' : '이 주소를 삭제할까요?' %>');">
+                    <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                  </form>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        </div>
       </article>
 
       <article class="mypage-panel">
         <h3><%= isEn ? 'Change Password' : '비밀번호 변경' %></h3>
         <p class="muted-label"><%= isEn ? 'Enter your current password first, then set a new one.' : '현재 비밀번호를 먼저 입력한 뒤 새 비밀번호를 설정해 주세요.' %></p>
 
-        <form method="post" action="/mypage/profile/password" class="form-grid">
+        <form method="post" action="/mypage/profile/password" class="form-grid mypage-form-grid">
           <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
             <input type="password" name="currentPassword" required />
           </label>
@@ -119,7 +192,7 @@
             <input type="password" name="newPasswordConfirm" required />
           </label>
 
-          <button type="submit" class="cta-main full"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
+          <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
         </form>
       </article>
     </div>
@@ -217,8 +290,10 @@
   <% } %>
 </section>
 
+<script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 <script>
   (() => {
+    const isEn = <%= isEn ? 'true' : 'false' %>;
     const chips = document.querySelectorAll('#mypageGroupChips [data-group]');
     const groupInput = document.getElementById('mypageGroupInput');
     const form = groupInput?.closest('form');
@@ -235,20 +310,56 @@
     const avatarTrigger = document.getElementById('mypageAvatarTrigger');
     const avatarInput = document.getElementById('mypageAvatarInput');
     const avatarForm = document.getElementById('mypageAvatarForm');
-    if (!avatarTrigger || !avatarInput || !avatarForm) return;
+    if (avatarTrigger && avatarInput && avatarForm) {
+      avatarTrigger.addEventListener('click', () => {
+        avatarInput.click();
+      });
 
-    avatarTrigger.addEventListener('click', () => {
-      avatarInput.click();
-    });
+      avatarInput.addEventListener('change', () => {
+        if (!avatarInput.files || avatarInput.files.length === 0) return;
+        if (typeof avatarForm.requestSubmit === 'function') {
+          avatarForm.requestSubmit();
+          return;
+        }
+        avatarForm.submit();
+      });
+    }
 
-    avatarInput.addEventListener('change', () => {
-      if (!avatarInput.files || avatarInput.files.length === 0) return;
-      if (typeof avatarForm.requestSubmit === 'function') {
-        avatarForm.requestSubmit();
+    const openAddressSearch = (postcodeId, baseId, detailId) => {
+      if (!window.daum || !window.daum.Postcode) {
+        window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
         return;
       }
-      avatarForm.submit();
-    });
+
+      const postcodeInput = document.getElementById(postcodeId);
+      const baseInput = document.getElementById(baseId);
+      const detailInput = document.getElementById(detailId);
+      if (!postcodeInput || !baseInput) return;
+
+      new window.daum.Postcode({
+        oncomplete(data) {
+          postcodeInput.value = data.zonecode || '';
+          baseInput.value = data.roadAddress || data.jibunAddress || '';
+          if (detailInput) {
+            detailInput.focus();
+          }
+        }
+      }).open();
+    };
+
+    const defaultAddressSearchBtn = document.getElementById('defaultAddressSearchBtn');
+    if (defaultAddressSearchBtn) {
+      defaultAddressSearchBtn.addEventListener('click', () => {
+        openAddressSearch('defaultPostcode', 'defaultAddressBase', 'defaultAddressDetail');
+      });
+    }
+
+    const addressBookSearchBtn = document.getElementById('addressBookSearchBtn');
+    if (addressBookSearchBtn) {
+      addressBookSearchBtn.addEventListener('click', () => {
+        openAddressSearch('addressBookPostcode', 'addressBookBase', 'addressBookDetail');
+      });
+    }
   })();
 </script>
 

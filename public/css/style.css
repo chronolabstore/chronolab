@@ -2008,6 +2008,99 @@ body.theme-night .watermark-preview-canvas {
   margin: 0;
 }
 
+.mypage-form-grid {
+  gap: 11px;
+}
+
+.mypage-form-grid label > span {
+  font-size: 0.88rem;
+}
+
+.mypage-form-grid input,
+.mypage-form-grid select,
+.mypage-form-grid textarea,
+.mypage-form-grid .field-inline-btn,
+.mypage-form-btn {
+  min-height: 44px;
+}
+
+.mypage-form-grid input,
+.mypage-form-grid select,
+.mypage-form-grid textarea {
+  border-radius: 12px;
+}
+
+.mypage-form-btn {
+  margin-top: 2px;
+}
+
+.field-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-inline .field-inline-btn {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.mypage-addressbook-section {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.mypage-addressbook-section h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.mypage-addressbook-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mypage-addressbook-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.mypage-addressbook-item.is-default {
+  border-color: rgba(17, 24, 39, 0.35);
+}
+
+.mypage-addressbook-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mypage-addressbook-item p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.mypage-addressbook-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mypage-addressbook-actions form {
+  margin: 0;
+}
+
 .mypage-order-filter-row {
   margin-top: 4px;
 }
@@ -2059,6 +2152,19 @@ body.theme-night .watermark-preview-canvas {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.address-book-save-box {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.address-book-save-box .check-row {
+  margin: 0;
 }
 
 table {
