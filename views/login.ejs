@@ -1,18 +1,23 @@
 <%- include('partials/layout-start') %>
 <% const isEn = ctx.lang === 'en'; %>
+<% const prefilled = typeof prefilledAccount === 'string' ? prefilledAccount : ''; %>
 
 <section class="auth-wrap">
   <div class="auth-card">
-    <h2>Login</h2>
+    <h2><%= isEn ? 'Login' : '로그인' %></h2>
     <form method="post" action="/login" class="form-grid">
-      <label><%= isEn ? 'Username' : '아이디' %>
-        <input type="text" name="username" required />
+      <label><%= isEn ? 'Account' : '계정' %>
+        <input type="text" name="account" value="<%= prefilled %>" autocomplete="username" required />
       </label>
       <label><%= isEn ? 'Password' : '비밀번호' %>
-        <input type="password" name="password" required />
+        <input type="password" name="password" autocomplete="current-password" required />
       </label>
       <button type="submit" class="cta-main"><%= isEn ? 'Login' : '로그인' %></button>
     </form>
+    <div class="auth-link-row">
+      <a href="/account/find" class="chip"><%= isEn ? 'Find Account' : '계정찾기' %></a>
+      <a href="/password/reset" class="chip"><%= isEn ? 'Find Password' : '비밀번호찾기' %></a>
+    </div>
     <p class="muted-label"><%= isEn ? "Don't have an account?" : '계정이 없나요?' %> <a href="/signup"><%= isEn ? 'Sign up' : '회원가입' %></a></p>
   </div>
 </section>

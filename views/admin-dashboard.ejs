@@ -548,7 +548,7 @@
           <section class="kpi-card">
             <h4><%= isEn ? 'Primary Admin Info' : '메인관리자 정보' %></h4>
             <form method="post" action="/admin/security/profile/update" class="form-grid">
-              <label><%= isEn ? 'ID' : '아이디' %>
+              <label><%= isEn ? 'Account' : '계정' %>
                 <input type="text" name="username" value="<%= primaryUser.username || '' %>" required />
               </label>
               <label><%= isEn ? 'Name' : '이름' %>
@@ -587,7 +587,7 @@
           <section class="kpi-card">
             <h4><%= isEn ? 'Add Sub Admin' : '서브관리자 추가' %></h4>
             <form method="post" action="/admin/security/sub-admin/create" class="form-grid">
-              <label><%= isEn ? 'ID' : '아이디' %>
+              <label><%= isEn ? 'Account' : '계정' %>
                 <input type="text" name="username" required />
               </label>
               <label><%= isEn ? 'Name' : '이름' %>
@@ -643,7 +643,7 @@
                     </div>
 
                     <form method="post" action="/admin/security/admin/<%= adminItem.id %>/update" class="form-grid compact">
-                      <label><span><%= isEn ? 'ID' : '아이디' %></span><input type="text" name="username" value="<%= adminItem.username %>" required /></label>
+                      <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= adminItem.username %>" required /></label>
                       <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= adminItem.full_name || '' %>" required /></label>
                       <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= adminItem.email || '' %>" required /></label>
                       <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= adminItem.phone || '' %>" required /></label>
@@ -897,7 +897,7 @@
           type="text"
           name="memberKeyword"
           value="<%= memberFilters.keyword || '' %>"
-          placeholder="<%= isEn ? 'ID / Name / Email / Phone' : '아이디 / 이름 / 이메일 / 전화번호' %>"
+          placeholder="<%= isEn ? 'Account / Name / Email / Phone' : '계정 / 이름 / 이메일 / 전화번호' %>"
         />
       </label>
       <div class="admin-filter-actions">
@@ -945,7 +945,7 @@
 
           <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
             <div class="admin-account-meta">
-              <small>ID: <%= memberItem.id %></small>
+              <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
               <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
               <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
               <% if (memberItem.is_blocked) { %>
@@ -954,7 +954,7 @@
             </div>
 
             <form method="post" action="/admin/member/<%= memberItem.id %>/update" class="form-grid compact">
-              <label><span><%= isEn ? 'ID' : '아이디' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
+              <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
               <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= memberItem.full_name || '' %>" /></label>
               <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= memberItem.email || '' %>" required /></label>
               <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= memberItem.phone || '' %>" /></label>
@@ -1726,7 +1726,7 @@
         <table class="product-list-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th><%= isEn ? 'No.' : '번호' %></th>
               <th><%= isEn ? 'Category' : '분류' %></th>
               <th><%= isEn ? 'Title' : '제목' %></th>
               <th><%= isEn ? 'Price' : '가격' %></th>

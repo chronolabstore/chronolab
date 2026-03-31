@@ -1,0 +1,51 @@
+<%- include('partials/layout-start') %>
+<% const isEn = ctx.lang === 'en'; %>
+<% const pageFlow = flow || {}; %>
+<% const step = pageFlow.step === 'verify' ? 'verify' : 'request'; %>
+<% const email = pageFlow.email || ''; %>
+<% const result = pageFlow.result || null; %>
+
+<section class="auth-wrap">
+  <div class="auth-card auth-card-wide">
+    <h2><%= isEn ? 'Find Account' : '계정찾기' %></h2>
+
+    <% if (result && result.account) { %>
+      <article class="auth-result-card">
+        <h3><%= isEn ? 'Account Found' : '계정 찾기 완료' %></h3>
+        <p class="muted-label"><%= isEn ? 'Verified email' : '인증된 이메일' %>: <strong><%= result.email %></strong></p>
+        <p class="auth-found-account"><%= isEn ? 'Your account' : '회원님의 계정' %>: <strong><%= result.account %></strong></p>
+        <div class="auth-link-row">
+          <a href="/login?account=<%= encodeURIComponent(result.account) %>" class="chip dark"><%= isEn ? 'Go to Login' : '로그인하기' %></a>
+          <a href="/password/reset?ticket=<%= encodeURIComponent(result.resetTicket) %>" class="chip"><%= isEn ? 'Find Password' : '비밀번호찾기' %></a>
+          <a href="/account/find" class="chip"><%= isEn ? 'Find Again' : '다시 찾기' %></a>
+        </div>
+      </article>
+    <% } else { %>
+      <form method="post" action="/account/find/send-code" class="form-grid">
+        <label><%= isEn ? 'Email used for sign-up' : '가입 시 사용한 이메일' %>
+          <input type="email" name="email" value="<%= email %>" autocomplete="email" required />
+        </label>
+        <button type="submit" class="cta-main"><%= isEn ? 'Send Verification Code' : '인증번호 받기' %></button>
+      </form>
+
+      <% if (step === 'verify' && email) { %>
+        <hr class="auth-divider" />
+        <form method="post" action="/account/find/verify-code" class="form-grid">
+          <input type="hidden" name="email" value="<%= email %>" />
+          <label><%= isEn ? '6-digit verification code' : '6자리 인증번호' %>
+            <input type="text" name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required />
+          </label>
+          <button type="submit" class="cta-main"><%= isEn ? 'Verify and Find Account' : '인증 후 계정 찾기' %></button>
+        </form>
+      <% } %>
+    <% } %>
+
+    <p class="muted-label auth-foot-note">
+      <a href="/login"><%= isEn ? 'Back to Login' : '로그인으로 돌아가기' %></a>
+      ·
+      <a href="/password/reset"><%= isEn ? 'Find Password' : '비밀번호찾기' %></a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

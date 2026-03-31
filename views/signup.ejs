@@ -6,10 +6,10 @@
   <div class="auth-card">
     <h2><%= isEn ? 'Create Account' : '회원가입' %></h2>
     <form method="post" action="/signup" class="form-grid signup-form-grid" id="signupForm" novalidate>
-      <label><%= isEn ? 'Username' : '아이디' %>
-        <input type="text" name="username" autocomplete="username" required />
+      <label><%= isEn ? 'Account' : '계정' %>
+        <input type="text" name="account" autocomplete="username" required />
         <small class="muted-label"><%= isEn ? 'Lowercase letters and numbers only (4~20).' : '영문 소문자 + 숫자만 사용 가능 (4~20자).' %></small>
-        <small class="field-error" data-error-for="username"></small>
+        <small class="field-error" data-error-for="account"></small>
       </label>
 
       <label><%= isEn ? 'Nickname' : '닉네임' %>
@@ -73,7 +73,7 @@
     const form = document.getElementById('signupForm');
     if (!form) return;
 
-    const usernameInput = form.querySelector('input[name="username"]');
+    const accountInput = form.querySelector('input[name="account"]');
     const nicknameInput = form.querySelector('input[name="nickname"]');
     const emailInput = form.querySelector('input[name="email"]');
     const phoneInput = form.querySelector('input[name="phone"]');
@@ -96,13 +96,13 @@
       }
     };
 
-    const validateUsername = () => {
-      const value = String(usernameInput?.value || '').trim();
-      if (!value) return isEn ? 'Username is required.' : '아이디를 입력해 주세요.';
+    const validateAccount = () => {
+      const value = String(accountInput?.value || '').trim();
+      if (!value) return isEn ? 'Account is required.' : '계정을 입력해 주세요.';
       if (!/^[a-z0-9]{4,20}$/.test(value)) {
         return isEn
           ? 'Use lowercase letters and numbers only (4~20).'
-          : '아이디는 영문 소문자와 숫자만 사용해 4~20자로 입력해 주세요.';
+          : '계정은 영문 소문자와 숫자만 사용해 4~20자로 입력해 주세요.';
       }
       return '';
     };
@@ -164,7 +164,7 @@
     };
 
     const validators = {
-      username: validateUsername,
+      account: validateAccount,
       nickname: validateNickname,
       email: validateEmail,
       phone: validatePhone,

@@ -1,11 +1,13 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
 import sharp from 'sharp';
 import {
   db,
@@ -34,6 +36,7 @@ const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-z0-9]{4,20}$/;
+const ACCOUNT_LOOKUP_REGEX = /^[A-Za-z0-9._-]{2,40}$/;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/;
 const DIGIT_PHONE_REGEX = /^[0-9]+$/;
 const CUSTOMS_NO_REGEX = /^[A-Za-z0-9-]{6,30}$/;
@@ -135,6 +138,12 @@ const DEFAULT_THEME_COLORS = Object.freeze({
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
 const authAttemptStore = new Map();
+const EMAIL_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+const EMAIL_VERIFICATION_MAX_ATTEMPTS = 6;
+const PASSWORD_RESET_TICKET_TTL_MS = 15 * 60 * 1000;
+const emailVerificationStore = new Map();
+const passwordResetTicketStore = new Map();
 const DASHBOARD_STATS_CACHE_TTL_MS = Math.max(5000, Number(process.env.DASHBOARD_STATS_CACHE_TTL_MS || 30000));
 const SESSION_FUNNEL_KEYS_LIMIT = 400;
 const TRACKING_AUTO_POLL_MS = Math.max(60 * 1000, Number(process.env.TRACKING_AUTO_POLL_MS || 10 * 60 * 1000));
@@ -163,6 +172,8 @@ const ALLOWED_UPLOAD_MIME = new Set([
   'image/gif',
   'image/avif'
 ]);
+
+let mailTransporter = null;
 
 const uploadStorage = multer.diskStorage({
   destination: path.join(__dirname, 'uploads'),
@@ -935,6 +946,239 @@ function getPopupFlash(req) {
   const popupFlash = req.session.popupFlash || null;
   delete req.session.popupFlash;
   return popupFlash;
+}
+
+function normalizeEmailAddress(raw = '') {
+  return String(raw || '').trim().toLowerCase();
+}
+
+function normalizeAccountName(raw = '') {
+  return String(raw || '').trim();
+}
+
+function buildEmailVerificationKey(purpose = '', email = '', account = '') {
+  return [String(purpose || '').trim(), normalizeEmailAddress(email), normalizeAccountName(account).toLowerCase()].join(
+    '|'
+  );
+}
+
+function cleanupEmailVerificationStore(nowMs = Date.now()) {
+  for (const [key, row] of emailVerificationStore.entries()) {
+    if (!row || Number(row.expiresAt || 0) <= nowMs) {
+      emailVerificationStore.delete(key);
+    }
+  }
+}
+
+function cleanupPasswordResetTicketStore(nowMs = Date.now()) {
+  for (const [key, row] of passwordResetTicketStore.entries()) {
+    if (!row || Number(row.expiresAt || 0) <= nowMs || Number(row.usedAt || 0) > 0) {
+      passwordResetTicketStore.delete(key);
+    }
+  }
+}
+
+function createSixDigitCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function issueEmailVerificationCode({ purpose = '', email = '', account = '', userId = 0 } = {}) {
+  const normalizedPurpose = String(purpose || '').trim();
+  const normalizedEmail = normalizeEmailAddress(email);
+  const normalizedAccount = normalizeAccountName(account);
+
+  if (!normalizedPurpose || !normalizedEmail) {
+    return { ok: false, reason: 'invalid_target' };
+  }
+
+  const nowMs = Date.now();
+  cleanupEmailVerificationStore(nowMs);
+
+  const key = buildEmailVerificationKey(normalizedPurpose, normalizedEmail, normalizedAccount);
+  const existing = emailVerificationStore.get(key);
+  if (existing && Number(existing.cooldownUntil || 0) > nowMs) {
+    return {
+      ok: false,
+      reason: 'cooldown',
+      waitSeconds: Math.max(1, Math.ceil((Number(existing.cooldownUntil || 0) - nowMs) / 1000))
+    };
+  }
+
+  const code = createSixDigitCode();
+  const entry = {
+    purpose: normalizedPurpose,
+    email: normalizedEmail,
+    account: normalizedAccount,
+    userId: Number(userId || 0),
+    code,
+    attempts: 0,
+    expiresAt: nowMs + EMAIL_VERIFICATION_TTL_MS,
+    cooldownUntil: nowMs + EMAIL_VERIFICATION_RESEND_COOLDOWN_MS,
+    verifiedAt: 0
+  };
+  emailVerificationStore.set(key, entry);
+
+  return { ok: true, key, code, entry };
+}
+
+function verifyEmailVerificationCode({ purpose = '', email = '', account = '', code = '' } = {}) {
+  const normalizedPurpose = String(purpose || '').trim();
+  const normalizedEmail = normalizeEmailAddress(email);
+  const normalizedAccount = normalizeAccountName(account);
+  const normalizedCode = String(code || '').trim();
+  const nowMs = Date.now();
+
+  if (!normalizedPurpose || !normalizedEmail || !/^[0-9]{6}$/.test(normalizedCode)) {
+    return { ok: false, reason: 'invalid_input' };
+  }
+
+  cleanupEmailVerificationStore(nowMs);
+  const key = buildEmailVerificationKey(normalizedPurpose, normalizedEmail, normalizedAccount);
+  const found = emailVerificationStore.get(key);
+  if (!found) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  if (Number(found.expiresAt || 0) <= nowMs) {
+    emailVerificationStore.delete(key);
+    return { ok: false, reason: 'expired' };
+  }
+
+  if (Number(found.attempts || 0) >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+    emailVerificationStore.delete(key);
+    return { ok: false, reason: 'too_many_attempts' };
+  }
+
+  if (String(found.code || '').trim() !== normalizedCode) {
+    found.attempts = Number(found.attempts || 0) + 1;
+    emailVerificationStore.set(key, found);
+    return { ok: false, reason: 'code_mismatch' };
+  }
+
+  found.verifiedAt = nowMs;
+  emailVerificationStore.delete(key);
+  return { ok: true, entry: found };
+}
+
+function createPasswordResetTicket({ userId = 0, account = '', email = '', source = '' } = {}) {
+  const normalizedAccount = normalizeAccountName(account);
+  const normalizedEmail = normalizeEmailAddress(email);
+  const targetUserId = Number(userId || 0);
+  if (!targetUserId || !normalizedAccount || !normalizedEmail) {
+    return '';
+  }
+
+  cleanupPasswordResetTicketStore();
+  const token = crypto.randomBytes(24).toString('hex');
+  passwordResetTicketStore.set(token, {
+    userId: targetUserId,
+    account: normalizedAccount,
+    email: normalizedEmail,
+    source: String(source || '').slice(0, 50),
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + PASSWORD_RESET_TICKET_TTL_MS,
+    usedAt: 0
+  });
+  return token;
+}
+
+function readPasswordResetTicket(token = '') {
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedToken) {
+    return { ok: false, reason: 'missing' };
+  }
+
+  cleanupPasswordResetTicketStore();
+  const row = passwordResetTicketStore.get(normalizedToken);
+  if (!row) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (Number(row.expiresAt || 0) <= Date.now()) {
+    passwordResetTicketStore.delete(normalizedToken);
+    return { ok: false, reason: 'expired' };
+  }
+  if (Number(row.usedAt || 0) > 0) {
+    passwordResetTicketStore.delete(normalizedToken);
+    return { ok: false, reason: 'used' };
+  }
+  return { ok: true, row };
+}
+
+function consumePasswordResetTicket(token = '') {
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedToken) {
+    return;
+  }
+  passwordResetTicketStore.delete(normalizedToken);
+}
+
+function getMailTransporter() {
+  if (mailTransporter) {
+    return mailTransporter;
+  }
+
+  const host = String(process.env.SMTP_HOST || '').trim();
+  const port = Number.parseInt(String(process.env.SMTP_PORT || ''), 10);
+  const user = String(process.env.SMTP_USER || '').trim();
+  const pass = String(process.env.SMTP_PASS || '').trim();
+  const hasSmtpConfig = host && Number.isInteger(port) && port > 0 && user && pass;
+
+  if (!hasSmtpConfig) {
+    return null;
+  }
+
+  const rawSecure = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+  const secure =
+    rawSecure === 'true' || rawSecure === '1' || rawSecure === 'yes' || rawSecure === 'on' || port === 465;
+
+  mailTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass }
+  });
+
+  return mailTransporter;
+}
+
+async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}) {
+  const email = normalizeEmailAddress(to);
+  const verificationCode = String(code || '').trim();
+  const normalizedPurpose = String(purpose || '').trim();
+  if (!email || !/^[0-9]{6}$/.test(verificationCode)) {
+    return { ok: false, reason: 'invalid_payload' };
+  }
+
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    // eslint-disable-next-line no-console
+    console.warn(`[chrono-lab:mail] SMTP not configured. email=${email}, code=${verificationCode}`);
+    return { ok: false, reason: 'smtp_not_configured' };
+  }
+
+  const isEn = lang === 'en';
+  const purposeKo = normalizedPurpose === 'account-find' ? '계정 찾기' : '비밀번호 재설정';
+  const purposeEn = normalizedPurpose === 'account-find' ? 'Account Recovery' : 'Password Reset';
+  const subject = isEn
+    ? `[Chrono Lab] ${purposeEn} verification code`
+    : `[Chrono Lab] ${purposeKo} 인증번호 안내`;
+  const text = isEn
+    ? `Verification code: ${verificationCode}\nThis code is valid for 10 minutes.`
+    : `인증번호: ${verificationCode}\n인증번호는 10분간 유효합니다.`;
+
+  try {
+    await transporter.sendMail({
+      from: String(process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@chronolab.local').trim(),
+      to: email,
+      subject,
+      text
+    });
+    return { ok: true };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[chrono-lab:mail] send failed', error);
+    return { ok: false, reason: 'smtp_send_failed' };
+  }
 }
 
 function fileUrl(file) {
@@ -3955,7 +4199,7 @@ app.post(
   authAttemptGuard({ key: 'signup', redirectPath: '/signup', limit: 12 }),
   asyncRoute(async (req, res) => {
   const email = String(req.body.email || '').trim();
-  const username = String(req.body.username || '').trim();
+  const account = String(req.body.account || req.body.username || '').trim();
   const nickname = String(req.body.nickname || '').trim();
   const phone = normalizePhone(req.body.phone || '');
   const password = String(req.body.password || '');
@@ -3970,7 +4214,7 @@ app.post(
     return res.redirect('/signup');
   }
 
-  if (!email || !username || !nickname || !phone || !password || !passwordConfirm) {
+  if (!email || !account || !nickname || !phone || !password || !passwordConfirm) {
     setFlash(req, 'error', '필수 항목을 입력해 주세요.');
     return res.redirect('/signup');
   }
@@ -3990,8 +4234,8 @@ app.post(
     return res.redirect('/signup');
   }
 
-  if (!USERNAME_REGEX.test(username)) {
-    setFlash(req, 'error', '아이디는 4~20자 영문 소문자/숫자만 사용 가능합니다.');
+  if (!USERNAME_REGEX.test(account)) {
+    setFlash(req, 'error', '계정은 4~20자 영문 소문자/숫자만 사용 가능합니다.');
     return res.redirect('/signup');
   }
 
@@ -4023,12 +4267,12 @@ app.post(
   try {
     const hash = await bcrypt.hash(password, 10);
     const signupBonusPoints = getSignupBonusPointsSetting();
-    const createMember = db.transaction((nextEmail, nextUsername, nextNickname, nextPhone, nextHash, bonusPoints) => {
+    const createMember = db.transaction((nextEmail, nextAccount, nextNickname, nextPhone, nextHash, bonusPoints) => {
       const inserted = db
         .prepare(
           'INSERT INTO users (email, username, nickname, phone, password_hash, agreed_terms, is_admin) VALUES (?, ?, ?, ?, ?, 1, 0)'
         )
-        .run(nextEmail, nextUsername, nextNickname, nextPhone, nextHash);
+        .run(nextEmail, nextAccount, nextNickname, nextPhone, nextHash);
 
       const userId = Number(inserted.lastInsertRowid);
       if (bonusPoints > 0) {
@@ -4037,7 +4281,7 @@ app.post(
       return userId;
     });
 
-    const createdUserId = createMember(email, username, nickname, phone, hash, signupBonusPoints);
+    const createdUserId = createMember(email, account, nickname, phone, hash, signupBonusPoints);
 
     req.session.userId = createdUserId;
     req.session.isAdmin = false;
@@ -4056,25 +4300,438 @@ app.post(
     setFlash(req, 'success', successMessage);
     res.redirect('/main');
   } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     res.redirect('/signup');
   }
   })
 );
 
+app.get('/account/find', (req, res) => {
+  const result = req.session.accountFindResult || null;
+  let resultPayload = null;
+
+  if (result && Number(result.expiresAt || 0) > Date.now()) {
+    resultPayload = {
+      account: String(result.account || '').trim(),
+      email: normalizeEmailAddress(result.email || ''),
+      resetTicket: String(result.resetTicket || '').trim()
+    };
+  } else if (result) {
+    delete req.session.accountFindResult;
+  }
+
+  const email = normalizeEmailAddress(req.query.email || '');
+  const step = req.query.step === 'verify' ? 'verify' : 'request';
+
+  res.render('account-find', {
+    title: res.locals.ctx.lang === 'en' ? 'Find Account' : '계정찾기',
+    flow: {
+      step,
+      email,
+      result: req.query.result === '1' ? resultPayload : null
+    }
+  });
+});
+
+app.post(
+  '/account/find/send-code',
+  authAttemptGuard({ key: 'account-find-send', redirectPath: '/account/find', limit: 8 }),
+  asyncRoute(async (req, res) => {
+    if (req.session.accountFindResult) {
+      delete req.session.accountFindResult;
+    }
+
+    const email = normalizeEmailAddress(req.body.email || '');
+    if (!EMAIL_REGEX.test(email)) {
+      setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+      return res.redirect('/account/find');
+    }
+
+    const target = db
+      .prepare(
+        `
+          SELECT id, email, username
+          FROM users
+          WHERE is_admin = 0
+            AND lower(email) = lower(?)
+          LIMIT 1
+        `
+      )
+      .get(email);
+
+    if (!target) {
+      setFlash(req, 'error', '가입된 계정을 찾을 수 없습니다.');
+      return res.redirect('/account/find');
+    }
+
+    const issued = issueEmailVerificationCode({
+      purpose: 'account-find',
+      email: target.email,
+      account: target.username,
+      userId: target.id
+    });
+
+    if (!issued.ok && issued.reason === 'cooldown') {
+      setFlash(req, 'error', `인증번호 재전송은 ${issued.waitSeconds}초 후에 가능합니다.`);
+      return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
+    }
+    if (!issued.ok) {
+      setFlash(req, 'error', '인증번호 발급 중 오류가 발생했습니다.');
+      return res.redirect('/account/find');
+    }
+
+    const sent = await sendEmailVerificationCode({
+      to: target.email,
+      code: issued.code,
+      purpose: 'account-find',
+      lang: res.locals.ctx.lang
+    });
+
+    if (!sent.ok) {
+      if (!isProduction && sent.reason === 'smtp_not_configured') {
+        setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
+      } else {
+        setFlash(req, 'error', '인증번호 메일 발송에 실패했습니다. 관리자에게 문의해 주세요.');
+        return res.redirect('/account/find');
+      }
+    } else {
+      setFlash(req, 'success', '인증번호를 이메일로 전송했습니다.');
+    }
+
+    return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
+  })
+);
+
+app.post(
+  '/account/find/verify-code',
+  authAttemptGuard({ key: 'account-find-verify', redirectPath: '/account/find', limit: 12 }),
+  asyncRoute(async (req, res) => {
+    const email = normalizeEmailAddress(req.body.email || '');
+    const code = String(req.body.code || '').trim();
+    if (!EMAIL_REGEX.test(email)) {
+      setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+      return res.redirect('/account/find');
+    }
+    if (!/^[0-9]{6}$/.test(code)) {
+      setFlash(req, 'error', '6자리 인증번호를 입력해 주세요.');
+      return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
+    }
+
+    const target = db
+      .prepare(
+        `
+          SELECT id, email, username
+          FROM users
+          WHERE is_admin = 0
+            AND lower(email) = lower(?)
+          LIMIT 1
+        `
+      )
+      .get(email);
+
+    if (!target) {
+      setFlash(req, 'error', '가입된 계정을 찾을 수 없습니다.');
+      return res.redirect('/account/find');
+    }
+
+    const verified = verifyEmailVerificationCode({
+      purpose: 'account-find',
+      email: target.email,
+      account: target.username,
+      code
+    });
+
+    if (!verified.ok) {
+      const reasonMessage =
+        verified.reason === 'expired'
+          ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
+          : verified.reason === 'too_many_attempts'
+            ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
+            : '인증번호가 올바르지 않습니다.';
+      setFlash(req, 'error', reasonMessage);
+      return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
+    }
+
+    const resetTicket = createPasswordResetTicket({
+      userId: target.id,
+      account: target.username,
+      email: target.email,
+      source: 'account-find'
+    });
+    if (!resetTicket) {
+      setFlash(req, 'error', '비밀번호 재설정 준비 중 오류가 발생했습니다.');
+      return res.redirect('/account/find');
+    }
+
+    req.session.accountFindResult = {
+      account: target.username,
+      email: target.email,
+      resetTicket,
+      expiresAt: Date.now() + PASSWORD_RESET_TICKET_TTL_MS
+    };
+    resetAuthAttempt(req, 'account-find-send');
+    resetAuthAttempt(req, 'account-find-verify');
+    setFlash(req, 'success', '인증이 완료되었습니다.');
+    return res.redirect('/account/find?result=1');
+  })
+);
+
+app.get('/password/reset', (req, res) => {
+  const account = normalizeAccountName(req.query.account || '');
+  const email = normalizeEmailAddress(req.query.email || '');
+  const step = req.query.step === 'verify' ? 'verify' : 'request';
+  const ticket = String(req.query.ticket || '').trim();
+
+  let reset = null;
+  if (ticket) {
+    const found = readPasswordResetTicket(ticket);
+    if (found.ok) {
+      reset = {
+        ticket,
+        account: found.row.account,
+        email: found.row.email
+      };
+    } else {
+      setFlash(req, 'error', '비밀번호 재설정 링크가 만료되었거나 유효하지 않습니다.');
+      return res.redirect('/password/reset');
+    }
+  }
+
+  res.render('password-reset', {
+    title: res.locals.ctx.lang === 'en' ? 'Reset Password' : '비밀번호찾기',
+    flow: {
+      step: reset ? 'reset' : step,
+      account,
+      email,
+      reset
+    }
+  });
+});
+
+app.post(
+  '/password/reset/send-code',
+  authAttemptGuard({ key: 'password-reset-send', redirectPath: '/password/reset', limit: 10 }),
+  asyncRoute(async (req, res) => {
+    const account = normalizeAccountName(req.body.account || '');
+    const email = normalizeEmailAddress(req.body.email || '');
+
+    if (!account || !email) {
+      setFlash(req, 'error', '계정과 이메일을 모두 입력해 주세요.');
+      return res.redirect('/password/reset');
+    }
+
+    if (!ACCOUNT_LOOKUP_REGEX.test(account)) {
+      setFlash(req, 'error', '계정 형식이 올바르지 않습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+      setFlash(req, 'error', '이메일 형식이 올바르지 않습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    const target = db
+      .prepare(
+        `
+          SELECT id, email, username
+          FROM users
+          WHERE is_admin = 0
+            AND username = ?
+            AND lower(email) = lower(?)
+          LIMIT 1
+        `
+      )
+      .get(account, email);
+
+    if (!target) {
+      setFlash(req, 'error', '입력한 계정/이메일 정보와 일치하는 회원이 없습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    const issued = issueEmailVerificationCode({
+      purpose: 'password-reset',
+      email: target.email,
+      account: target.username,
+      userId: target.id
+    });
+    if (!issued.ok && issued.reason === 'cooldown') {
+      setFlash(req, 'error', `인증번호 재전송은 ${issued.waitSeconds}초 후에 가능합니다.`);
+      return res.redirect(
+        `/password/reset?step=verify&account=${encodeURIComponent(account)}&email=${encodeURIComponent(email)}`
+      );
+    }
+    if (!issued.ok) {
+      setFlash(req, 'error', '인증번호 발급 중 오류가 발생했습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    const sent = await sendEmailVerificationCode({
+      to: target.email,
+      code: issued.code,
+      purpose: 'password-reset',
+      lang: res.locals.ctx.lang
+    });
+
+    if (!sent.ok) {
+      if (!isProduction && sent.reason === 'smtp_not_configured') {
+        setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
+      } else {
+        setFlash(req, 'error', '인증번호 메일 발송에 실패했습니다. 관리자에게 문의해 주세요.');
+        return res.redirect('/password/reset');
+      }
+    } else {
+      setFlash(req, 'success', '인증번호를 이메일로 전송했습니다.');
+    }
+
+    return res.redirect(
+      `/password/reset?step=verify&account=${encodeURIComponent(account)}&email=${encodeURIComponent(email)}`
+    );
+  })
+);
+
+app.post(
+  '/password/reset/verify-code',
+  authAttemptGuard({ key: 'password-reset-verify', redirectPath: '/password/reset', limit: 14 }),
+  asyncRoute(async (req, res) => {
+    const account = normalizeAccountName(req.body.account || '');
+    const email = normalizeEmailAddress(req.body.email || '');
+    const code = String(req.body.code || '').trim();
+
+    if (!account || !email || !code) {
+      setFlash(req, 'error', '계정/이메일/인증번호를 모두 입력해 주세요.');
+      return res.redirect('/password/reset');
+    }
+
+    const target = db
+      .prepare(
+        `
+          SELECT id, email, username
+          FROM users
+          WHERE is_admin = 0
+            AND username = ?
+            AND lower(email) = lower(?)
+          LIMIT 1
+        `
+      )
+      .get(account, email);
+
+    if (!target) {
+      setFlash(req, 'error', '입력한 계정/이메일 정보와 일치하는 회원이 없습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    const verified = verifyEmailVerificationCode({
+      purpose: 'password-reset',
+      email: target.email,
+      account: target.username,
+      code
+    });
+
+    if (!verified.ok) {
+      const reasonMessage =
+        verified.reason === 'expired'
+          ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
+          : verified.reason === 'too_many_attempts'
+            ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
+            : '인증번호가 올바르지 않습니다.';
+      setFlash(req, 'error', reasonMessage);
+      return res.redirect(
+        `/password/reset?step=verify&account=${encodeURIComponent(account)}&email=${encodeURIComponent(email)}`
+      );
+    }
+
+    const ticket = createPasswordResetTicket({
+      userId: target.id,
+      account: target.username,
+      email: target.email,
+      source: 'password-reset'
+    });
+    if (!ticket) {
+      setFlash(req, 'error', '비밀번호 재설정 준비 중 오류가 발생했습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    resetAuthAttempt(req, 'password-reset-send');
+    resetAuthAttempt(req, 'password-reset-verify');
+    setFlash(req, 'success', '이메일 인증이 완료되었습니다. 새 비밀번호를 입력해 주세요.');
+    return res.redirect(`/password/reset?ticket=${encodeURIComponent(ticket)}`);
+  })
+);
+
+app.post(
+  '/password/reset/update',
+  authAttemptGuard({ key: 'password-reset-update', redirectPath: '/password/reset', limit: 18 }),
+  asyncRoute(async (req, res) => {
+    const ticket = String(req.body.ticket || '').trim();
+    const newPassword = String(req.body.password || '');
+    const passwordConfirm = String(req.body.passwordConfirm || '');
+
+    if (!ticket || !newPassword || !passwordConfirm) {
+      setFlash(req, 'error', '필수 항목을 모두 입력해 주세요.');
+      return res.redirect('/password/reset');
+    }
+
+    const ticketResult = readPasswordResetTicket(ticket);
+    if (!ticketResult.ok) {
+      setFlash(req, 'error', '비밀번호 재설정 링크가 만료되었거나 유효하지 않습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      setFlash(req, 'error', '비밀번호는 영문 대/소문자, 숫자, 특수문자를 포함해 8자 이상이어야 합니다.');
+      return res.redirect(`/password/reset?ticket=${encodeURIComponent(ticket)}`);
+    }
+
+    if (newPassword !== passwordConfirm) {
+      setFlash(req, 'error', '비밀번호 확인이 일치하지 않습니다.');
+      return res.redirect(`/password/reset?ticket=${encodeURIComponent(ticket)}`);
+    }
+
+    const user = db
+      .prepare(
+        `
+          SELECT id, username, email, is_admin
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(ticketResult.row.userId);
+
+    if (!user || Number(user.is_admin || 0) === 1) {
+      consumePasswordResetTicket(ticket);
+      setFlash(req, 'error', '비밀번호를 변경할 계정을 찾을 수 없습니다.');
+      return res.redirect('/password/reset');
+    }
+
+    const nextHash = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextHash, user.id);
+    consumePasswordResetTicket(ticket);
+
+    if (req.session.accountFindResult) {
+      delete req.session.accountFindResult;
+    }
+
+    resetAuthAttempt(req, 'password-reset-update');
+    setFlash(req, 'success', '비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요.');
+    return res.redirect(`/login?account=${encodeURIComponent(user.username)}`);
+  })
+);
+
 app.get('/login', (req, res) => {
-  res.render('login', { title: 'Login' });
+  const prefilledAccount = normalizeAccountName(req.query.account || '').slice(0, 40);
+  res.render('login', { title: 'Login', prefilledAccount });
 });
 
 app.post(
   '/login',
   authAttemptGuard({ key: 'login', redirectPath: '/login', limit: 15 }),
   asyncRoute(async (req, res) => {
-  const username = String(req.body.username || '').trim();
+  const account = String(req.body.account || req.body.username || '').trim();
   const password = String(req.body.password || '');
 
-  if (!username || !password) {
-    setFlash(req, 'error', '아이디와 비밀번호를 입력해 주세요.');
+  if (!account || !password) {
+    setFlash(req, 'error', '계정과 비밀번호를 입력해 주세요.');
     return res.redirect('/login');
   }
 
@@ -4082,7 +4739,7 @@ app.post(
     .prepare(
       'SELECT id, username, password_hash, is_admin, admin_role, is_blocked, blocked_reason FROM users WHERE username = ? LIMIT 1'
     )
-    .get(username);
+    .get(account);
 
   if (!user) {
     setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
@@ -4132,14 +4789,14 @@ app.post(
   '/admin/login',
   authAttemptGuard({ key: 'admin-login', redirectPath: '/admin/login', limit: 10 }),
   asyncRoute(async (req, res) => {
-  const username = String(req.body.username || '').trim();
+  const account = String(req.body.account || req.body.username || '').trim();
   const password = String(req.body.password || '');
 
   const user = db
     .prepare(
       'SELECT id, username, password_hash, is_admin, admin_role, is_blocked, blocked_reason FROM users WHERE username = ? LIMIT 1'
     )
-    .get(username);
+    .get(account);
 
   if (!user || Number(user.is_admin) !== 1) {
     setFlash(req, 'error', '어드민 계정이 아닙니다.');
@@ -5441,7 +6098,7 @@ app.post('/admin/security/profile/update', requirePrimaryAdmin, (req, res) => {
   }
 
   if (!USERNAME_REGEX.test(username)) {
-    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    setFlash(req, 'error', '계정은 4~20자 영문 소문자/숫자만 사용 가능합니다.');
     return res.redirect(backPath);
   }
 
@@ -5468,7 +6125,7 @@ app.post('/admin/security/profile/update', requirePrimaryAdmin, (req, res) => {
     setFlash(req, 'success', '메인관리자 정보가 업데이트되었습니다.');
     return res.redirect(backPath);
   } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     return res.redirect(backPath);
   }
 });
@@ -5532,7 +6189,7 @@ app.post('/admin/security/sub-admin/create', requirePrimaryAdmin, asyncRoute(asy
   }
 
   if (!USERNAME_REGEX.test(username)) {
-    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    setFlash(req, 'error', '계정은 4~20자 영문 소문자/숫자만 사용 가능합니다.');
     return res.redirect(backPath);
   }
 
@@ -5569,7 +6226,7 @@ app.post('/admin/security/sub-admin/create', requirePrimaryAdmin, asyncRoute(asy
     setFlash(req, 'success', '서브관리자 계정이 추가되었습니다.');
     return res.redirect(backPath);
   } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     return res.redirect(backPath);
   }
 }));
@@ -5614,7 +6271,7 @@ app.post('/admin/security/admin/:id/update', requirePrimaryAdmin, (req, res) => 
   }
 
   if (!USERNAME_REGEX.test(username)) {
-    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    setFlash(req, 'error', '계정은 4~20자 영문 소문자/숫자만 사용 가능합니다.');
     return res.redirect(backPath);
   }
 
@@ -5641,7 +6298,7 @@ app.post('/admin/security/admin/:id/update', requirePrimaryAdmin, (req, res) => 
     setFlash(req, 'success', '관리자 정보가 수정되었습니다.');
     return res.redirect(backPath);
   } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     return res.redirect(backPath);
   }
 });
@@ -5801,12 +6458,12 @@ app.post('/admin/member/:id/update', requireAdmin, (req, res) => {
   const agreedTerms = req.body.agreedTerms === 'on' ? 1 : 0;
 
   if (!username || !email) {
-    setFlash(req, 'error', '아이디와 이메일은 필수입니다.');
+    setFlash(req, 'error', '계정과 이메일은 필수입니다.');
     return res.redirect(backPath);
   }
 
   if (!USERNAME_REGEX.test(username)) {
-    setFlash(req, 'error', '아이디는 4~20자 영문/숫자/언더스코어만 사용 가능합니다.');
+    setFlash(req, 'error', '계정은 4~20자 영문 소문자/숫자만 사용 가능합니다.');
     return res.redirect(backPath);
   }
 
@@ -5829,7 +6486,7 @@ app.post('/admin/member/:id/update', requireAdmin, (req, res) => {
       `
     ).run(username, fullName, email, phone, agreedTerms, targetId);
   } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 아이디입니다.');
+    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     return res.redirect(backPath);
   }
 

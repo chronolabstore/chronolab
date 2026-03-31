@@ -3,13 +3,13 @@
 
 <section class="auth-wrap">
   <div class="auth-card">
-    <h2>Admin Login</h2>
+    <h2><%= isEn ? 'Admin Login' : '관리자 로그인' %></h2>
     <form method="post" action="/admin/login" class="form-grid">
-      <label><%= isEn ? 'Username' : '아이디' %>
-        <input type="text" name="username" required />
+      <label><%= isEn ? 'Account' : '계정' %>
+        <input type="text" name="account" autocomplete="username" required />
       </label>
       <label><%= isEn ? 'Password' : '비밀번호' %>
-        <input type="password" name="password" required />
+        <input type="password" name="password" autocomplete="current-password" required />
       </label>
       <button type="submit" class="cta-main"><%= isEn ? 'Admin Login' : '어드민 로그인' %></button>
     </form>

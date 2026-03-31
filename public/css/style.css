@@ -1218,8 +1218,48 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+.auth-card.auth-card-wide {
+  width: min(100%, 560px);
+}
+
 .auth-card h2 {
   margin-top: 0;
+}
+
+.auth-divider {
+  margin: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.auth-result-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--chip);
+  padding: 12px;
+}
+
+.auth-result-card h3 {
+  margin: 0;
+}
+
+.auth-found-account {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.auth-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.auth-foot-note {
+  margin-top: 10px;
 }
 
 .form-grid {
