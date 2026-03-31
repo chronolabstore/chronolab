@@ -112,6 +112,31 @@ const COMPACT_DEFAULT_FIELDS = Object.freeze([
 
 const DEFAULT_THEME_COLORS = Object.freeze({
   day: Object.freeze({
+    headerColor: '#0f172a',
+    backgroundColor: '#f3f4f6',
+    textColor: '#000000',
+    mutedColor: '#4b5563',
+    lineColor: '#f3f4f6',
+    cardColor: '#ffffff',
+    cardDarkColor: '#0f172a',
+    cardDarkTextColor: '#f3f4f6',
+    chipColor: '#f3f4f6'
+  }),
+  night: Object.freeze({
+    headerColor: '#ffffff',
+    backgroundColor: '#000000',
+    textColor: '#ffffff',
+    mutedColor: '#f3f4f6',
+    lineColor: '#4b5563',
+    cardColor: '#4b5563',
+    cardDarkColor: '#ffffff',
+    cardDarkTextColor: '#000000',
+    chipColor: '#0f172a'
+  })
+});
+
+const LEGACY_THEME_COLORS = Object.freeze({
+  day: Object.freeze({
     headerColor: '#111827',
     backgroundColor: '#f7f7f8',
     textColor: '#111213',
@@ -134,6 +159,9 @@ const DEFAULT_THEME_COLORS = Object.freeze({
     chipColor: '#f3f4f6'
   })
 });
+
+const THEME_COLOR_PALETTE = Object.freeze(['#f3f4f6', '#4b5563', '#0f172a', '#000000', '#ffffff']);
+const THEME_COLOR_PALETTE_SET = new Set(THEME_COLOR_PALETTE);
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -1562,25 +1590,108 @@ function normalizeHexColor(rawColor = '', fallback = '#000000') {
   return '#000000';
 }
 
+function hexToRgb(hex = '#000000') {
+  const normalized = normalizeHexColor(hex, '#000000');
+  return {
+    r: Number.parseInt(normalized.slice(1, 3), 16),
+    g: Number.parseInt(normalized.slice(3, 5), 16),
+    b: Number.parseInt(normalized.slice(5, 7), 16)
+  };
+}
+
+function clampHexToThemePalette(rawColor = '', fallback = '#000000') {
+  const normalized = normalizeHexColor(rawColor, fallback);
+  if (THEME_COLOR_PALETTE_SET.has(normalized)) {
+    return normalized;
+  }
+
+  const target = hexToRgb(normalized);
+  let closest = THEME_COLOR_PALETTE[0];
+  let minDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of THEME_COLOR_PALETTE) {
+    const rgb = hexToRgb(candidate);
+    const dr = target.r - rgb.r;
+    const dg = target.g - rgb.g;
+    const db = target.b - rgb.b;
+    const distance = dr * dr + dg * dg + db * db;
+    if (distance < minDistance) {
+      minDistance = distance;
+      closest = candidate;
+    }
+  }
+
+  return closest;
+}
+
+function maybeMigrateLegacyThemeColors() {
+  const keyPairs = [
+    ['HeaderColor', 'headerColor'],
+    ['BackgroundColor', 'backgroundColor'],
+    ['TextColor', 'textColor'],
+    ['MutedColor', 'mutedColor'],
+    ['LineColor', 'lineColor'],
+    ['CardColor', 'cardColor'],
+    ['CardDarkColor', 'cardDarkColor'],
+    ['CardDarkTextColor', 'cardDarkTextColor'],
+    ['ChipColor', 'chipColor']
+  ];
+
+  const migrateModeIfLegacy = (modeKey = 'day') => {
+    const legacy = LEGACY_THEME_COLORS[modeKey];
+    const nextDefaults = DEFAULT_THEME_COLORS[modeKey];
+    if (!legacy || !nextDefaults) {
+      return;
+    }
+
+    let matchedLegacyCount = 0;
+    let hasStoredThemeValue = false;
+
+    for (const [settingSuffix, aliasKey] of keyPairs) {
+      const settingKey = `${modeKey}${settingSuffix}`;
+      const storedRaw = String(getSetting(settingKey, '') || '').trim();
+      if (storedRaw) {
+        hasStoredThemeValue = true;
+      }
+      const stored = normalizeHexColor(storedRaw, legacy[aliasKey]);
+      if (stored === normalizeHexColor(legacy[aliasKey], legacy[aliasKey])) {
+        matchedLegacyCount += 1;
+      }
+    }
+
+    if (!hasStoredThemeValue || matchedLegacyCount === keyPairs.length) {
+      for (const [settingSuffix, aliasKey] of keyPairs) {
+        setSetting(`${modeKey}${settingSuffix}`, nextDefaults[aliasKey]);
+      }
+    }
+  };
+
+  migrateModeIfLegacy('day');
+  migrateModeIfLegacy('night');
+  setSetting('headerColor', DEFAULT_THEME_COLORS.day.headerColor);
+}
+
+maybeMigrateLegacyThemeColors();
+
 function getThemeColorConfig(themeMode = 'day') {
   const key = themeMode === 'night' ? 'night' : 'day';
   const defaults = DEFAULT_THEME_COLORS[key];
-  const legacyHeader = normalizeHexColor(getSetting('headerColor', defaults.headerColor), defaults.headerColor);
-  const legacyBg = normalizeHexColor(getSetting('backgroundValue', defaults.backgroundColor), defaults.backgroundColor);
+  const legacyHeader = clampHexToThemePalette(getSetting('headerColor', defaults.headerColor), defaults.headerColor);
+  const legacyBg = clampHexToThemePalette(getSetting('backgroundValue', defaults.backgroundColor), defaults.backgroundColor);
 
   return {
-    headerColor: normalizeHexColor(getSetting(`${key}HeaderColor`, legacyHeader), defaults.headerColor),
-    backgroundColor: normalizeHexColor(getSetting(`${key}BackgroundColor`, legacyBg), defaults.backgroundColor),
-    textColor: normalizeHexColor(getSetting(`${key}TextColor`, defaults.textColor), defaults.textColor),
-    mutedColor: normalizeHexColor(getSetting(`${key}MutedColor`, defaults.mutedColor), defaults.mutedColor),
-    lineColor: normalizeHexColor(getSetting(`${key}LineColor`, defaults.lineColor), defaults.lineColor),
-    cardColor: normalizeHexColor(getSetting(`${key}CardColor`, defaults.cardColor), defaults.cardColor),
-    cardDarkColor: normalizeHexColor(getSetting(`${key}CardDarkColor`, defaults.cardDarkColor), defaults.cardDarkColor),
-    cardDarkTextColor: normalizeHexColor(
+    headerColor: clampHexToThemePalette(getSetting(`${key}HeaderColor`, legacyHeader), defaults.headerColor),
+    backgroundColor: clampHexToThemePalette(getSetting(`${key}BackgroundColor`, legacyBg), defaults.backgroundColor),
+    textColor: clampHexToThemePalette(getSetting(`${key}TextColor`, defaults.textColor), defaults.textColor),
+    mutedColor: clampHexToThemePalette(getSetting(`${key}MutedColor`, defaults.mutedColor), defaults.mutedColor),
+    lineColor: clampHexToThemePalette(getSetting(`${key}LineColor`, defaults.lineColor), defaults.lineColor),
+    cardColor: clampHexToThemePalette(getSetting(`${key}CardColor`, defaults.cardColor), defaults.cardColor),
+    cardDarkColor: clampHexToThemePalette(getSetting(`${key}CardDarkColor`, defaults.cardDarkColor), defaults.cardDarkColor),
+    cardDarkTextColor: clampHexToThemePalette(
       getSetting(`${key}CardDarkTextColor`, defaults.cardDarkTextColor),
       defaults.cardDarkTextColor
     ),
-    chipColor: normalizeHexColor(getSetting(`${key}ChipColor`, defaults.chipColor), defaults.chipColor)
+    chipColor: clampHexToThemePalette(getSetting(`${key}ChipColor`, defaults.chipColor), defaults.chipColor)
   };
 }
 
@@ -7050,40 +7161,40 @@ app.post(
     const dayThemeDefaults = DEFAULT_THEME_COLORS.day;
     const nightThemeDefaults = DEFAULT_THEME_COLORS.night;
 
-    const dayHeaderColor = normalizeHexColor(
+    const dayHeaderColor = clampHexToThemePalette(
       req.body.dayHeaderColor || req.body.headerColor || '',
       dayThemeDefaults.headerColor
     );
-    const dayBackgroundColor = normalizeHexColor(
+    const dayBackgroundColor = clampHexToThemePalette(
       req.body.dayBackgroundColor || req.body.backgroundColor || '',
       dayThemeDefaults.backgroundColor
     );
-    const dayTextColor = normalizeHexColor(req.body.dayTextColor || '', dayThemeDefaults.textColor);
-    const dayMutedColor = normalizeHexColor(req.body.dayMutedColor || '', dayThemeDefaults.mutedColor);
-    const dayLineColor = normalizeHexColor(req.body.dayLineColor || '', dayThemeDefaults.lineColor);
-    const dayCardColor = normalizeHexColor(req.body.dayCardColor || '', dayThemeDefaults.cardColor);
-    const dayCardDarkColor = normalizeHexColor(req.body.dayCardDarkColor || '', dayThemeDefaults.cardDarkColor);
-    const dayCardDarkTextColor = normalizeHexColor(
+    const dayTextColor = clampHexToThemePalette(req.body.dayTextColor || '', dayThemeDefaults.textColor);
+    const dayMutedColor = clampHexToThemePalette(req.body.dayMutedColor || '', dayThemeDefaults.mutedColor);
+    const dayLineColor = clampHexToThemePalette(req.body.dayLineColor || '', dayThemeDefaults.lineColor);
+    const dayCardColor = clampHexToThemePalette(req.body.dayCardColor || '', dayThemeDefaults.cardColor);
+    const dayCardDarkColor = clampHexToThemePalette(req.body.dayCardDarkColor || '', dayThemeDefaults.cardDarkColor);
+    const dayCardDarkTextColor = clampHexToThemePalette(
       req.body.dayCardDarkTextColor || '',
       dayThemeDefaults.cardDarkTextColor
     );
-    const dayChipColor = normalizeHexColor(req.body.dayChipColor || '', dayThemeDefaults.chipColor);
+    const dayChipColor = clampHexToThemePalette(req.body.dayChipColor || '', dayThemeDefaults.chipColor);
 
-    const nightHeaderColor = normalizeHexColor(req.body.nightHeaderColor || '', nightThemeDefaults.headerColor);
-    const nightBackgroundColor = normalizeHexColor(
+    const nightHeaderColor = clampHexToThemePalette(req.body.nightHeaderColor || '', nightThemeDefaults.headerColor);
+    const nightBackgroundColor = clampHexToThemePalette(
       req.body.nightBackgroundColor || '',
       nightThemeDefaults.backgroundColor
     );
-    const nightTextColor = normalizeHexColor(req.body.nightTextColor || '', nightThemeDefaults.textColor);
-    const nightMutedColor = normalizeHexColor(req.body.nightMutedColor || '', nightThemeDefaults.mutedColor);
-    const nightLineColor = normalizeHexColor(req.body.nightLineColor || '', nightThemeDefaults.lineColor);
-    const nightCardColor = normalizeHexColor(req.body.nightCardColor || '', nightThemeDefaults.cardColor);
-    const nightCardDarkColor = normalizeHexColor(req.body.nightCardDarkColor || '', nightThemeDefaults.cardDarkColor);
-    const nightCardDarkTextColor = normalizeHexColor(
+    const nightTextColor = clampHexToThemePalette(req.body.nightTextColor || '', nightThemeDefaults.textColor);
+    const nightMutedColor = clampHexToThemePalette(req.body.nightMutedColor || '', nightThemeDefaults.mutedColor);
+    const nightLineColor = clampHexToThemePalette(req.body.nightLineColor || '', nightThemeDefaults.lineColor);
+    const nightCardColor = clampHexToThemePalette(req.body.nightCardColor || '', nightThemeDefaults.cardColor);
+    const nightCardDarkColor = clampHexToThemePalette(req.body.nightCardDarkColor || '', nightThemeDefaults.cardDarkColor);
+    const nightCardDarkTextColor = clampHexToThemePalette(
       req.body.nightCardDarkTextColor || '',
       nightThemeDefaults.cardDarkTextColor
     );
-    const nightChipColor = normalizeHexColor(req.body.nightChipColor || '', nightThemeDefaults.chipColor);
+    const nightChipColor = clampHexToThemePalette(req.body.nightChipColor || '', nightThemeDefaults.chipColor);
 
     const bankAccountInfo = String(req.body.bankAccountInfo || '').trim();
     const signupBonusPoints = parseNonNegativeInt(req.body.signupBonusPoints, 0);
