@@ -1864,9 +1864,17 @@ body.theme-night .watermark-preview-canvas {
   margin-top: 2px;
 }
 
+.mypage-profile-subtab-row {
+  margin-top: 2px;
+}
+
 .mypage-profile-grid {
   display: grid;
   gap: 12px;
+}
+
+.mypage-profile-grid.single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .mypage-info-layout {
@@ -2756,6 +2764,10 @@ body.theme-night .inline-file-preview-image {
 
   .mypage-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mypage-profile-grid.single {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .mypage-info-layout {

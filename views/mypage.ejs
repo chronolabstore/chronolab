@@ -5,6 +5,7 @@
 <% const groups = Array.isArray(myPageGroups) ? myPageGroups : []; %>
 <% const profile = profileForm || {}; %>
 <% const addressBook = Array.isArray(addressBookEntries) ? addressBookEntries : []; %>
+<% const profileTab = myPageProfileTab || 'basic'; %>
 <% const summary = myPageSummary || { totalPurchaseAmount: 0, totalEarnedPoints: 0, usedPoints: 0, availablePoints: 0, cartCount: 0 }; %>
 <% const profileImage = profile.profileImagePath || ''; %>
 <% const nickname = profile.nickname || profile.username || (ctx.currentUser && ctx.currentUser.username) || '-'; %>
@@ -77,47 +78,25 @@
       </article>
     </div>
   <% } else if (activeSection === 'profile') { %>
-    <div class="mypage-profile-grid">
-      <article class="mypage-panel">
-        <h3><%= isEn ? 'Profile Information' : '기본 정보 설정' %></h3>
-        <p class="muted-label"><%= isEn ? 'Saved values are used as defaults on purchase request pages.' : '여기에 저장한 값은 구매신청 페이지 기본값으로 사용됩니다.' %></p>
+    <div class="chip-row mypage-profile-subtab-row">
+      <a href="/mypage?section=profile&profileTab=basic" class="chip <%= profileTab === 'basic' ? 'dark' : '' %>">
+        <%= isEn ? 'Basic Info' : '기본정보 설정' %>
+      </a>
+      <a href="/mypage?section=profile&profileTab=addressbook" class="chip <%= profileTab === 'addressbook' ? 'dark' : '' %>">
+        <%= isEn ? 'Address Book' : '주소록 설정' %>
+      </a>
+      <a href="/mypage?section=profile&profileTab=password" class="chip <%= profileTab === 'password' ? 'dark' : '' %>">
+        <%= isEn ? 'Reset Password' : '비밀번호 재설정' %>
+      </a>
+    </div>
 
-        <form method="post" action="/mypage/profile/update" class="form-grid mypage-form-grid">
-          <label><%= isEn ? 'Name' : '이름' %>
-            <input type="text" name="fullName" maxlength="80" value="<%= profile.fullName || '' %>" />
-          </label>
-
-          <label><%= isEn ? 'Contact' : '연락처' %>
-            <input type="text" name="phone" maxlength="20" value="<%= profile.phone || '' %>" />
-          </label>
-
-          <label><%= isEn ? 'Customs Clearance No.' : '통관번호' %>
-            <input type="text" name="customsClearanceNo" maxlength="30" value="<%= profile.customsClearanceNo || '' %>" />
-          </label>
-
-          <label><%= isEn ? 'Postcode' : '우편번호' %>
-            <div class="field-inline">
-              <input type="text" name="defaultPostcode" id="defaultPostcode" maxlength="5" value="<%= profile.defaultPostcode || '' %>" readonly />
-              <button type="button" class="chip field-inline-btn" id="defaultAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
-            </div>
-          </label>
-
-          <label><%= isEn ? 'Main Address' : '기본주소' %>
-            <input type="text" name="defaultAddressBase" id="defaultAddressBase" maxlength="160" value="<%= profile.defaultAddressBase || '' %>" readonly />
-          </label>
-
-          <label><%= isEn ? 'Detailed Address' : '상세주소' %>
-            <input type="text" name="defaultAddressDetail" id="defaultAddressDetail" maxlength="120" value="<%= profile.defaultAddressDetail || '' %>" />
-          </label>
-
-          <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Save Profile' : '정보 저장' %></button>
-        </form>
-
-        <div class="mypage-addressbook-section">
-          <h4><%= isEn ? 'Address Book' : '주소록' %></h4>
+    <div class="mypage-profile-grid single">
+      <% if (profileTab === 'addressbook') { %>
+        <article class="mypage-panel">
+          <h3><%= isEn ? 'Address Book' : '주소록 설정' %></h3>
           <p class="muted-label"><%= isEn ? 'Save extra addresses and select them quickly during purchase.' : '추가 주소를 저장해 두고 주문서에서 빠르게 선택할 수 있습니다.' %></p>
 
-          <form method="post" action="/mypage/address-book/add" class="form-grid mypage-form-grid">
+          <form method="post" action="/mypage/address-book/add?profileTab=addressbook" class="form-grid mypage-form-grid">
             <label><%= isEn ? 'Address Label' : '주소록 이름' %>
               <input type="text" name="label" maxlength="40" placeholder="<%= isEn ? 'e.g. Home / Office' : '예: 집 / 회사' %>" required />
             </label>
@@ -161,40 +140,76 @@
                 <p><%= entry.fullAddress %></p>
                 <div class="mypage-addressbook-actions">
                   <% if (!entry.isDefault) { %>
-                    <form method="post" action="/mypage/address-book/<%= entry.id %>/default">
+                    <form method="post" action="/mypage/address-book/<%= entry.id %>/default?profileTab=addressbook">
                       <button type="submit" class="chip"><%= isEn ? 'Set Default' : '기본으로' %></button>
                     </form>
                   <% } %>
-                  <form method="post" action="/mypage/address-book/<%= entry.id %>/delete" onsubmit="return confirm('<%= isEn ? 'Delete this address?' : '이 주소를 삭제할까요?' %>');">
+                  <form method="post" action="/mypage/address-book/<%= entry.id %>/delete?profileTab=addressbook" onsubmit="return confirm('<%= isEn ? 'Delete this address?' : '이 주소를 삭제할까요?' %>');">
                     <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
                   </form>
                 </div>
               </article>
             <% }) %>
           </div>
-        </div>
-      </article>
+        </article>
+      <% } else if (profileTab === 'password') { %>
+        <article class="mypage-panel">
+          <h3><%= isEn ? 'Change Password' : '비밀번호 재설정' %></h3>
+          <p class="muted-label"><%= isEn ? 'Enter your current password first, then set a new one.' : '현재 비밀번호를 먼저 입력한 뒤 새 비밀번호를 설정해 주세요.' %></p>
 
-      <article class="mypage-panel">
-        <h3><%= isEn ? 'Change Password' : '비밀번호 변경' %></h3>
-        <p class="muted-label"><%= isEn ? 'Enter your current password first, then set a new one.' : '현재 비밀번호를 먼저 입력한 뒤 새 비밀번호를 설정해 주세요.' %></p>
+          <form method="post" action="/mypage/profile/password?profileTab=password" class="form-grid mypage-form-grid">
+            <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
+              <input type="password" name="currentPassword" required />
+            </label>
 
-        <form method="post" action="/mypage/profile/password" class="form-grid mypage-form-grid">
-          <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
-            <input type="password" name="currentPassword" required />
-          </label>
+            <label><%= isEn ? 'New Password' : '새 비밀번호' %>
+              <input type="password" name="newPassword" required />
+            </label>
 
-          <label><%= isEn ? 'New Password' : '새 비밀번호' %>
-            <input type="password" name="newPassword" required />
-          </label>
+            <label><%= isEn ? 'Confirm New Password' : '새 비밀번호 확인' %>
+              <input type="password" name="newPasswordConfirm" required />
+            </label>
 
-          <label><%= isEn ? 'Confirm New Password' : '새 비밀번호 확인' %>
-            <input type="password" name="newPasswordConfirm" required />
-          </label>
+            <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
+          </form>
+        </article>
+      <% } else { %>
+        <article class="mypage-panel">
+          <h3><%= isEn ? 'Profile Information' : '기본정보 설정' %></h3>
+          <p class="muted-label"><%= isEn ? 'Saved values are used as defaults on purchase request pages.' : '여기에 저장한 값은 구매신청 페이지 기본값으로 사용됩니다.' %></p>
 
-          <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
-        </form>
-      </article>
+          <form method="post" action="/mypage/profile/update?profileTab=basic" class="form-grid mypage-form-grid">
+            <label><%= isEn ? 'Name' : '이름' %>
+              <input type="text" name="fullName" maxlength="80" value="<%= profile.fullName || '' %>" />
+            </label>
+
+            <label><%= isEn ? 'Contact' : '연락처' %>
+              <input type="text" name="phone" maxlength="20" value="<%= profile.phone || '' %>" />
+            </label>
+
+            <label><%= isEn ? 'Customs Clearance No.' : '통관번호' %>
+              <input type="text" name="customsClearanceNo" maxlength="30" value="<%= profile.customsClearanceNo || '' %>" />
+            </label>
+
+            <label><%= isEn ? 'Postcode' : '우편번호' %>
+              <div class="field-inline">
+                <input type="text" name="defaultPostcode" id="defaultPostcode" maxlength="5" value="<%= profile.defaultPostcode || '' %>" readonly />
+                <button type="button" class="chip field-inline-btn" id="defaultAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+              </div>
+            </label>
+
+            <label><%= isEn ? 'Main Address' : '기본주소' %>
+              <input type="text" name="defaultAddressBase" id="defaultAddressBase" maxlength="160" value="<%= profile.defaultAddressBase || '' %>" readonly />
+            </label>
+
+            <label><%= isEn ? 'Detailed Address' : '상세주소' %>
+              <input type="text" name="defaultAddressDetail" id="defaultAddressDetail" maxlength="120" value="<%= profile.defaultAddressDetail || '' %>" />
+            </label>
+
+            <button type="submit" class="cta-main full mypage-form-btn"><%= isEn ? 'Save Profile' : '정보 저장' %></button>
+          </form>
+        </article>
+      <% } %>
     </div>
   <% } else { %>
     <form method="get" action="/mypage" class="admin-filter-row mypage-order-filter-row">

@@ -1266,8 +1266,27 @@ function normalizeMyPageSection(rawSection = '') {
   return 'info';
 }
 
+function normalizeMyPageProfileTab(rawTab = '') {
+  const tab = String(rawTab || '').trim().toLowerCase();
+  if (tab === 'basic') {
+    return 'basic';
+  }
+  if (tab === 'addressbook' || tab === 'address') {
+    return 'addressbook';
+  }
+  if (tab === 'password') {
+    return 'password';
+  }
+  return 'basic';
+}
+
+function buildMyPageProfilePath(tab = 'basic') {
+  return `/mypage?section=profile&profileTab=${normalizeMyPageProfileTab(tab)}`;
+}
+
 function parseMyPageQuery(query = {}, availableGroupKeys = []) {
   const section = normalizeMyPageSection(query.section || '');
+  const profileTab = normalizeMyPageProfileTab(query.profileTab || '');
   const orderGroupFilter = normalizeAdminOrderGroupFilter(query.group || query.orderGroup || '', availableGroupKeys);
   let orderDateFrom = normalizeDateInput(query.dateFrom || query.orderDateFrom || '');
   let orderDateTo = normalizeDateInput(query.dateTo || query.orderDateTo || '');
@@ -1280,6 +1299,7 @@ function parseMyPageQuery(query = {}, availableGroupKeys = []) {
 
   return {
     section,
+    profileTab,
     orderGroupFilter,
     orderDateFrom,
     orderDateTo
@@ -3309,6 +3329,7 @@ app.get('/mypage', requireAuth, (req, res) => {
     title: 'My Page',
     orders,
     myPageSection: myPageOptions.section,
+    myPageProfileTab: myPageOptions.profileTab,
     myPageFilters: {
       group: myPageOptions.orderGroupFilter,
       dateFrom: myPageOptions.orderDateFrom,
@@ -3338,7 +3359,7 @@ app.get('/mypage', requireAuth, (req, res) => {
 });
 
 app.post('/mypage/profile/update', requireAuth, (req, res) => {
-  const backPath = '/mypage?section=profile';
+  const backPath = buildMyPageProfilePath(req.query.profileTab || req.body.profileTab || 'basic');
   const fullName = String(req.body.fullName || '').trim();
   const phone = normalizePhone(req.body.phone || '');
   const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
@@ -3457,7 +3478,7 @@ app.post('/mypage/profile/update', requireAuth, (req, res) => {
 });
 
 app.post('/mypage/address-book/add', requireAuth, (req, res) => {
-  const backPath = '/mypage?section=profile';
+  const backPath = buildMyPageProfilePath(req.query.profileTab || req.body.profileTab || 'addressbook');
   const label = normalizeAddressText(req.body.label || '', 40);
   const postcode = normalizePostcode(req.body.postcode || '');
   const addressBase = normalizeAddressText(req.body.addressBase || '', 160);
@@ -3532,7 +3553,7 @@ app.post('/mypage/address-book/add', requireAuth, (req, res) => {
 });
 
 app.post('/mypage/address-book/:id/default', requireAuth, (req, res) => {
-  const backPath = '/mypage?section=profile';
+  const backPath = buildMyPageProfilePath(req.query.profileTab || req.body.profileTab || 'addressbook');
   const addressId = Number(req.params.id);
   if (!Number.isInteger(addressId) || addressId <= 0) {
     setFlash(req, 'error', '유효하지 않은 주소록 항목입니다.');
@@ -3576,7 +3597,7 @@ app.post('/mypage/address-book/:id/default', requireAuth, (req, res) => {
 });
 
 app.post('/mypage/address-book/:id/delete', requireAuth, (req, res) => {
-  const backPath = '/mypage?section=profile';
+  const backPath = buildMyPageProfilePath(req.query.profileTab || req.body.profileTab || 'addressbook');
   const addressId = Number(req.params.id);
   if (!Number.isInteger(addressId) || addressId <= 0) {
     setFlash(req, 'error', '유효하지 않은 주소록 항목입니다.');
@@ -3654,7 +3675,7 @@ app.post(
   '/mypage/profile/password',
   requireAuth,
   asyncRoute(async (req, res) => {
-    const backPath = '/mypage?section=profile';
+    const backPath = buildMyPageProfilePath(req.query.profileTab || req.body.profileTab || 'password');
     const currentPassword = String(req.body.currentPassword || '');
     const newPassword = String(req.body.newPassword || '');
     const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
