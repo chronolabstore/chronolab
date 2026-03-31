@@ -12,11 +12,6 @@
 <section class="block-card">
   <div class="section-head">
     <h2><%= isEn ? 'My Page' : '마이페이지' %></h2>
-    <small class="muted-label">
-      <%= isEn ? 'Signed in as' : '로그인 계정' %>: <strong><%= profile.username || (ctx.currentUser && ctx.currentUser.username) || '-' %></strong>
-      |
-      <%= isEn ? 'Points' : '보유 포인트' %>: <strong><%= ctx.formatPrice(profile.rewardPoints || 0) %>P</strong>
-    </small>
   </div>
 
   <div class="chip-row mypage-tab-row">
@@ -35,19 +30,26 @@
     <div class="mypage-info-layout">
       <article class="mypage-info-hero">
         <div class="mypage-avatar-wrap">
-          <% if (profileImage) { %>
-            <img src="<%= profileImage %>" alt="Profile" class="mypage-avatar" />
-          <% } else { %>
-            <div class="mypage-avatar mypage-avatar-fallback"><%= String(nickname || '?').slice(0, 1).toUpperCase() %></div>
-          <% } %>
+          <form method="post" action="/mypage/profile/avatar" enctype="multipart/form-data" class="mypage-avatar-inline-form" id="mypageAvatarForm">
+            <% if (profileImage) { %>
+              <img src="<%= profileImage %>" alt="Profile" class="mypage-avatar" />
+            <% } else { %>
+              <div class="mypage-avatar mypage-avatar-fallback"><%= String(nickname || '?').slice(0, 1).toUpperCase() %></div>
+            <% } %>
+            <input type="file" name="profileImage" accept="image/*" class="mypage-avatar-input" id="mypageAvatarInput" />
+            <button
+              type="button"
+              class="mypage-avatar-upload-btn"
+              id="mypageAvatarTrigger"
+              aria-label="<%= isEn ? 'Change profile photo' : '프로필 사진 변경' %>"
+              title="<%= isEn ? 'Change profile photo' : '프로필 사진 변경' %>"
+            >
+              +
+            </button>
+          </form>
         </div>
         <h3><%= nickname %></h3>
         <p><%= email %></p>
-
-        <form method="post" action="/mypage/profile/avatar" enctype="multipart/form-data" class="mypage-avatar-form">
-          <input type="file" name="profileImage" accept="image/*" required />
-          <button type="submit" class="chip dark"><%= isEn ? 'Update Profile Photo' : '프로필 사진 변경' %></button>
-        </form>
       </article>
 
       <article class="mypage-info-stats">
@@ -220,14 +222,32 @@
     const chips = document.querySelectorAll('#mypageGroupChips [data-group]');
     const groupInput = document.getElementById('mypageGroupInput');
     const form = groupInput?.closest('form');
-    if (!chips.length || !groupInput || !form) return;
-
-    chips.forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const targetGroup = chip.getAttribute('data-group') || 'all';
-        groupInput.value = targetGroup;
-        form.requestSubmit();
+    if (chips.length && groupInput && form) {
+      chips.forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const targetGroup = chip.getAttribute('data-group') || 'all';
+          groupInput.value = targetGroup;
+          form.requestSubmit();
+        });
       });
+    }
+
+    const avatarTrigger = document.getElementById('mypageAvatarTrigger');
+    const avatarInput = document.getElementById('mypageAvatarInput');
+    const avatarForm = document.getElementById('mypageAvatarForm');
+    if (!avatarTrigger || !avatarInput || !avatarForm) return;
+
+    avatarTrigger.addEventListener('click', () => {
+      avatarInput.click();
+    });
+
+    avatarInput.addEventListener('change', () => {
+      if (!avatarInput.files || avatarInput.files.length === 0) return;
+      if (typeof avatarForm.requestSubmit === 'function') {
+        avatarForm.requestSubmit();
+        return;
+      }
+      avatarForm.submit();
     });
   })();
 </script>

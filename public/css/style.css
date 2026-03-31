@@ -1803,6 +1803,14 @@ body.theme-night .watermark-preview-canvas {
 }
 
 .mypage-avatar-wrap {
+  width: 108px;
+  height: 108px;
+}
+
+.mypage-avatar-inline-form {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
 }
@@ -1825,6 +1833,43 @@ body.theme-night .watermark-preview-canvas {
   color: var(--muted);
 }
 
+.mypage-avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mypage-avatar-upload-btn {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+  cursor: pointer;
+}
+
+.mypage-avatar-upload-btn:hover {
+  background: var(--chip);
+}
+
+.mypage-avatar-upload-btn:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
 .mypage-info-hero h3 {
   margin: 2px 0 0;
   font-size: 1.22rem;
@@ -1834,12 +1879,6 @@ body.theme-night .watermark-preview-canvas {
   margin: 0;
   color: var(--muted);
   font-size: 0.88rem;
-}
-
-.mypage-avatar-form {
-  width: min(100%, 420px);
-  display: grid;
-  gap: 8px;
 }
 
 .mypage-info-stats {
