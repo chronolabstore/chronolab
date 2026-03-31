@@ -1714,6 +1714,73 @@ function getMemberCartCount(userId) {
   return Number(row?.count || 0);
 }
 
+function getMemberCartSummary(userId, lang = 'ko') {
+  const targetUserId = Number(userId || 0);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return { items: [], itemCount: 0, quantityTotal: 0, priceTotal: 0 };
+  }
+
+  const hasCartTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cart_items' LIMIT 1")
+    .get();
+  if (!hasCartTable) {
+    return { items: [], itemCount: 0, quantityTotal: 0, priceTotal: 0 };
+  }
+
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupMap = getProductGroupMap(productGroupConfigs);
+  const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
+
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          c.id AS cart_item_id,
+          c.product_id,
+          c.quantity,
+          c.created_at,
+          c.updated_at,
+          p.category_group,
+          p.brand,
+          p.model,
+          p.sub_model,
+          p.price,
+          p.image_path,
+          p.shipping_period,
+          p.is_active,
+          p.extra_fields_json
+        FROM cart_items c
+        JOIN products p ON p.id = c.product_id
+        WHERE c.user_id = ?
+        ORDER BY c.id DESC
+      `
+    )
+    .all(targetUserId);
+
+  const items = rows.map((row) => {
+    const decorated = decorateProductForView(row, productGroupMap.get(row.category_group));
+    const quantity = parsePositiveInt(row.quantity, 1);
+    const lineTotal = Number(row.price || 0) * quantity;
+    return {
+      ...decorated,
+      cart_item_id: Number(row.cart_item_id),
+      quantity,
+      lineTotal,
+      is_active: Number(row.is_active || 0) === 1,
+      category_group_label: groupLabelMap[row.category_group] || row.category_group
+    };
+  });
+
+  const quantityTotal = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const priceTotal = items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
+  return {
+    items,
+    itemCount: items.length,
+    quantityTotal,
+    priceTotal
+  };
+}
+
 function maskUsername(username = '') {
   if (username.length <= 2) {
     return `${username.slice(0, 1)}*`;
@@ -2059,6 +2126,7 @@ app.use((req, res, next) => {
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())));
   const isAdminPage = req.path.startsWith('/admin') && req.path !== '/admin/login';
   const menus = isAdminPage && Boolean(req.user?.isAdmin) ? getAdminMenus(req.user) : publicMenus;
+  const memberCartCount = req.user && !req.user.isAdmin ? getMemberCartCount(req.user.id) : 0;
 
   const dayThemeColors = getThemeColorConfig('day');
   const nightThemeColors = getThemeColorConfig('night');
@@ -2113,6 +2181,7 @@ app.use((req, res, next) => {
     t: (key) => t(lang, key),
     themeMode,
     currentUser: req.user,
+    cartCount: memberCartCount,
     isAdmin: Boolean(req.user?.isAdmin),
     isPrimaryAdmin: Boolean(req.user?.isPrimaryAdmin),
     isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
@@ -2428,6 +2497,97 @@ app.get('/shop', (req, res) => {
     models,
     products
   });
+});
+
+app.get('/cart', requireAuth, (req, res) => {
+  const cartSummary = getMemberCartSummary(req.user.id, res.locals.ctx.lang);
+  return res.render('cart', {
+    title: res.locals.ctx.lang === 'en' ? 'Cart' : '장바구니',
+    cartItems: cartSummary.items,
+    cartSummary
+  });
+});
+
+app.post('/shop/item/:id/cart', requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '잘못된 상품입니다.');
+    return res.redirect('/shop');
+  }
+
+  const product = db.prepare('SELECT id FROM products WHERE id = ? AND is_active = 1 LIMIT 1').get(id);
+  if (!product) {
+    setFlash(req, 'error', '상품을 찾을 수 없습니다.');
+    return res.redirect('/shop');
+  }
+
+  const requestedQty = parsePositiveInt(req.body.quantity, 1);
+  const quantity = Math.min(99, Math.max(1, requestedQty));
+  const existing = db
+    .prepare('SELECT id, quantity FROM cart_items WHERE user_id = ? AND product_id = ? LIMIT 1')
+    .get(req.user.id, id);
+
+  if (existing) {
+    const nextQuantity = Math.min(99, Number(existing.quantity || 0) + quantity);
+    db.prepare('UPDATE cart_items SET quantity = ?, updated_at = datetime(\'now\') WHERE id = ?').run(
+      nextQuantity,
+      existing.id
+    );
+  } else {
+    db.prepare(
+      `
+        INSERT INTO cart_items (user_id, product_id, quantity, created_at, updated_at)
+        VALUES (?, ?, ?, datetime('now'), datetime('now'))
+      `
+    ).run(req.user.id, id, quantity);
+  }
+
+  setFlash(req, 'success', '장바구니에 담았습니다.');
+  return res.redirect(safeBackPath(req, `/shop/item/${id}`));
+});
+
+app.post('/cart/item/:itemId/update', requireAuth, (req, res) => {
+  const itemId = Number(req.params.itemId);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    setFlash(req, 'error', '잘못된 요청입니다.');
+    return res.redirect('/cart');
+  }
+
+  const cartItem = db
+    .prepare('SELECT id, quantity FROM cart_items WHERE id = ? AND user_id = ? LIMIT 1')
+    .get(itemId, req.user.id);
+  if (!cartItem) {
+    setFlash(req, 'error', '장바구니 항목을 찾을 수 없습니다.');
+    return res.redirect('/cart');
+  }
+
+  const quantityInput = parseNonNegativeInt(req.body.quantity, Number(cartItem.quantity || 1));
+  if (quantityInput <= 0) {
+    db.prepare('DELETE FROM cart_items WHERE id = ? AND user_id = ?').run(itemId, req.user.id);
+    setFlash(req, 'success', '장바구니에서 삭제되었습니다.');
+    return res.redirect('/cart');
+  }
+
+  const nextQuantity = Math.min(99, Math.max(1, quantityInput));
+  db.prepare('UPDATE cart_items SET quantity = ?, updated_at = datetime(\'now\') WHERE id = ? AND user_id = ?').run(
+    nextQuantity,
+    itemId,
+    req.user.id
+  );
+  setFlash(req, 'success', '수량이 변경되었습니다.');
+  return res.redirect('/cart');
+});
+
+app.post('/cart/item/:itemId/remove', requireAuth, (req, res) => {
+  const itemId = Number(req.params.itemId);
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    setFlash(req, 'error', '잘못된 요청입니다.');
+    return res.redirect('/cart');
+  }
+
+  db.prepare('DELETE FROM cart_items WHERE id = ? AND user_id = ?').run(itemId, req.user.id);
+  setFlash(req, 'success', '장바구니에서 삭제되었습니다.');
+  return res.redirect('/cart');
 });
 
 app.get('/shop/item/:id', (req, res) => {

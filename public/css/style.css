@@ -185,6 +185,55 @@ img {
   text-align: center;
 }
 
+.icon-circle-action {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f3f5f9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+}
+
+.icon-circle-action svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-circle-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.header-icon-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 20, 30, 0.2);
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  line-height: 1;
+}
+
 .menu-scroller {
   display: flex;
   gap: 8px;
@@ -471,6 +520,11 @@ body.theme-night .hero-quick-grid a:hover {
 .muted-label {
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.danger-copy {
+  color: #dc2626;
+  font-size: 0.8rem;
 }
 
 .filter-group {
@@ -822,6 +876,35 @@ body.theme-night .hero-quick-grid a:hover {
 .feature-copy {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.detail-action-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-action-row .detail-buy-btn,
+.detail-action-row .detail-cart-form {
+  flex: 1;
+}
+
+.detail-action-row .detail-buy-btn,
+.detail-action-row .detail-cart-btn {
+  width: 100%;
+  min-height: 46px;
+}
+
+.detail-action-row .detail-cart-btn {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.34);
+  color: var(--card-dark-text);
+}
+
+.detail-action-row .detail-cart-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .order-form {
@@ -2056,6 +2139,76 @@ th {
   min-width: 190px;
 }
 
+.cart-table th:nth-child(1),
+.cart-table td:nth-child(1),
+.cart-table th:nth-child(3),
+.cart-table td:nth-child(3),
+.cart-table th:nth-child(4),
+.cart-table td:nth-child(4),
+.cart-table th:nth-child(5),
+.cart-table td:nth-child(5) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.cart-thumb-link {
+  display: inline-flex;
+}
+
+.cart-thumb,
+.cart-thumb-fallback {
+  width: 78px;
+  height: 62px;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.cart-thumb-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cart-qty-form {
+  gap: 7px;
+  justify-content: center;
+}
+
+.cart-qty-form input {
+  width: 76px;
+  text-align: center;
+}
+
+.cart-action-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.cart-summary-card {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.cart-summary-card p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cart-summary-card p strong {
+  font-size: 1rem;
+}
+
 .product-list-table td:nth-child(3) strong {
   display: block;
   line-height: 1.35;
@@ -2299,12 +2452,18 @@ body.theme-night .inline-file-preview-image {
   }
 
   .header-actions .icon-action,
-  .header-actions .chip {
+  .header-actions .chip,
+  .header-actions .icon-circle-action {
     min-height: 42px;
   }
 
   .header-actions .icon-action {
     padding: 7px 11px;
+  }
+
+  .icon-circle-action {
+    width: 42px;
+    min-width: 42px;
   }
 
   .menu-scroller {

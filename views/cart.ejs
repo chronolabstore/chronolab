@@ -1,0 +1,83 @@
+<%- include('partials/layout-start') %>
+<% const isEn = ctx.lang === 'en'; %>
+<% const summary = cartSummary || { itemCount: 0, quantityTotal: 0, priceTotal: 0 }; %>
+<% const items = Array.isArray(cartItems) ? cartItems : []; %>
+
+<section class="block-card">
+  <div class="section-head">
+    <h2><%= isEn ? 'Cart' : '장바구니' %></h2>
+    <small class="muted-label">
+      <%= isEn ? 'Items' : '상품' %>: <strong><%= Number(summary.itemCount || 0) %></strong> /
+      <%= isEn ? 'Quantity' : '수량' %>: <strong><%= Number(summary.quantityTotal || 0) %></strong>
+    </small>
+  </div>
+
+  <% if (items.length === 0) { %>
+    <p class="muted-label"><%= isEn ? 'Your cart is empty.' : '장바구니가 비어 있습니다.' %></p>
+    <a href="/shop" class="chip dark"><%= isEn ? 'Go Shopping' : '쇼핑 계속하기' %></a>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="cart-table">
+        <thead>
+          <tr>
+            <th><%= isEn ? 'Image' : '이미지' %></th>
+            <th><%= isEn ? 'Product' : '상품' %></th>
+            <th><%= isEn ? 'Quantity' : '수량' %></th>
+            <th><%= isEn ? 'Price' : '가격' %></th>
+            <th><%= isEn ? 'Actions' : '작업' %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% items.forEach((item) => { %>
+            <tr>
+              <td>
+                <a href="/shop/item/<%= item.product_id %>" class="cart-thumb-link">
+                  <% if (item.image_path) { %>
+                    <img src="<%= item.image_path %>" alt="<%= item.brand %> <%= item.model %>" class="cart-thumb" />
+                  <% } else { %>
+                    <span class="image-fallback cart-thumb-fallback">WATCH</span>
+                  <% } %>
+                </a>
+              </td>
+              <td>
+                <a href="/shop/item/<%= item.product_id %>"><strong><%= item.display_title || `${item.brand} ${item.model}` %></strong></a><br />
+                <small class="muted-label"><%= item.category_group_label || item.category_group %></small><br />
+                <% if (!item.is_active) { %>
+                  <small class="danger-copy"><%= isEn ? 'Unavailable product' : '현재 비공개 상품' %></small>
+                <% } %>
+              </td>
+              <td>
+                <form method="post" action="/cart/item/<%= item.cart_item_id %>/update" class="inline-form cart-qty-form">
+                  <input type="number" name="quantity" min="0" max="99" step="1" value="<%= item.quantity %>" />
+                  <button type="submit" class="chip"><%= isEn ? 'Update' : '변경' %></button>
+                </form>
+              </td>
+              <td>
+                <strong>₩<%= ctx.formatPrice(item.lineTotal || 0) %></strong>
+                <small class="muted-label">(<%= item.quantity %> x ₩<%= ctx.formatPrice(item.price || 0) %>)</small>
+              </td>
+              <td>
+                <div class="cart-action-group">
+                  <% if (item.is_active) { %>
+                    <a href="/shop/item/<%= item.product_id %>/purchase" class="chip dark"><%= isEn ? 'Purchase' : '구매하기' %></a>
+                  <% } %>
+                  <form method="post" action="/cart/item/<%= item.cart_item_id %>/remove" class="inline-form">
+                    <button type="submit" class="chip"><%= isEn ? 'Remove' : '삭제' %></button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cart-summary-card">
+      <p><span><%= isEn ? 'Total Products' : '총 상품수' %></span><strong><%= Number(summary.itemCount || 0) %></strong></p>
+      <p><span><%= isEn ? 'Total Quantity' : '총 수량' %></span><strong><%= Number(summary.quantityTotal || 0) %></strong></p>
+      <p><span><%= isEn ? 'Estimated Total' : '예상 합계' %></span><strong>₩<%= ctx.formatPrice(summary.priceTotal || 0) %></strong></p>
+    </div>
+  <% } %>
+</section>
+
+<%- include('partials/layout-end') %>

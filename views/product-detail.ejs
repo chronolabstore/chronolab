@@ -80,7 +80,6 @@
         <span><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></span>
       </div>
       <p class="feature-copy"><%= product.features || '-' %></p>
-      <a href="/shop/item/<%= product.id %>/purchase" class="cta-main full"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
     <% } else { %>
       <div class="spec-grid">
         <span><%= isEn ? 'Detailed Description' : '상세설명' %>: <strong><%= productDisplay?.summary || '-' %></strong></span>
@@ -88,8 +87,14 @@
           <span><%= isEn ? (field.labelEn || field.labelKo || field.key) : (field.labelKo || field.labelEn || field.key) %>: <strong><%= field.value %></strong></span>
         <% }) %>
       </div>
-      <a href="/shop/item/<%= product.id %>/purchase" class="cta-main full"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
     <% } %>
+    <div class="detail-action-row">
+      <a href="/shop/item/<%= product.id %>/purchase" class="cta-main detail-buy-btn"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
+      <form method="post" action="/shop/item/<%= product.id %>/cart" class="inline-form detail-cart-form">
+        <input type="hidden" name="quantity" value="1" />
+        <button type="submit" class="chip detail-cart-btn"><%= isEn ? 'Add to Cart' : '장바구니' %></button>
+      </form>
+    </div>
   </div>
 </section>
 
