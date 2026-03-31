@@ -2495,7 +2495,11 @@ body.theme-night .inline-file-preview-image {
 
   .mypage-info-layout {
     grid-template-columns: 320px minmax(0, 1fr);
-    align-items: start;
+    align-items: stretch;
+  }
+
+  .mypage-info-hero {
+    height: 100%;
   }
 
   .mypage-info-stats {
