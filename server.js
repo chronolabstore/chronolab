@@ -1252,6 +1252,34 @@ function parseAdminOrderManageQuery(query = {}, availableGroupKeys = []) {
   };
 }
 
+function normalizeMyPageSection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  if (section === 'profile') {
+    return 'profile';
+  }
+  return 'orders';
+}
+
+function parseMyPageQuery(query = {}, availableGroupKeys = []) {
+  const section = normalizeMyPageSection(query.section || '');
+  const orderGroupFilter = normalizeAdminOrderGroupFilter(query.group || query.orderGroup || '', availableGroupKeys);
+  let orderDateFrom = normalizeDateInput(query.dateFrom || query.orderDateFrom || '');
+  let orderDateTo = normalizeDateInput(query.dateTo || query.orderDateTo || '');
+
+  if (orderDateFrom && orderDateTo && orderDateFrom > orderDateTo) {
+    const temp = orderDateFrom;
+    orderDateFrom = orderDateTo;
+    orderDateTo = temp;
+  }
+
+  return {
+    section,
+    orderGroupFilter,
+    orderDateFrom,
+    orderDateTo
+  };
+}
+
 function normalizeHexColor(rawColor = '', fallback = '#000000') {
   const value = String(rawColor || '').trim();
   if (HEX_COLOR_REGEX.test(value)) {
@@ -1826,7 +1854,20 @@ function loadUser(req, res, next) {
   const user = db
     .prepare(
       `
-        SELECT id, email, username, full_name, phone, is_admin, admin_role, is_blocked, blocked_reason, blocked_at, created_at
+        SELECT
+          id,
+          email,
+          username,
+          full_name,
+          phone,
+          customs_clearance_no,
+          default_address,
+          is_admin,
+          admin_role,
+          is_blocked,
+          blocked_reason,
+          blocked_at,
+          created_at
         FROM users
         WHERE id = ?
         LIMIT 1
@@ -1857,6 +1898,8 @@ function loadUser(req, res, next) {
     username: user.username,
     fullName: user.full_name || '',
     phone: user.phone || '',
+    customsClearanceNo: user.customs_clearance_no || '',
+    defaultAddress: user.default_address || '',
     isAdmin: Number(user.is_admin) === 1,
     adminRole: Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '',
     isBlocked: Number(user.is_blocked) === 1,
@@ -2386,10 +2429,10 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
   incrementFunnelEventUniqueInSession(req, FUNNEL_EVENT.PURCHASE_VIEW, `product:${id}`);
 
   const formData = {
-    buyerName: req.user.username || '',
-    buyerContact: '',
-    customsClearanceNo: '',
-    buyerAddress: '',
+    buyerName: req.user.fullName || '',
+    buyerContact: req.user.phone || '',
+    customsClearanceNo: req.user.customsClearanceNo || '',
+    buyerAddress: req.user.defaultAddress || '',
     quantity: 1
   };
 
@@ -2609,17 +2652,53 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
 });
 
 app.get('/mypage', requireAuth, (req, res) => {
-  const baseOrders = db
+  const productGroupConfigs = getProductGroupConfigs();
+  const productGroupKeys = productGroupConfigs.map((group) => group.key);
+  const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
+  const myPageOptions = parseMyPageQuery(req.query || {}, productGroupKeys);
+
+  const profile = db
     .prepare(
       `
-        SELECT o.*, p.brand, p.model, p.sub_model
-        FROM orders o
-        JOIN products p ON p.id = o.product_id
-        WHERE o.created_by_user_id = ?
-        ORDER BY o.id DESC
+        SELECT id, username, full_name, phone, customs_clearance_no, default_address
+        FROM users
+        WHERE id = ?
+        LIMIT 1
       `
     )
-    .all(req.user.id);
+    .get(req.user.id);
+
+  if (!profile) {
+    req.session.userId = null;
+    req.session.isAdmin = false;
+    req.session.adminRole = '';
+    setFlash(req, 'error', '사용자 정보를 확인할 수 없어 다시 로그인해 주세요.');
+    return res.redirect('/login');
+  }
+
+  const ordersQuery = [
+    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
+    'FROM orders o',
+    'JOIN products p ON p.id = o.product_id',
+    'WHERE o.created_by_user_id = ?'
+  ];
+  const orderParams = [req.user.id];
+
+  if (myPageOptions.orderGroupFilter !== 'all') {
+    ordersQuery.push('AND p.category_group = ?');
+    orderParams.push(myPageOptions.orderGroupFilter);
+  }
+  if (myPageOptions.orderDateFrom) {
+    ordersQuery.push("AND date(datetime(o.created_at, '+9 hours')) >= ?");
+    orderParams.push(myPageOptions.orderDateFrom);
+  }
+  if (myPageOptions.orderDateTo) {
+    ordersQuery.push("AND date(datetime(o.created_at, '+9 hours')) <= ?");
+    orderParams.push(myPageOptions.orderDateTo);
+  }
+  ordersQuery.push('ORDER BY o.id DESC');
+
+  const baseOrders = db.prepare(ordersQuery.join('\n')).all(...orderParams);
 
   const latestLogMap = new Map();
   if (baseOrders.length > 0) {
@@ -2658,14 +2737,121 @@ app.get('/mypage', requireAuth, (req, res) => {
       status_code: statusMeta.code,
       status_label: statusMeta.label,
       status_detail: statusMeta.detail,
+      category_group_label: groupLabelMap[order.category_group] || order.category_group,
       tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier),
       latest_event_note: latestLog.event_note,
       latest_event_at: latestLog.created_at
     };
   });
 
-  res.render('mypage', { title: 'My Page', orders });
+  res.render('mypage', {
+    title: 'My Page',
+    orders,
+    myPageSection: myPageOptions.section,
+    myPageFilters: {
+      group: myPageOptions.orderGroupFilter,
+      dateFrom: myPageOptions.orderDateFrom,
+      dateTo: myPageOptions.orderDateTo
+    },
+    myPageGroups: productGroupConfigs.map((group) => ({
+      key: group.key,
+      label: groupLabelMap[group.key] || group.key
+    })),
+    profileForm: {
+      username: profile.username || req.user.username,
+      fullName: profile.full_name || '',
+      phone: profile.phone || '',
+      customsClearanceNo: profile.customs_clearance_no || '',
+      defaultAddress: profile.default_address || ''
+    }
+  });
 });
+
+app.post('/mypage/profile/update', requireAuth, (req, res) => {
+  const backPath = '/mypage?section=profile';
+  const fullName = String(req.body.fullName || '').trim();
+  const phone = normalizePhone(req.body.phone || '');
+  const customsClearanceNo = String(req.body.customsClearanceNo || '').trim();
+  const defaultAddress = String(req.body.defaultAddress || '').trim();
+
+  if (fullName.length > 80) {
+    setFlash(req, 'error', '이름은 80자 이하로 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (phone && !PHONE_REGEX.test(phone)) {
+    setFlash(req, 'error', '연락처 형식이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (customsClearanceNo && !CUSTOMS_NO_REGEX.test(customsClearanceNo)) {
+    setFlash(req, 'error', '통관번호 형식이 올바르지 않습니다. (영문/숫자/하이픈 6~30자)');
+    return res.redirect(backPath);
+  }
+
+  if (defaultAddress && (defaultAddress.length < 5 || defaultAddress.length > 200)) {
+    setFlash(req, 'error', '주소는 5~200자 범위로 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE users
+      SET full_name = ?, phone = ?, customs_clearance_no = ?, default_address = ?
+      WHERE id = ?
+    `
+  ).run(fullName, phone, customsClearanceNo, defaultAddress, req.user.id);
+
+  setFlash(req, 'success', '정보 설정이 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post(
+  '/mypage/profile/password',
+  requireAuth,
+  asyncRoute(async (req, res) => {
+    const backPath = '/mypage?section=profile';
+    const currentPassword = String(req.body.currentPassword || '');
+    const newPassword = String(req.body.newPassword || '');
+    const newPasswordConfirm = String(req.body.newPasswordConfirm || '');
+
+    if (!currentPassword || !newPassword || !newPasswordConfirm) {
+      setFlash(req, 'error', '현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.');
+      return res.redirect(backPath);
+    }
+
+    if (newPassword !== newPasswordConfirm) {
+      setFlash(req, 'error', '새 비밀번호 확인이 일치하지 않습니다.');
+      return res.redirect(backPath);
+    }
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      setFlash(req, 'error', '새 비밀번호는 영문/숫자 포함 8자 이상이어야 합니다.');
+      return res.redirect(backPath);
+    }
+
+    const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ? LIMIT 1').get(req.user.id);
+    if (!user) {
+      req.session.userId = null;
+      req.session.isAdmin = false;
+      req.session.adminRole = '';
+      setFlash(req, 'error', '사용자 정보를 찾을 수 없습니다. 다시 로그인해 주세요.');
+      return res.redirect('/login');
+    }
+
+    const validCurrent = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!validCurrent) {
+      setFlash(req, 'error', '현재 비밀번호가 올바르지 않습니다.');
+      return res.redirect(backPath);
+    }
+
+    const nextHash = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(nextHash, req.user.id);
+
+    setFlash(req, 'success', '비밀번호가 변경되었습니다.');
+    return res.redirect(backPath);
+  })
+);
 
 app.get('/notice', (req, res) => {
   const isAdminViewer = Boolean(req.user?.isAdmin);

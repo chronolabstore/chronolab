@@ -1736,6 +1736,37 @@ body.theme-night .watermark-preview-canvas {
   margin: 0;
 }
 
+.mypage-tab-row {
+  margin-top: 2px;
+}
+
+.mypage-profile-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mypage-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--card);
+  display: grid;
+  gap: 10px;
+}
+
+.mypage-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.mypage-panel .muted-label {
+  margin: 0;
+}
+
+.mypage-order-filter-row {
+  margin-top: 4px;
+}
+
 .admin-pagination {
   margin-top: 10px;
   display: flex;
@@ -1767,6 +1798,10 @@ table {
   width: 100%;
   border-collapse: collapse;
   min-width: 700px;
+}
+
+.mypage-order-table {
+  min-width: 980px;
 }
 
 th,
@@ -1808,6 +1843,31 @@ th {
 
 .product-list-table td:nth-child(6) {
   min-width: 240px;
+}
+
+.mypage-order-table th:nth-child(1),
+.mypage-order-table th:nth-child(2),
+.mypage-order-table th:nth-child(7),
+.mypage-order-table td:nth-child(1),
+.mypage-order-table td:nth-child(2),
+.mypage-order-table td:nth-child(7) {
+  text-align: center;
+}
+
+.mypage-order-table td:nth-child(3) {
+  min-width: 200px;
+}
+
+.mypage-order-table td:nth-child(4) {
+  min-width: 220px;
+}
+
+.mypage-order-table td:nth-child(5) {
+  min-width: 160px;
+}
+
+.mypage-order-table td:nth-child(6) {
+  min-width: 190px;
 }
 
 .product-list-table td:nth-child(3) strong {
@@ -2232,6 +2292,10 @@ body.theme-night .inline-file-preview-image {
   }
 
   .security-panel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mypage-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

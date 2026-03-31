@@ -294,6 +294,21 @@ function ensureUserAdminProfileColumns() {
   addColumnIfMissing('admin_role', "admin_role TEXT NOT NULL DEFAULT ''");
 }
 
+function ensureUserMemberProfileColumns() {
+  const columns = db.prepare('PRAGMA table_info(users)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  const addColumnIfMissing = (name, ddl) => {
+    if (!columnNames.has(name)) {
+      db.prepare(`ALTER TABLE users ADD COLUMN ${ddl}`).run();
+      columnNames.add(name);
+    }
+  };
+
+  addColumnIfMissing('customs_clearance_no', "customs_clearance_no TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('default_address', "default_address TEXT NOT NULL DEFAULT ''");
+}
+
 function ensureUserBlockColumns() {
   const columns = db.prepare('PRAGMA table_info(users)').all();
   const columnNames = new Set(columns.map((column) => column.name));
@@ -951,6 +966,8 @@ export function initDb() {
       username TEXT NOT NULL UNIQUE,
       full_name TEXT NOT NULL DEFAULT '',
       phone TEXT NOT NULL DEFAULT '',
+      customs_clearance_no TEXT NOT NULL DEFAULT '',
+      default_address TEXT NOT NULL DEFAULT '',
       password_hash TEXT NOT NULL,
       agreed_terms INTEGER NOT NULL DEFAULT 1,
       is_admin INTEGER NOT NULL DEFAULT 0,
@@ -1092,6 +1109,7 @@ export function initDb() {
   ensureProductsCategoryColumn();
   ensureProductsExtraFieldsColumn();
   ensureUserAdminProfileColumns();
+  ensureUserMemberProfileColumns();
   ensureUserBlockColumns();
   ensureOrdersCustomsColumn();
   ensureOrdersTrackingColumns();

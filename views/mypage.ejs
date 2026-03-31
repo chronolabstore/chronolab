@@ -1,63 +1,162 @@
 <%- include('partials/layout-start') %>
+<% const isEn = ctx.lang === 'en'; %>
+<% const activeSection = myPageSection || 'orders'; %>
+<% const filters = myPageFilters || { group: 'all', dateFrom: '', dateTo: '' }; %>
+<% const groups = Array.isArray(myPageGroups) ? myPageGroups : []; %>
+<% const profile = profileForm || {}; %>
 
 <section class="block-card">
   <div class="section-head">
-    <h2><%= ctx.lang === 'en' ? 'My Orders' : '내 주문내역' %></h2>
+    <h2><%= isEn ? 'My Page' : '마이페이지' %></h2>
+    <small class="muted-label"><%= isEn ? 'Signed in as' : '로그인 계정' %>: <strong><%= profile.username || (ctx.currentUser && ctx.currentUser.username) || '-' %></strong></small>
   </div>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th><%= ctx.lang === 'en' ? 'Order No.' : '구매번호' %></th>
-          <th><%= ctx.lang === 'en' ? 'Product' : '상품' %></th>
-          <th><%= ctx.lang === 'en' ? 'My Info' : '주문자 정보' %></th>
-          <th><%= ctx.lang === 'en' ? 'Status' : '상태' %></th>
-          <th><%= ctx.lang === 'en' ? 'Tracking' : '송장' %></th>
-        </tr>
-      </thead>
-      <tbody>
-        <% if (orders.length === 0) { %>
-          <tr>
-            <td colspan="5"><%= ctx.lang === 'en' ? 'No order history found.' : '주문 내역이 없습니다.' %></td>
-          </tr>
-        <% } %>
-        <% orders.forEach((item) => { %>
-          <tr>
-            <td><%= item.order_no %></td>
-            <td>
-              <strong><%= item.brand %> <%= item.model %></strong><br />
-              <small><%= item.sub_model || '-' %></small>
-            </td>
-            <td>
-              <strong><%= item.buyer_name %></strong><br />
-              <small><%= item.buyer_contact %></small><br />
-              <small><%= ctx.lang === 'en' ? 'Customs' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small>
-            </td>
-            <td>
-              <span class="order-status"><%= item.status_label %></span>
-              <% if (item.status_detail) { %>
-                <small class="muted-label"><%= item.status_detail %></small>
-              <% } %>
-              <% if (item.latest_event_at) { %>
-                <small class="muted-label"><%= ctx.lang === 'en' ? 'Updated' : '최근 변경' %>: <%= item.latest_event_at.slice(0, 16) %></small>
-              <% } %>
-            </td>
-            <td>
-              <% if (item.tracking_number) { %>
-                <small><strong><%= item.tracking_carrier_label || item.tracking_carrier || '-' %></strong></small><br />
-                <small><%= item.tracking_number %></small><br />
-                <small><%= item.tracking_last_event || '-' %></small><br />
-                <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
-              <% } else { %>
-                <small>-</small>
-              <% } %>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+  <div class="chip-row mypage-tab-row">
+    <a href="/mypage?section=orders" class="chip <%= activeSection === 'orders' ? 'dark' : '' %>">
+      <%= isEn ? 'Order Status' : '주문 현황' %>
+    </a>
+    <a href="/mypage?section=profile" class="chip <%= activeSection === 'profile' ? 'dark' : '' %>">
+      <%= isEn ? 'Profile Settings' : '정보 설정' %>
+    </a>
   </div>
+
+  <% if (activeSection === 'profile') { %>
+    <div class="mypage-profile-grid">
+      <article class="mypage-panel">
+        <h3><%= isEn ? 'Profile Information' : '기본 정보 설정' %></h3>
+        <p class="muted-label"><%= isEn ? 'Saved values are used as defaults on purchase request pages.' : '여기에 저장한 값은 구매신청 페이지 기본값으로 사용됩니다.' %></p>
+
+        <form method="post" action="/mypage/profile/update" class="form-grid">
+          <label><%= isEn ? 'Name' : '이름' %>
+            <input type="text" name="fullName" maxlength="80" value="<%= profile.fullName || '' %>" />
+          </label>
+
+          <label><%= isEn ? 'Contact' : '연락처' %>
+            <input type="text" name="phone" maxlength="20" value="<%= profile.phone || '' %>" />
+          </label>
+
+          <label><%= isEn ? 'Customs Clearance No.' : '통관번호' %>
+            <input type="text" name="customsClearanceNo" maxlength="30" value="<%= profile.customsClearanceNo || '' %>" />
+          </label>
+
+          <label><%= isEn ? 'Address' : '주소' %>
+            <textarea name="defaultAddress" rows="3" maxlength="200"><%= profile.defaultAddress || '' %></textarea>
+          </label>
+
+          <button type="submit" class="cta-main full"><%= isEn ? 'Save Profile' : '정보 저장' %></button>
+        </form>
+      </article>
+
+      <article class="mypage-panel">
+        <h3><%= isEn ? 'Change Password' : '비밀번호 변경' %></h3>
+        <p class="muted-label"><%= isEn ? 'Enter your current password first, then set a new one.' : '현재 비밀번호를 먼저 입력한 뒤 새 비밀번호를 설정해 주세요.' %></p>
+
+        <form method="post" action="/mypage/profile/password" class="form-grid">
+          <label><%= isEn ? 'Current Password' : '현재 비밀번호' %>
+            <input type="password" name="currentPassword" required />
+          </label>
+
+          <label><%= isEn ? 'New Password' : '새 비밀번호' %>
+            <input type="password" name="newPassword" required />
+          </label>
+
+          <label><%= isEn ? 'Confirm New Password' : '새 비밀번호 확인' %>
+            <input type="password" name="newPasswordConfirm" required />
+          </label>
+
+          <button type="submit" class="cta-main full"><%= isEn ? 'Change Password' : '비밀번호 변경' %></button>
+        </form>
+      </article>
+    </div>
+  <% } else { %>
+    <form method="get" action="/mypage" class="admin-filter-row mypage-order-filter-row">
+      <input type="hidden" name="section" value="orders" />
+
+      <label class="admin-filter-item">
+        <span><%= isEn ? 'Shop Category' : '쇼핑몰 분류' %></span>
+        <select name="group">
+          <option value="all" <%= filters.group === 'all' ? 'selected' : '' %>><%= isEn ? 'All' : '전체' %></option>
+          <% groups.forEach((group) => { %>
+            <option value="<%= group.key %>" <%= filters.group === group.key ? 'selected' : '' %>><%= group.label %></option>
+          <% }) %>
+        </select>
+      </label>
+
+      <label class="admin-filter-item">
+        <span><%= isEn ? 'From Date' : '시작일' %></span>
+        <input type="date" name="dateFrom" value="<%= filters.dateFrom || '' %>" />
+      </label>
+
+      <label class="admin-filter-item">
+        <span><%= isEn ? 'To Date' : '종료일' %></span>
+        <input type="date" name="dateTo" value="<%= filters.dateTo || '' %>" />
+      </label>
+
+      <div class="admin-filter-actions">
+        <button type="submit" class="chip dark"><%= isEn ? 'Filter' : '조회' %></button>
+        <a href="/mypage?section=orders" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+      </div>
+    </form>
+
+    <div class="table-wrap">
+      <table class="mypage-order-table">
+        <thead>
+          <tr>
+            <th><%= isEn ? 'Order No.' : '구매번호' %></th>
+            <th><%= isEn ? 'Category' : '분류' %></th>
+            <th><%= isEn ? 'Product' : '상품' %></th>
+            <th><%= isEn ? 'My Info' : '주문자 정보' %></th>
+            <th><%= isEn ? 'Status' : '상태' %></th>
+            <th><%= isEn ? 'Tracking' : '송장' %></th>
+            <th><%= isEn ? 'Requested' : '신청일' %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (orders.length === 0) { %>
+            <tr>
+              <td colspan="7"><%= isEn ? 'No order history found.' : '조건에 맞는 주문 내역이 없습니다.' %></td>
+            </tr>
+          <% } %>
+          <% orders.forEach((item) => { %>
+            <tr>
+              <td><%= item.order_no %></td>
+              <td><%= item.category_group_label || item.category_group || '-' %></td>
+              <td>
+                <strong><%= item.brand %> <%= item.model %></strong><br />
+                <small><%= item.sub_model || '-' %></small>
+              </td>
+              <td>
+                <strong><%= item.buyer_name %></strong><br />
+                <small><%= item.buyer_contact %></small><br />
+                <small><%= isEn ? 'Customs' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small><br />
+                <small><%= item.buyer_address || '-' %></small>
+              </td>
+              <td>
+                <span class="order-status"><%= item.status_label %></span>
+                <% if (item.status_detail) { %>
+                  <small class="muted-label"><%= item.status_detail %></small>
+                <% } %>
+                <% if (item.latest_event_at) { %>
+                  <small class="muted-label"><%= isEn ? 'Updated' : '최근 변경' %>: <%= item.latest_event_at.slice(0, 16) %></small>
+                <% } %>
+              </td>
+              <td>
+                <% if (item.tracking_number) { %>
+                  <small><strong><%= item.tracking_carrier_label || item.tracking_carrier || '-' %></strong></small><br />
+                  <small><%= item.tracking_number %></small><br />
+                  <small><%= item.tracking_last_event || '-' %></small><br />
+                  <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
+                <% } else { %>
+                  <small>-</small>
+                <% } %>
+              </td>
+              <td><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
 </section>
 
 <%- include('partials/layout-end') %>
