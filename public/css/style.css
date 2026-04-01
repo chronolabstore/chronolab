@@ -2421,7 +2421,7 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 .mypage-panel {
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 12px;
+  padding: 16px;
   background: var(--card);
   display: grid;
   gap: 10px;
@@ -2438,12 +2438,18 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .mypage-form-grid {
   gap: 11px;
-  width: min(100%, 760px);
+  width: min(100%, 740px);
   margin-inline: auto;
 }
 
 .mypage-profile-grid.single .mypage-panel {
-  width: min(100%, 960px);
+  width: min(100%, 860px);
+  margin-inline: auto;
+}
+
+.mypage-profile-grid.single .mypage-panel > h3,
+.mypage-profile-grid.single .mypage-panel > .muted-label {
+  width: min(100%, 740px);
   margin-inline: auto;
 }
 
