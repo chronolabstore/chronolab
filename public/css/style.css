@@ -1559,12 +1559,19 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   margin-top: 8px;
 }
 
 .auth-foot-note {
   margin-top: 10px;
+  text-align: center;
+}
+
+.auth-signup-note {
+  margin-top: 10px;
+  text-align: center;
 }
 
 .form-grid {
@@ -2431,6 +2438,13 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .mypage-form-grid {
   gap: 11px;
+  width: min(100%, 760px);
+  margin-inline: auto;
+}
+
+.mypage-profile-grid.single .mypage-panel {
+  width: min(100%, 960px);
+  margin-inline: auto;
 }
 
 .mypage-form-grid label > span {
