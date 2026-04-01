@@ -123,7 +123,7 @@ const DEFAULT_THEME_COLORS = Object.freeze({
     chipColor: '#f3f4f6'
   }),
   night: Object.freeze({
-    headerColor: '#ffffff',
+    headerColor: '#000000',
     backgroundColor: '#000000',
     textColor: '#ffffff',
     mutedColor: '#f3f4f6',
@@ -158,6 +158,18 @@ const LEGACY_THEME_COLORS = Object.freeze({
     cardDarkTextColor: '#111213',
     chipColor: '#f3f4f6'
   })
+});
+
+const PREVIOUS_NIGHT_THEME_COLORS_V1 = Object.freeze({
+  headerColor: '#ffffff',
+  backgroundColor: '#000000',
+  textColor: '#ffffff',
+  mutedColor: '#f3f4f6',
+  lineColor: '#4b5563',
+  cardColor: '#4b5563',
+  cardDarkColor: '#ffffff',
+  cardDarkTextColor: '#000000',
+  chipColor: '#0f172a'
 });
 
 const THEME_COLOR_PALETTE = Object.freeze(['#f3f4f6', '#4b5563', '#0f172a', '#000000', '#ffffff']);
@@ -1668,6 +1680,31 @@ function maybeMigrateLegacyThemeColors() {
 
   migrateModeIfLegacy('day');
   migrateModeIfLegacy('night');
+
+  const nightSettingMap = [
+    ['HeaderColor', 'headerColor'],
+    ['BackgroundColor', 'backgroundColor'],
+    ['TextColor', 'textColor'],
+    ['MutedColor', 'mutedColor'],
+    ['LineColor', 'lineColor'],
+    ['CardColor', 'cardColor'],
+    ['CardDarkColor', 'cardDarkColor'],
+    ['CardDarkTextColor', 'cardDarkTextColor'],
+    ['ChipColor', 'chipColor']
+  ];
+  const matchesPreviousNightV1 = nightSettingMap.every(([suffix, alias]) => {
+    const stored = normalizeHexColor(
+      getSetting(`night${suffix}`, PREVIOUS_NIGHT_THEME_COLORS_V1[alias]),
+      PREVIOUS_NIGHT_THEME_COLORS_V1[alias]
+    );
+    return stored === normalizeHexColor(PREVIOUS_NIGHT_THEME_COLORS_V1[alias], PREVIOUS_NIGHT_THEME_COLORS_V1[alias]);
+  });
+  if (matchesPreviousNightV1) {
+    for (const [suffix, alias] of nightSettingMap) {
+      setSetting(`night${suffix}`, DEFAULT_THEME_COLORS.night[alias]);
+    }
+  }
+
   setSetting('headerColor', DEFAULT_THEME_COLORS.day.headerColor);
 }
 

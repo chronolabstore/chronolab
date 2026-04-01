@@ -37,6 +37,16 @@
   --modal-surface-border: rgba(243, 244, 246, 0.26);
   --detail-secondary-border: rgba(243, 244, 246, 0.44);
   --detail-secondary-bg-hover: rgba(243, 244, 246, 0.14);
+  --btn-primary-bg: var(--color-black);
+  --btn-primary-text: var(--color-white);
+  --btn-primary-border: var(--color-black);
+  --btn-primary-bg-hover: var(--color-navy);
+  --btn-primary-text-hover: var(--color-light-gray);
+  --btn-secondary-bg: var(--color-light-gray);
+  --btn-secondary-text: var(--color-black);
+  --btn-secondary-border: var(--color-dark-gray);
+  --btn-secondary-bg-hover: var(--color-white);
+  --btn-secondary-text-hover: var(--color-black);
   --focus-ring: rgba(15, 23, 42, 0.24);
   --error-text: var(--color-navy);
   --radius-xl: 28px;
@@ -79,14 +89,14 @@ body.theme-night {
   --card-dark: var(--color-white);
   --card-dark-text: var(--color-black);
   --chip: var(--color-navy);
-  --header-fg: var(--color-black);
-  --header-ui-border: rgba(0, 0, 0, 0.26);
-  --header-ui-bg: rgba(0, 0, 0, 0.06);
-  --header-ui-bg-hover: rgba(0, 0, 0, 0.12);
-  --header-glyph-bg: rgba(0, 0, 0, 0.1);
-  --header-badge-bg: var(--color-navy);
-  --header-badge-text: var(--color-light-gray);
-  --header-badge-border: rgba(0, 0, 0, 0.2);
+  --header-fg: var(--color-light-gray);
+  --header-ui-border: rgba(243, 244, 246, 0.42);
+  --header-ui-bg: rgba(243, 244, 246, 0.1);
+  --header-ui-bg-hover: rgba(243, 244, 246, 0.18);
+  --header-glyph-bg: rgba(243, 244, 246, 0.22);
+  --header-badge-bg: var(--color-white);
+  --header-badge-text: var(--color-black);
+  --header-badge-border: rgba(243, 244, 246, 0.6);
   --hero-quick-border: rgba(0, 0, 0, 0.25);
   --hero-quick-bg: rgba(0, 0, 0, 0.06);
   --hero-quick-hover-bg: rgba(0, 0, 0, 0.12);
@@ -100,6 +110,16 @@ body.theme-night {
   --modal-surface-border: rgba(243, 244, 246, 0.28);
   --detail-secondary-border: rgba(0, 0, 0, 0.26);
   --detail-secondary-bg-hover: rgba(0, 0, 0, 0.08);
+  --btn-primary-bg: var(--color-white);
+  --btn-primary-text: var(--color-black);
+  --btn-primary-border: var(--color-white);
+  --btn-primary-bg-hover: var(--color-light-gray);
+  --btn-primary-text-hover: var(--color-black);
+  --btn-secondary-bg: var(--color-light-gray);
+  --btn-secondary-text: var(--color-black);
+  --btn-secondary-border: var(--color-white);
+  --btn-secondary-bg-hover: var(--color-white);
+  --btn-secondary-text-hover: var(--color-black);
   --focus-ring: rgba(243, 244, 246, 0.36);
   --error-text: var(--color-light-gray);
   --shadow: 0 18px 34px rgba(0, 0, 0, 0.42);
@@ -306,16 +326,21 @@ img {
   min-height: 38px;
   line-height: 1;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--muted);
+  border: 1px solid var(--btn-secondary-border);
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
   font-size: 0.88rem;
 }
 
+.menu-pill:hover {
+  background: var(--btn-secondary-bg-hover);
+  color: var(--btn-secondary-text-hover);
+}
+
 .menu-pill.active {
-  background: var(--text);
-  color: var(--card);
-  border-color: var(--text);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-border);
 }
 
 .chip {
@@ -324,19 +349,30 @@ img {
   justify-content: center;
   min-height: 38px;
   line-height: 1;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--text);
+  border: 1px solid var(--btn-secondary-border);
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
   border-radius: 999px;
   padding: 8px 13px;
   font-size: 0.83rem;
   cursor: pointer;
 }
 
+.chip:hover {
+  background: var(--btn-secondary-bg-hover);
+  color: var(--btn-secondary-text-hover);
+}
+
 .chip.dark {
-  background: var(--text);
-  color: var(--card);
-  border-color: var(--text);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-border);
+}
+
+.chip.dark:hover {
+  background: var(--btn-primary-bg-hover);
+  color: var(--btn-primary-text-hover);
+  border-color: var(--btn-primary-bg-hover);
 }
 
 .chip.ghost {
@@ -349,6 +385,29 @@ img {
   background: var(--header-ui-bg);
   border-color: var(--header-ui-border);
   color: var(--header-fg);
+}
+
+.header-actions .chip {
+  background: var(--header-ui-bg);
+  border-color: var(--header-ui-border);
+  color: var(--header-fg);
+}
+
+.header-actions .chip:hover {
+  background: var(--header-ui-bg-hover);
+  color: var(--header-fg);
+}
+
+.header-actions .chip.dark {
+  background: var(--header-fg);
+  color: var(--header-color, var(--color-navy));
+  border-color: var(--header-fg);
+}
+
+.header-actions .chip.dark:hover {
+  background: var(--header-ui-bg-hover);
+  color: var(--header-fg);
+  border-color: var(--header-ui-border);
 }
 
 .inline-form {
@@ -455,7 +514,8 @@ body.theme-night .hero-badge {
 
 .hero-dark-card p {
   margin: 0;
-  color: var(--muted);
+  color: var(--card-dark-text);
+  opacity: 0.84;
 }
 
 .hero-quick-grid {
@@ -504,9 +564,9 @@ body.theme-night .hero-quick-grid a:hover {
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  border: 1px solid var(--text);
-  background: var(--text);
-  color: var(--card);
+  border: 1px solid var(--btn-primary-border);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
   padding: 12px 16px;
   margin-top: 12px;
   cursor: pointer;
@@ -515,9 +575,9 @@ body.theme-night .hero-quick-grid a:hover {
 }
 
 .cta-main:hover {
-  background: var(--card-dark);
-  border-color: var(--card-dark);
-  color: var(--card-dark-text);
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
+  color: var(--btn-primary-text-hover);
 }
 
 .cta-main:focus-visible {
