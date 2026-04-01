@@ -113,25 +113,25 @@ const COMPACT_DEFAULT_FIELDS = Object.freeze([
 const DEFAULT_THEME_COLORS = Object.freeze({
   day: Object.freeze({
     headerColor: '#0f172a',
-    backgroundColor: '#f3f4f6',
-    textColor: '#000000',
-    mutedColor: '#4b5563',
-    lineColor: '#f3f4f6',
+    backgroundColor: '#f4f6fb',
+    textColor: '#111827',
+    mutedColor: '#5f6b7e',
+    lineColor: '#d6ddea',
     cardColor: '#ffffff',
     cardDarkColor: '#0f172a',
-    cardDarkTextColor: '#f3f4f6',
-    chipColor: '#f3f4f6'
+    cardDarkTextColor: '#f8fafc',
+    chipColor: '#eef2f8'
   }),
   night: Object.freeze({
-    headerColor: '#0f172a',
-    backgroundColor: '#000000',
-    textColor: '#ffffff',
-    mutedColor: '#f3f4f6',
-    lineColor: '#4b5563',
-    cardColor: '#0f172a',
-    cardDarkColor: '#ffffff',
-    cardDarkTextColor: '#000000',
-    chipColor: '#4b5563'
+    headerColor: '#0b1220',
+    backgroundColor: '#070b14',
+    textColor: '#f4f7ff',
+    mutedColor: '#aeb9cf',
+    lineColor: '#2f3b52',
+    cardColor: '#111a2b',
+    cardDarkColor: '#e8eef9',
+    cardDarkTextColor: '#0b1220',
+    chipColor: '#1a2438'
   })
 });
 
@@ -171,10 +171,7 @@ const PREVIOUS_NIGHT_THEME_COLORS_V1 = Object.freeze({
   cardDarkTextColor: '#000000',
   chipColor: '#0f172a'
 });
-const NIGHT_THEME_REFINED_FLAG_KEY = 'nightThemeRefinedV2Applied';
-
-const THEME_COLOR_PALETTE = Object.freeze(['#f3f4f6', '#4b5563', '#0f172a', '#000000', '#ffffff']);
-const THEME_COLOR_PALETTE_SET = new Set(THEME_COLOR_PALETTE);
+const THEME_REFINED_V4_FLAG_KEY = 'themeRefinedV4Applied';
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -1704,28 +1701,7 @@ function hexToRgb(hex = '#000000') {
 }
 
 function clampHexToThemePalette(rawColor = '', fallback = '#000000') {
-  const normalized = normalizeHexColor(rawColor, fallback);
-  if (THEME_COLOR_PALETTE_SET.has(normalized)) {
-    return normalized;
-  }
-
-  const target = hexToRgb(normalized);
-  let closest = THEME_COLOR_PALETTE[0];
-  let minDistance = Number.POSITIVE_INFINITY;
-
-  for (const candidate of THEME_COLOR_PALETTE) {
-    const rgb = hexToRgb(candidate);
-    const dr = target.r - rgb.r;
-    const dg = target.g - rgb.g;
-    const db = target.b - rgb.b;
-    const distance = dr * dr + dg * dg + db * db;
-    if (distance < minDistance) {
-      minDistance = distance;
-      closest = candidate;
-    }
-  }
-
-  return closest;
+  return normalizeHexColor(rawColor, fallback);
 }
 
 function maybeMigrateLegacyThemeColors() {
@@ -1797,12 +1773,14 @@ function maybeMigrateLegacyThemeColors() {
     }
   }
 
-  const nightThemeRefinedApplied = String(getSetting(NIGHT_THEME_REFINED_FLAG_KEY, '0') || '0');
-  if (nightThemeRefinedApplied !== '1') {
-    for (const [suffix, alias] of nightSettingMap) {
-      setSetting(`night${suffix}`, DEFAULT_THEME_COLORS.night[alias]);
+  const themeRefinedV4Applied = String(getSetting(THEME_REFINED_V4_FLAG_KEY, '0') || '0');
+  if (themeRefinedV4Applied !== '1') {
+    for (const modeKey of ['day', 'night']) {
+      for (const [suffix, alias] of nightSettingMap) {
+        setSetting(`${modeKey}${suffix}`, DEFAULT_THEME_COLORS[modeKey][alias]);
+      }
     }
-    setSetting(NIGHT_THEME_REFINED_FLAG_KEY, '1');
+    setSetting(THEME_REFINED_V4_FLAG_KEY, '1');
   }
 
   setSetting('headerColor', DEFAULT_THEME_COLORS.day.headerColor);
