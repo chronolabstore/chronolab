@@ -263,40 +263,70 @@
             </tr>
           <% } %>
           <% orders.forEach((item) => { %>
+            <%
+              const orderNo = item.order_no || '-';
+              const categoryLabel = item.category_group_label || item.category_group || '-';
+              const productTitle = [item.brand, item.model].filter(Boolean).join(' ').trim() || '-';
+              const productSubtitle = item.sub_model || '-';
+              const buyerName = item.buyer_name || '-';
+              const buyerPhone = item.buyer_contact || '-';
+              const buyerAddress = item.buyer_address || '-';
+              const customsNo = item.customs_clearance_no || '-';
+              const statusCode = String(item.status_code || '').toLowerCase();
+              const latestDate = item.latest_event_at ? item.latest_event_at.slice(0, 10) : '';
+              const latestTime = item.latest_event_at ? item.latest_event_at.slice(11, 16) : '';
+              const requestedDate = item.created_at ? item.created_at.slice(0, 10) : '-';
+              const requestedTime = item.created_at ? item.created_at.slice(11, 16) : '';
+              const pointsText = Number(item.awarded_points || 0) > 0 ? `${ctx.formatPrice(item.awarded_points)}P` : '-';
+              const trackingCheckedDate = item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 10) : '';
+              const trackingCheckedTime = item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(11, 16) : '';
+            %>
             <tr>
-              <td><%= item.order_no %></td>
-              <td><%= item.category_group_label || item.category_group || '-' %></td>
-              <td>
-                <strong><%= item.brand %> <%= item.model %></strong><br />
-                <small><%= item.sub_model || '-' %></small>
+              <td class="order-no-cell">
+                <span class="order-no-value"><%= orderNo %></span>
               </td>
-              <td>
-                <strong><%= item.buyer_name %></strong><br />
-                <small><%= item.buyer_contact %></small><br />
-                <small><%= isEn ? 'Customs' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small><br />
-                <small><%= item.buyer_address || '-' %></small>
+              <td class="order-category-cell">
+                <span class="order-category-chip"><%= categoryLabel %></span>
               </td>
-              <td>
-                <span class="order-status"><%= item.status_label %></span>
+              <td class="order-product-cell">
+                <strong><%= productTitle %></strong>
+                <small><%= productSubtitle %></small>
+              </td>
+              <td class="order-buyer-cell">
+                <strong><%= buyerName %></strong>
+                <small><%= isEn ? 'Phone' : '전화번호' %>: <%= buyerPhone %></small>
+                <small><%= isEn ? 'Address' : '주소' %>: <%= buyerAddress %></small>
+                <small><%= isEn ? 'Customs No.' : '통관번호' %>: <%= customsNo %></small>
+              </td>
+              <td class="order-status-cell">
+                <span class="order-status-badge order-status-badge-<%= statusCode %>"><%= item.status_label %></span>
                 <% if (item.status_detail) { %>
-                  <small class="muted-label"><%= item.status_detail %></small>
+                  <small class="order-status-detail"><%= item.status_detail %></small>
                 <% } %>
                 <% if (item.latest_event_at) { %>
-                  <small class="muted-label"><%= isEn ? 'Updated' : '최근 변경' %>: <%= item.latest_event_at.slice(0, 16) %></small>
+                  <small class="order-status-meta"><%= isEn ? 'Updated' : '최근 변경' %></small>
+                  <small class="order-status-datetime">
+                    <%= latestDate %><br /><%= latestTime %>
+                  </small>
                 <% } %>
               </td>
-              <td><%= Number(item.awarded_points || 0) > 0 ? `${ctx.formatPrice(item.awarded_points)}P` : '-' %></td>
-              <td>
+              <td class="order-points-cell">
+                <span class="order-points-pill <%= pointsText === '-' ? 'empty' : '' %>"><%= pointsText %></span>
+              </td>
+              <td class="order-tracking-cell">
                 <% if (item.tracking_number) { %>
-                  <small><strong><%= item.tracking_carrier_label || item.tracking_carrier || '-' %></strong></small><br />
-                  <small><%= item.tracking_number %></small><br />
-                  <small><%= item.tracking_last_event || '-' %></small><br />
-                  <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
+                  <small><%= isEn ? 'Courier' : '택배사' %>: <strong><%= item.tracking_carrier_label || item.tracking_carrier || '-' %></strong></small>
+                  <small><%= isEn ? 'Tracking No.' : '송장번호' %>: <%= item.tracking_number %></small>
+                  <small><%= isEn ? 'Last Event' : '배송상태' %>: <%= item.tracking_last_event || '-' %></small>
+                  <small><%= isEn ? 'Last Check' : '조회시각' %>: <%= trackingCheckedDate && trackingCheckedTime ? `${trackingCheckedDate} ${trackingCheckedTime}` : '-' %></small>
                 <% } else { %>
-                  <small>-</small>
+                  <small class="order-tracking-empty">-</small>
                 <% } %>
               </td>
-              <td><%= item.created_at ? item.created_at.slice(0, 16) : '-' %></td>
+              <td class="order-requested-cell">
+                <span class="order-requested-date"><%= requestedDate %></span>
+                <span class="order-requested-time"><%= requestedTime %></span>
+              </td>
             </tr>
           <% }) %>
         </tbody>
