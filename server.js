@@ -71,10 +71,22 @@ const ADMIN_MENUS = Object.freeze([
   { id: 'admin-members', labelKo: '회원관리', labelEn: 'Members', path: '/admin/members' },
   { id: 'admin-products', labelKo: '상품관리', labelEn: 'Products', path: '/admin/products' },
   { id: 'admin-orders', labelKo: '주문관리', labelEn: 'Orders', path: '/admin/orders' },
+  { id: 'admin-sales', labelKo: '매출관리', labelEn: 'Sales', path: '/admin/sales' },
   { id: 'admin-notices', labelKo: '공지사항', labelEn: 'Notices', path: '/admin/notices' },
   { id: 'admin-news', labelKo: '뉴스', labelEn: 'News', path: '/admin/news' },
   { id: 'admin-qc', labelKo: 'QC', labelEn: 'QC', path: '/admin/qc' },
   { id: 'admin-inquiries', labelKo: '문의답변', labelEn: 'Inquiries', path: '/admin/inquiries' }
+]);
+
+const SALES_SHEET_DEFAULT_URL =
+  'https://docs.google.com/spreadsheets/d/1ZBZ1BvTNTEn809EllGK1W4y9pv-neHxczny5awBqKSA/edit';
+const SALES_SHEET_CACHE_TTL_MS = 1000 * 60 * 3;
+const SALES_SHEET_TABS = Object.freeze([
+  { key: 'price', gid: '1876177949', labelKo: '가격표', labelEn: 'Price Table' },
+  { key: 'preorder', gid: '0', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement' },
+  { key: 'factory', gid: '1114704757', labelKo: '공장제 매출', labelEn: 'Factory Sales' },
+  { key: 'genparts', gid: '229912417', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales' },
+  { key: 'used', gid: '17869917', labelKo: '현지 중고 매출', labelEn: 'Local Used Sales' }
 ]);
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
@@ -2036,6 +2048,216 @@ let dashboardStatsCache = {
   expiresAt: 0,
   value: null
 };
+let salesSheetCache = {
+  expiresAt: 0,
+  value: null,
+  inFlight: null
+};
+
+function extractGoogleSheetId(sourceUrl = '') {
+  const value = String(sourceUrl || '').trim();
+  if (!value) return '';
+
+  const directMatch = value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (directMatch?.[1]) {
+    return directMatch[1];
+  }
+
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(value)) {
+    return value;
+  }
+  return '';
+}
+
+function parseGoogleVizResponseJson(rawText = '') {
+  const value = String(rawText || '').trim();
+  if (!value) {
+    return null;
+  }
+
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function parseNumericValue(value = '') {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const raw = String(value ?? '').trim();
+  if (!raw) {
+    return NaN;
+  }
+
+  const normalized = raw
+    .replace(/,/g, '')
+    .replace(/₩/g, '')
+    .replace(/원/g, '')
+    .replace(/krw/gi, '')
+    .replace(/rmb/gi, '')
+    .replace(/\s+/g, '');
+
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
+    return NaN;
+  }
+  return Number(normalized);
+}
+
+function normalizeGoogleSheetTable(rawTable = {}) {
+  const cols = Array.isArray(rawTable?.cols) ? rawTable.cols : [];
+  const rows = Array.isArray(rawTable?.rows) ? rawTable.rows : [];
+
+  const headers = cols.map((col, idx) => String(col?.label || col?.id || `COL${idx + 1}`).trim());
+  const normalizedRows = rows
+    .map((row) => {
+      const rowCells = Array.isArray(row?.c) ? row.c : [];
+      return headers.map((_, idx) => {
+        const cell = rowCells[idx] || null;
+        const raw = cell && Object.prototype.hasOwnProperty.call(cell, 'v') ? cell.v : '';
+        const display = cell && Object.prototype.hasOwnProperty.call(cell, 'f') ? String(cell.f || '') : String(raw ?? '');
+        const numeric = parseNumericValue(cell && Object.prototype.hasOwnProperty.call(cell, 'f') ? cell.f : raw);
+        return {
+          raw: raw ?? '',
+          display: display.trim(),
+          numeric: Number.isFinite(numeric) ? numeric : null
+        };
+      });
+    })
+    .filter((row) => row.some((cell) => String(cell.display || '').trim() !== ''));
+
+  const detectCol = (keywords = []) =>
+    headers.findIndex((header) =>
+      keywords.some((keyword) => String(header || '').toLowerCase().includes(String(keyword || '').toLowerCase()))
+    );
+  const sumColumn = (colIdx) => {
+    if (colIdx < 0) return null;
+    const total = normalizedRows.reduce((sum, row) => {
+      const value = row[colIdx]?.numeric;
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    return Number.isFinite(total) && total !== 0 ? total : 0;
+  };
+
+  const costCol = detectCol(['최종 원가', '시계 원가', '파츠 원가', '원가']);
+  const saleCol = detectCol(['판매 가격', '판매가']);
+  const marginCol = detectCol(['판매 마진', '마진']);
+  const qtyCol = detectCol(['주문량', '수량', '수주']);
+
+  const summary = {
+    rowCount: normalizedRows.length,
+    totalCost: sumColumn(costCol),
+    totalSales: sumColumn(saleCol),
+    totalMargin: sumColumn(marginCol),
+    totalQty: sumColumn(qtyCol)
+  };
+
+  return {
+    headers,
+    rows: normalizedRows.map((row) => row.map((cell) => cell.display)),
+    summary
+  };
+}
+
+async function fetchSalesSheetTab(sheetId, tabConfig) {
+  const url = new URL(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq`);
+  url.searchParams.set('tqx', 'out:json');
+  url.searchParams.set('gid', String(tabConfig.gid));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      accept: 'text/plain'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`sheet fetch failed(${response.status})`);
+  }
+
+  const raw = await response.text();
+  const parsed = parseGoogleVizResponseJson(raw);
+  if (!parsed || parsed.status !== 'ok') {
+    throw new Error('invalid gviz response');
+  }
+
+  const table = normalizeGoogleSheetTable(parsed.table || {});
+  return {
+    key: tabConfig.key,
+    gid: tabConfig.gid,
+    labelKo: tabConfig.labelKo,
+    labelEn: tabConfig.labelEn,
+    headers: table.headers,
+    rows: table.rows,
+    summary: table.summary,
+    status: 'ok'
+  };
+}
+
+async function getSalesSheetSnapshot(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && salesSheetCache.value && salesSheetCache.expiresAt > now) {
+    return salesSheetCache.value;
+  }
+  if (salesSheetCache.inFlight) {
+    return salesSheetCache.inFlight;
+  }
+
+  salesSheetCache.inFlight = (async () => {
+    const sourceUrl = getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL);
+    const sheetId = extractGoogleSheetId(sourceUrl) || extractGoogleSheetId(SALES_SHEET_DEFAULT_URL);
+    if (!sheetId) {
+      throw new Error('invalid sales sheet id');
+    }
+
+    const tabs = await Promise.all(
+      SALES_SHEET_TABS.map(async (tab) => {
+        try {
+          return await fetchSalesSheetTab(sheetId, tab);
+        } catch (error) {
+          return {
+            key: tab.key,
+            gid: tab.gid,
+            labelKo: tab.labelKo,
+            labelEn: tab.labelEn,
+            headers: [],
+            rows: [],
+            summary: { rowCount: 0, totalCost: 0, totalSales: 0, totalMargin: 0, totalQty: 0 },
+            status: 'error',
+            errorMessage: error instanceof Error ? error.message : 'failed to fetch'
+          };
+        }
+      })
+    );
+
+    const snapshot = {
+      sourceUrl,
+      sheetId,
+      fetchedAt: new Date().toISOString(),
+      tabs
+    };
+
+    salesSheetCache = {
+      expiresAt: Date.now() + SALES_SHEET_CACHE_TTL_MS,
+      value: snapshot,
+      inFlight: null
+    };
+    return snapshot;
+  })();
+
+  try {
+    return await salesSheetCache.inFlight;
+  } finally {
+    salesSheetCache.inFlight = null;
+  }
+}
 
 function isDeliveredState(payload) {
   const stateId = String(payload?.state?.id || '').toLowerCase();
@@ -6138,6 +6360,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     purchasePointRate: getPurchasePointRateSetting(),
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
+    salesSheetUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
     languageDefault: getSetting('languageDefault', 'ko'),
     menusJson: JSON.stringify(publicMenus, null, 2)
   };
@@ -6323,7 +6546,9 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     formatPrice,
     productGroups: productGroupConfigs.map((group) => group.key),
     productGroupConfigs,
-    groupLabelMap
+    groupLabelMap,
+    salesSheetTabs: SALES_SHEET_TABS,
+    salesSheetDefaultUrl: SALES_SHEET_DEFAULT_URL
   };
 }
 
@@ -6988,6 +7213,7 @@ app.get('/admin/products', requireAdmin, (req, res) =>
     productEditId: normalizeOptionalId(req.query.editId || '')
   })
 );
+app.get('/admin/sales', requireAdmin, (req, res) => renderAdminDashboard(req, res, 'sales'));
 app.get('/admin/notices', requireAdmin, (req, res) =>
   renderAdminDashboard(req, res, 'notices', {
     noticeSection: req.query.section || 'create'
@@ -7014,6 +7240,26 @@ app.get('/admin/orders', requireAdmin, (req, res) =>
 app.get('/admin/inquiries', requireAdmin, (req, res) =>
   renderAdminDashboard(req, res, 'inquiries', {
     inquirySection: req.query.section || 'reply'
+  })
+);
+
+app.get(
+  '/admin/sales/data',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const forceRefresh = req.query.refresh === '1';
+    const snapshot = await getSalesSheetSnapshot(forceRefresh);
+    const activeTabKey = String(req.query.tab || '').trim();
+    const tabs = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
+    const filteredTabs = activeTabKey ? tabs.filter((tab) => tab.key === activeTabKey) : tabs;
+
+    return res.json({
+      ok: true,
+      sourceUrl: snapshot.sourceUrl,
+      sheetId: snapshot.sheetId,
+      fetchedAt: snapshot.fetchedAt,
+      tabs: filteredTabs
+    });
   })
 );
 

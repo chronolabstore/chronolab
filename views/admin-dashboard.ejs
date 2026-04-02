@@ -101,6 +101,16 @@
   const newsTab = String(newsSection || '') === 'list' ? 'list' : 'create';
   const qcTab = String(qcSection || '') === 'list' ? 'list' : 'create';
   const inquiriesTab = String(inquirySection || '') === 'list' ? 'list' : 'reply';
+  const salesTabs = Array.isArray(salesSheetTabs) && salesSheetTabs.length > 0
+    ? salesSheetTabs
+    : [
+      { key: 'price', gid: '1876177949', labelKo: '가격표', labelEn: 'Price Table' },
+      { key: 'preorder', gid: '0', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement' },
+      { key: 'factory', gid: '1114704757', labelKo: '공장제 매출', labelEn: 'Factory Sales' },
+      { key: 'genparts', gid: '229912417', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales' },
+      { key: 'used', gid: '17869917', labelKo: '현지 중고 매출', labelEn: 'Local Used Sales' }
+    ];
+  const salesSourceUrl = settings?.salesSheetUrl || salesSheetDefaultUrl || '';
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
   const uploadActiveGroupKey =
     String(editingItem?.category_group || productGroupKeys[0] || defaultGroupKey);
@@ -2379,6 +2389,185 @@
       </table>
     </div>
   </article>
+  <% } %>
+
+  <% if (tab === 'sales') { %>
+  <article class="block-card">
+    <div class="sales-manage-head">
+      <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
+      <div class="admin-field-chip-row">
+        <% if (salesSourceUrl) { %>
+          <a href="<%= salesSourceUrl %>" target="_blank" rel="noreferrer" class="chip"><%= isEn ? 'Open Google Sheet' : '구글시트 열기' %></a>
+        <% } %>
+        <button type="button" class="chip dark" id="salesRefreshBtn"><%= isEn ? 'Refresh' : '새로고침' %></button>
+      </div>
+    </div>
+    <p class="muted-label"><%= isEn ? 'Price, cost, margin, and order settlement tables are synced from Google Sheet.' : '가격/원가/마진 및 주문 정산표를 구글시트에서 동기화해 보여줍니다.' %></p>
+
+    <div class="security-subnav sales-tab-nav" id="salesTabNav">
+      <% salesTabs.forEach((salesTab, idx) => { %>
+        <button type="button" class="menu-pill <%= idx === 0 ? 'active' : '' %>" data-sales-tab="<%= salesTab.key %>">
+          <%= isEn ? salesTab.labelEn : salesTab.labelKo %>
+        </button>
+      <% }) %>
+    </div>
+
+    <div class="sales-summary-grid" id="salesSummaryGrid"></div>
+
+    <div class="table-wrap sales-table-wrap">
+      <table class="sales-data-table" id="salesDataTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <p class="muted-label sales-meta" id="salesMetaText">-</p>
+    <p class="muted-label sales-error hidden" id="salesErrorText"></p>
+  </article>
+
+  <script>
+    (() => {
+      const tabButtons = Array.from(document.querySelectorAll('#salesTabNav [data-sales-tab]'));
+      const refreshButton = document.getElementById('salesRefreshBtn');
+      const summaryGrid = document.getElementById('salesSummaryGrid');
+      const table = document.getElementById('salesDataTable');
+      const tableHead = table?.querySelector('thead');
+      const tableBody = table?.querySelector('tbody');
+      const metaText = document.getElementById('salesMetaText');
+      const errorText = document.getElementById('salesErrorText');
+
+      if (!tabButtons.length || !summaryGrid || !tableHead || !tableBody || !metaText || !errorText) return;
+
+      const isEn = <%= isEn ? 'true' : 'false' %>;
+      const numberFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
+      const currencyFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
+      let currentTab = tabButtons[0].getAttribute('data-sales-tab') || '';
+
+      const setActiveTab = (tabKey) => {
+        currentTab = tabKey;
+        tabButtons.forEach((button) => {
+          button.classList.toggle('active', button.getAttribute('data-sales-tab') === tabKey);
+        });
+      };
+
+      const formatCurrency = (value) => {
+        const amount = Number(value || 0);
+        if (!Number.isFinite(amount)) return '-';
+        return `${isEn ? 'KRW ' : '₩'}${currencyFmt.format(amount)}`;
+      };
+
+      const formatQty = (value) => {
+        const amount = Number(value || 0);
+        if (!Number.isFinite(amount)) return '-';
+        return numberFmt.format(amount);
+      };
+
+      const renderSummary = (summary) => {
+        const cards = [
+          { labelKo: '행 수', labelEn: 'Rows', value: formatQty(summary?.rowCount || 0) },
+          { labelKo: '총 원가', labelEn: 'Total Cost', value: formatCurrency(summary?.totalCost || 0) },
+          { labelKo: '총 판매', labelEn: 'Total Sales', value: formatCurrency(summary?.totalSales || 0) },
+          { labelKo: '총 마진', labelEn: 'Total Margin', value: formatCurrency(summary?.totalMargin || 0) },
+          { labelKo: '총 수량', labelEn: 'Total Qty', value: formatQty(summary?.totalQty || 0) }
+        ];
+
+        summaryGrid.innerHTML = cards
+          .map((card) => `
+            <article class="sales-summary-card">
+              <h4>${isEn ? card.labelEn : card.labelKo}</h4>
+              <strong>${card.value}</strong>
+            </article>
+          `)
+          .join('');
+      };
+
+      const renderTable = (headers = [], rows = []) => {
+        if (!Array.isArray(headers) || headers.length === 0) {
+          tableHead.innerHTML = '';
+          tableBody.innerHTML = `<tr><td class="muted-label" colspan="1">${isEn ? 'No data found.' : '표시할 데이터가 없습니다.'}</td></tr>`;
+          return;
+        }
+
+        tableHead.innerHTML = `<tr>${headers.map((header) => `<th>${header || '-'}</th>`).join('')}</tr>`;
+        if (!Array.isArray(rows) || rows.length === 0) {
+          tableBody.innerHTML = `<tr><td class="muted-label" colspan="${headers.length}">${isEn ? 'No rows found.' : '표시할 행이 없습니다.'}</td></tr>`;
+          return;
+        }
+
+        tableBody.innerHTML = rows
+          .map(
+            (row) =>
+              `<tr>${headers
+                .map((_, idx) => `<td>${(Array.isArray(row) ? row[idx] : '') || '-'}</td>`)
+                .join('')}</tr>`
+          )
+          .join('');
+      };
+
+      const renderMeta = (tab, fetchedAt) => {
+        const title = isEn ? (tab?.labelEn || tab?.key || '-') : (tab?.labelKo || tab?.key || '-');
+        const dateText = fetchedAt ? new Date(fetchedAt).toLocaleString(isEn ? 'en-US' : 'ko-KR') : '-';
+        metaText.textContent = isEn
+          ? `Tab: ${title} · Last sync: ${dateText}`
+          : `탭: ${title} · 마지막 동기화: ${dateText}`;
+      };
+
+      const showError = (message) => {
+        errorText.textContent = message;
+        errorText.classList.remove('hidden');
+      };
+
+      const clearError = () => {
+        errorText.textContent = '';
+        errorText.classList.add('hidden');
+      };
+
+      const loadTab = async (tabKey, force = false) => {
+        if (!tabKey) return;
+        setActiveTab(tabKey);
+        clearError();
+        tableBody.innerHTML = `<tr><td class="muted-label" colspan="1">${isEn ? 'Loading…' : '불러오는 중…'}</td></tr>`;
+
+        try {
+          const query = new URLSearchParams({ tab: tabKey });
+          if (force) query.set('refresh', '1');
+          const response = await fetch(`/admin/sales/data?${query.toString()}`, {
+            headers: { accept: 'application/json' }
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.message || (isEn ? 'Failed to load sales data.' : '매출 데이터를 불러오지 못했습니다.'));
+          }
+
+          const tab = Array.isArray(payload.tabs) ? payload.tabs[0] : null;
+          if (!tab || tab.status !== 'ok') {
+            throw new Error(tab?.errorMessage || (isEn ? 'Sheet sync failed.' : '시트 동기화에 실패했습니다.'));
+          }
+
+          renderSummary(tab.summary || {});
+          renderTable(tab.headers || [], tab.rows || []);
+          renderMeta(tab, payload.fetchedAt || '');
+        } catch (error) {
+          renderSummary({ rowCount: 0, totalCost: 0, totalSales: 0, totalMargin: 0, totalQty: 0 });
+          renderTable([], []);
+          showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+        }
+      };
+
+      tabButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const tabKey = button.getAttribute('data-sales-tab') || '';
+          void loadTab(tabKey, false);
+        });
+      });
+
+      refreshButton?.addEventListener('click', () => {
+        void loadTab(currentTab, true);
+      });
+
+      void loadTab(currentTab, false);
+    })();
+  </script>
   <% } %>
 
   <% if (tab === 'inquiries') { %>
