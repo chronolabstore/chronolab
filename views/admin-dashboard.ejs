@@ -101,14 +101,14 @@
   const newsTab = String(newsSection || '') === 'list' ? 'list' : 'create';
   const qcTab = String(qcSection || '') === 'list' ? 'list' : 'create';
   const inquiriesTab = String(inquirySection || '') === 'list' ? 'list' : 'reply';
-  const salesTabs = Array.isArray(salesSheetTabs) && salesSheetTabs.length > 0
-    ? salesSheetTabs
+  const salesTabs = Array.isArray(salesMainTabs) && salesMainTabs.length > 0
+    ? salesMainTabs
     : [
-      { key: 'price', gid: '1876177949', labelKo: '가격표', labelEn: 'Price Table' },
-      { key: 'preorder', gid: '0', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement' },
-      { key: 'factory', gid: '1114704757', labelKo: '공장제 매출', labelEn: 'Factory Sales' },
-      { key: 'genparts', gid: '229912417', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales' },
-      { key: 'used', gid: '17869917', labelKo: '현지 중고 매출', labelEn: 'Local Used Sales' }
+      { key: 'price', labelKo: '공장제 가격표', labelEn: 'Factory Price Table', scopeType: 'factory' },
+      { key: 'preorder', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement', scopeType: 'round' },
+      { key: 'factory', labelKo: '공장제 매출', labelEn: 'Factory Sales', scopeType: 'round' },
+      { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'round' },
+      { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'round' }
     ];
   const salesSourceUrl = settings?.salesSheetUrl || salesSheetDefaultUrl || '';
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
@@ -2392,32 +2392,79 @@
   <% } %>
 
   <% if (tab === 'sales') { %>
-  <article class="block-card">
+  <article class="block-card sales-editor-card">
     <div class="sales-manage-head">
       <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
       <div class="admin-field-chip-row">
         <% if (salesSourceUrl) { %>
           <a href="<%= salesSourceUrl %>" target="_blank" rel="noreferrer" class="chip"><%= isEn ? 'Open Google Sheet' : '구글시트 열기' %></a>
         <% } %>
-        <button type="button" class="chip dark" id="salesRefreshBtn"><%= isEn ? 'Refresh' : '새로고침' %></button>
+        <button type="button" class="chip" id="salesImportBtn"><%= isEn ? 'Re-Import From Sheet' : '시트에서 다시 불러오기' %></button>
       </div>
     </div>
-    <p class="muted-label"><%= isEn ? 'Price, cost, margin, and order settlement tables are synced from Google Sheet.' : '가격/원가/마진 및 주문 정산표를 구글시트에서 동기화해 보여줍니다.' %></p>
 
-    <div class="security-subnav sales-tab-nav" id="salesTabNav">
+    <p class="muted-label">
+      <%= isEn ? 'You can edit this area like an internal spreadsheet. Exchange rate and shipping fee are global and instantly applied to all sales sheets.' : '어드민 내부 스프레드시트처럼 직접 편집할 수 있습니다. 환율/배송비는 전역값으로 모든 매출 시트에 즉시 적용됩니다.' %>
+    </p>
+
+    <div class="sales-global-settings">
+      <label class="sales-global-field">
+        <span><%= isEn ? 'CNY Cash Buying (KRW)' : '위안화 환율 (하나은행 현찰 살때 KRW)' %></span>
+        <input type="number" min="0" step="0.0001" id="salesExchangeRateInput" />
+      </label>
+      <label class="sales-global-field">
+        <span><%= isEn ? 'Shipping Fee (KRW)' : '배송비 (KRW)' %></span>
+        <input type="number" min="0" step="1" id="salesShippingFeeInput" />
+      </label>
+      <div class="sales-global-hint">
+        <strong id="salesShippingRmbText">-</strong>
+        <small class="muted-label"><%= isEn ? 'Converted shipping (RMB)' : '환산 배송비 (RMB)' %></small>
+      </div>
+      <div class="admin-field-chip-row">
+        <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Apply & Save' : '전역 적용 + 저장' %></button>
+        <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Fetch Naver/Hana Cash Rate' : '네이버(하나은행 현찰 살때) 자동 반영' %></button>
+      </div>
+    </div>
+
+    <div class="security-subnav sales-tab-nav" id="salesMainTabNav">
       <% salesTabs.forEach((salesTab, idx) => { %>
-        <button type="button" class="menu-pill <%= idx === 0 ? 'active' : '' %>" data-sales-tab="<%= salesTab.key %>">
+        <button type="button" class="menu-pill <%= idx === 0 ? 'active' : '' %>" data-sales-main-tab="<%= salesTab.key %>">
           <%= isEn ? salesTab.labelEn : salesTab.labelKo %>
         </button>
       <% }) %>
     </div>
 
+    <div class="sales-scope-toolbar">
+      <div id="salesScopeControls" class="sales-scope-controls"></div>
+      <div class="admin-field-chip-row">
+        <button type="button" class="chip" id="salesAddRowBtn"><%= isEn ? 'Add Row' : '행 추가' %></button>
+        <button type="button" class="chip dark" id="salesSaveBtn"><%= isEn ? 'Save Changes' : '변경 저장' %></button>
+      </div>
+    </div>
+
     <div class="sales-summary-grid" id="salesSummaryGrid"></div>
 
     <div class="table-wrap sales-table-wrap">
-      <table class="sales-data-table" id="salesDataTable">
-        <thead></thead>
-        <tbody></tbody>
+      <table class="sales-data-table" id="salesEditorTable">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th><%= isEn ? 'Factory' : '공장' %></th>
+            <th><%= isEn ? 'Brand' : '브랜드' %></th>
+            <th><%= isEn ? 'Model' : '모델' %></th>
+            <th><%= isEn ? 'Reference' : '레퍼런스' %></th>
+            <th><%= isEn ? 'Spec / Size' : '종류/사이즈' %></th>
+            <th><%= isEn ? 'Cost (RMB)' : '원가 (RMB)' %></th>
+            <th><%= isEn ? 'Cost (KRW)' : '원가 (KRW)' %></th>
+            <th><%= isEn ? 'Final Cost (KRW)' : '최종원가 (KRW)' %></th>
+            <th><%= isEn ? 'Sale Price (KRW)' : '판매가 (KRW)' %></th>
+            <th><%= isEn ? 'Margin (KRW)' : '마진 (KRW)' %></th>
+            <th><%= isEn ? 'Qty' : '수량' %></th>
+            <th><%= isEn ? 'Memo' : '메모' %></th>
+            <th><%= isEn ? 'Delete' : '삭제' %></th>
+          </tr>
+        </thead>
+        <tbody id="salesEditorTbody"></tbody>
       </table>
     </div>
 
@@ -2427,89 +2474,50 @@
 
   <script>
     (() => {
-      const tabButtons = Array.from(document.querySelectorAll('#salesTabNav [data-sales-tab]'));
-      const refreshButton = document.getElementById('salesRefreshBtn');
+      const mainTabButtons = Array.from(document.querySelectorAll('#salesMainTabNav [data-sales-main-tab]'));
+      const importBtn = document.getElementById('salesImportBtn');
+      const fxSyncBtn = document.getElementById('salesFxSyncBtn');
+      const applyGlobalBtn = document.getElementById('salesApplyGlobalBtn');
+      const saveBtn = document.getElementById('salesSaveBtn');
+      const addRowBtn = document.getElementById('salesAddRowBtn');
+      const scopeControls = document.getElementById('salesScopeControls');
+      const exchangeRateInput = document.getElementById('salesExchangeRateInput');
+      const shippingFeeInput = document.getElementById('salesShippingFeeInput');
+      const shippingRmbText = document.getElementById('salesShippingRmbText');
       const summaryGrid = document.getElementById('salesSummaryGrid');
-      const table = document.getElementById('salesDataTable');
-      const tableHead = table?.querySelector('thead');
-      const tableBody = table?.querySelector('tbody');
+      const tableBody = document.getElementById('salesEditorTbody');
       const metaText = document.getElementById('salesMetaText');
       const errorText = document.getElementById('salesErrorText');
 
-      if (!tabButtons.length || !summaryGrid || !tableHead || !tableBody || !metaText || !errorText) return;
+      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !shippingRmbText || !summaryGrid || !tableBody || !metaText || !errorText) {
+        return;
+      }
 
       const isEn = <%= isEn ? 'true' : 'false' %>;
-      const numberFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
-      const currencyFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
-      let currentTab = tabButtons[0].getAttribute('data-sales-tab') || '';
+      const tabDefs = <%- JSON.stringify(salesTabs || []) %>;
+      const numberFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR', { maximumFractionDigits: 4 });
+      const integerFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
 
-      const setActiveTab = (tabKey) => {
-        currentTab = tabKey;
-        tabButtons.forEach((button) => {
-          button.classList.toggle('active', button.getAttribute('data-sales-tab') === tabKey);
-        });
+      let workbook = null;
+      let activeTabKey = tabDefs[0]?.key || 'price';
+      let activeScopeId = '';
+      let dirty = false;
+
+      const toNumber = (value, fallback = 0) => {
+        const numeric = Number(String(value ?? '').replace(/,/g, ''));
+        if (!Number.isFinite(numeric)) return fallback;
+        return numeric;
       };
 
-      const formatCurrency = (value) => {
-        const amount = Number(value || 0);
-        if (!Number.isFinite(amount)) return '-';
-        return `${isEn ? 'KRW ' : '₩'}${currencyFmt.format(amount)}`;
+      const toPositive = (value, fallback = 0) => {
+        const numeric = toNumber(value, fallback);
+        if (!Number.isFinite(numeric) || numeric < 0) return fallback;
+        return numeric;
       };
 
-      const formatQty = (value) => {
-        const amount = Number(value || 0);
-        if (!Number.isFinite(amount)) return '-';
-        return numberFmt.format(amount);
-      };
-
-      const renderSummary = (summary) => {
-        const cards = [
-          { labelKo: '행 수', labelEn: 'Rows', value: formatQty(summary?.rowCount || 0) },
-          { labelKo: '총 원가', labelEn: 'Total Cost', value: formatCurrency(summary?.totalCost || 0) },
-          { labelKo: '총 판매', labelEn: 'Total Sales', value: formatCurrency(summary?.totalSales || 0) },
-          { labelKo: '총 마진', labelEn: 'Total Margin', value: formatCurrency(summary?.totalMargin || 0) },
-          { labelKo: '총 수량', labelEn: 'Total Qty', value: formatQty(summary?.totalQty || 0) }
-        ];
-
-        summaryGrid.innerHTML = cards
-          .map((card) => `
-            <article class="sales-summary-card">
-              <h4>${isEn ? card.labelEn : card.labelKo}</h4>
-              <strong>${card.value}</strong>
-            </article>
-          `)
-          .join('');
-      };
-
-      const renderTable = (headers = [], rows = []) => {
-        if (!Array.isArray(headers) || headers.length === 0) {
-          tableHead.innerHTML = '';
-          tableBody.innerHTML = `<tr><td class="muted-label" colspan="1">${isEn ? 'No data found.' : '표시할 데이터가 없습니다.'}</td></tr>`;
-          return;
-        }
-
-        tableHead.innerHTML = `<tr>${headers.map((header) => `<th>${header || '-'}</th>`).join('')}</tr>`;
-        if (!Array.isArray(rows) || rows.length === 0) {
-          tableBody.innerHTML = `<tr><td class="muted-label" colspan="${headers.length}">${isEn ? 'No rows found.' : '표시할 행이 없습니다.'}</td></tr>`;
-          return;
-        }
-
-        tableBody.innerHTML = rows
-          .map(
-            (row) =>
-              `<tr>${headers
-                .map((_, idx) => `<td>${(Array.isArray(row) ? row[idx] : '') || '-'}</td>`)
-                .join('')}</tr>`
-          )
-          .join('');
-      };
-
-      const renderMeta = (tab, fetchedAt) => {
-        const title = isEn ? (tab?.labelEn || tab?.key || '-') : (tab?.labelKo || tab?.key || '-');
-        const dateText = fetchedAt ? new Date(fetchedAt).toLocaleString(isEn ? 'en-US' : 'ko-KR') : '-';
-        metaText.textContent = isEn
-          ? `Tab: ${title} · Last sync: ${dateText}`
-          : `탭: ${title} · 마지막 동기화: ${dateText}`;
+      const formatKrw = (value) => {
+        const amount = Math.round(toPositive(value, 0));
+        return `${isEn ? 'KRW ' : '₩'}${integerFmt.format(amount)}`;
       };
 
       const showError = (message) => {
@@ -2522,54 +2530,594 @@
         errorText.classList.add('hidden');
       };
 
-      const loadTab = async (tabKey, force = false) => {
-        if (!tabKey) return;
-        setActiveTab(tabKey);
-        clearError();
-        tableBody.innerHTML = `<tr><td class="muted-label" colspan="1">${isEn ? 'Loading…' : '불러오는 중…'}</td></tr>`;
+      const getTabDef = () => tabDefs.find((item) => item.key === activeTabKey) || tabDefs[0] || { key: 'price', scopeType: 'factory' };
+      const getTabData = () => (workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs[activeTabKey] || null : null);
+      const getScopes = () => {
+        const tabDef = getTabDef();
+        const tab = getTabData();
+        if (!tab) return [];
+        return tabDef.scopeType === 'factory'
+          ? (Array.isArray(tab.groups) ? tab.groups : [])
+          : (Array.isArray(tab.rounds) ? tab.rounds : []);
+      };
 
+      const ensureActiveScope = () => {
+        const scopes = getScopes();
+        if (!scopes.length) {
+          activeScopeId = '';
+          return;
+        }
+        if (!scopes.some((item) => item.id === activeScopeId)) {
+          activeScopeId = scopes[0].id;
+        }
+      };
+
+      const getActiveScope = () => getScopes().find((scope) => scope.id === activeScopeId) || getScopes()[0] || null;
+
+      const calcRow = (row) => {
+        const exchangeRate = Math.max(0.0001, toPositive(workbook?.globals?.exchangeRate, 0));
+        const shippingFeeKrw = Math.max(0, toPositive(workbook?.globals?.shippingFeeKrw, 0));
+        const costRmb = Math.max(0, toPositive(row?.costRmb, 0));
+        const saleKrw = Math.max(0, toPositive(row?.saleKrw, 0));
+        const quantity = Math.max(1, Math.floor(toPositive(row?.quantity, 1) || 1));
+
+        const costKrw = Math.round(costRmb * exchangeRate);
+        const finalCostKrw = costKrw + Math.round(shippingFeeKrw);
+        const marginKrw = saleKrw - finalCostKrw;
+
+        return {
+          costKrw,
+          finalCostKrw,
+          marginKrw,
+          totalCostKrw: finalCostKrw * quantity,
+          totalSalesKrw: saleKrw * quantity,
+          totalMarginKrw: marginKrw * quantity
+        };
+      };
+
+      const renderMeta = (extraText = '') => {
+        const tabDef = getTabDef();
+        const scope = getActiveScope();
+        const updatedAt = workbook?.globals?.updatedAt
+          ? new Date(workbook.globals.updatedAt).toLocaleString(isEn ? 'en-US' : 'ko-KR')
+          : '-';
+        const statusText = dirty ? (isEn ? 'unsaved changes' : '저장되지 않은 변경') : (isEn ? 'saved' : '저장됨');
+        const base = isEn
+          ? `Tab: ${tabDef?.labelEn || tabDef?.key || '-'} · Scope: ${scope?.name || '-'} · ${statusText} · Updated: ${updatedAt}`
+          : `탭: ${tabDef?.labelKo || tabDef?.key || '-'} · 분류: ${scope?.name || '-'} · ${statusText} · 마지막 저장: ${updatedAt}`;
+        metaText.textContent = extraText ? `${base} · ${extraText}` : base;
+      };
+
+      const renderGlobalFields = () => {
+        if (!workbook?.globals) return;
+        const exchangeRate = toPositive(workbook.globals.exchangeRate, 0);
+        const shippingKrw = Math.round(toPositive(workbook.globals.shippingFeeKrw, 0));
+        exchangeRateInput.value = exchangeRate;
+        shippingFeeInput.value = shippingKrw;
+        const shippingRmb = exchangeRate > 0 ? shippingKrw / exchangeRate : 0;
+        shippingRmbText.textContent = `${numberFmt.format(Number(shippingRmb.toFixed(2)))} RMB`;
+      };
+
+      const renderSummary = () => {
+        const scope = getActiveScope();
+        if (!scope || !Array.isArray(scope.rows)) {
+          summaryGrid.innerHTML = '';
+          return;
+        }
+
+        let totalQty = 0;
+        let totalCostKrw = 0;
+        let totalSalesKrw = 0;
+        let totalMarginKrw = 0;
+
+        scope.rows.forEach((row) => {
+          const qty = Math.max(1, Math.floor(toPositive(row.quantity, 1) || 1));
+          const computed = calcRow(row);
+          totalQty += qty;
+          totalCostKrw += computed.totalCostKrw;
+          totalSalesKrw += computed.totalSalesKrw;
+          totalMarginKrw += computed.totalMarginKrw;
+        });
+
+        const cards = [
+          { ko: '행 수', en: 'Rows', value: integerFmt.format(scope.rows.length) },
+          { ko: '총 수량', en: 'Total Qty', value: integerFmt.format(totalQty) },
+          { ko: '총 원가', en: 'Total Cost', value: formatKrw(totalCostKrw) },
+          { ko: '총 판매', en: 'Total Sales', value: formatKrw(totalSalesKrw) },
+          { ko: '총 마진', en: 'Total Margin', value: formatKrw(totalMarginKrw) }
+        ];
+
+        summaryGrid.innerHTML = cards
+          .map((card) => `
+            <article class="sales-summary-card">
+              <h4>${isEn ? card.en : card.ko}</h4>
+              <strong>${card.value}</strong>
+            </article>
+          `)
+          .join('');
+      };
+
+      const updateComputedCells = (tr, row) => {
+        const computed = calcRow(row);
+        const costCell = tr.querySelector('[data-computed="costKrw"]');
+        const finalCostCell = tr.querySelector('[data-computed="finalCostKrw"]');
+        const marginCell = tr.querySelector('[data-computed="marginKrw"]');
+
+        if (costCell) costCell.textContent = formatKrw(computed.costKrw);
+        if (finalCostCell) finalCostCell.textContent = formatKrw(computed.finalCostKrw);
+        if (marginCell) {
+          marginCell.textContent = formatKrw(computed.marginKrw);
+          marginCell.classList.toggle('is-negative', computed.marginKrw < 0);
+          marginCell.classList.toggle('is-positive', computed.marginKrw > 0);
+        }
+      };
+
+      const renderTableRows = () => {
+        const scope = getActiveScope();
+        if (!scope) {
+          tableBody.innerHTML = `<tr><td colspan="14" class="muted-label">${isEn ? 'No scope selected.' : '선택된 분류가 없습니다.'}</td></tr>`;
+          return;
+        }
+
+        if (!Array.isArray(scope.rows) || scope.rows.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="14" class="muted-label">${isEn ? 'No rows yet. Add a row to start.' : '행이 없습니다. 행 추가로 시작하세요.'}</td></tr>`;
+          return;
+        }
+
+        tableBody.innerHTML = '';
+        scope.rows.forEach((row, index) => {
+          const tr = document.createElement('tr');
+          tr.dataset.rowId = row.id;
+
+          const makeCell = (content) => {
+            const td = document.createElement('td');
+            if (content instanceof HTMLElement) {
+              td.appendChild(content);
+            } else {
+              td.textContent = String(content ?? '');
+            }
+            return td;
+          };
+
+          const makeInput = (field, value, type = 'text', step = '') => {
+            const input = document.createElement('input');
+            input.type = type;
+            if (step) input.step = step;
+            if (type === 'number') input.min = '0';
+            input.value = value ?? '';
+            input.dataset.rowId = row.id;
+            input.dataset.field = field;
+            input.className = 'sales-inline-input';
+            return input;
+          };
+
+          const indexCell = makeCell(String(index + 1));
+          indexCell.className = 'sales-row-index';
+          tr.appendChild(indexCell);
+          tr.appendChild(makeCell(makeInput('factory', row.factory || (getTabDef().scopeType === 'factory' ? scope.name : ''))));
+          tr.appendChild(makeCell(makeInput('brand', row.brand)));
+          tr.appendChild(makeCell(makeInput('model', row.model)));
+          tr.appendChild(makeCell(makeInput('reference', row.reference)));
+          tr.appendChild(makeCell(makeInput('spec', row.spec)));
+          tr.appendChild(makeCell(makeInput('costRmb', row.costRmb, 'number', '0.01')));
+
+          const costCell = makeCell('-');
+          costCell.dataset.computed = 'costKrw';
+          costCell.className = 'sales-computed-cell';
+          tr.appendChild(costCell);
+
+          const finalCell = makeCell('-');
+          finalCell.dataset.computed = 'finalCostKrw';
+          finalCell.className = 'sales-computed-cell';
+          tr.appendChild(finalCell);
+
+          tr.appendChild(makeCell(makeInput('saleKrw', row.saleKrw, 'number', '1')));
+
+          const marginCell = makeCell('-');
+          marginCell.dataset.computed = 'marginKrw';
+          marginCell.className = 'sales-computed-cell';
+          tr.appendChild(marginCell);
+
+          tr.appendChild(makeCell(makeInput('quantity', row.quantity, 'number', '1')));
+          tr.appendChild(makeCell(makeInput('memo', row.memo)));
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'chip';
+          deleteBtn.dataset.rowDelete = row.id;
+          deleteBtn.textContent = isEn ? 'Delete' : '삭제';
+          tr.appendChild(makeCell(deleteBtn));
+
+          updateComputedCells(tr, row);
+          tableBody.appendChild(tr);
+        });
+      };
+
+      const renderScopeControls = () => {
+        scopeControls.innerHTML = '';
+
+        const tabDef = getTabDef();
+        const tab = getTabData();
+        const scopes = getScopes();
+        if (!tab) return;
+
+        const caption = document.createElement('p');
+        caption.className = 'muted-label';
+        caption.textContent = tabDef.scopeType === 'factory'
+          ? (isEn ? 'Factory sub-categories for factory price table' : '공장제 가격표의 공장별 하위 분류')
+          : (isEn ? 'Use dropdown rounds/batches for cleaner operation (instead of too many buttons).' : '버튼이 길어지는 문제를 피하려고 드롭다운 차수/회차 방식으로 구성했습니다.');
+        scopeControls.appendChild(caption);
+
+        if (tabDef.scopeType === 'factory') {
+          const nav = document.createElement('div');
+          nav.className = 'security-subnav';
+          scopes.forEach((scope) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `menu-pill ${scope.id === activeScopeId ? 'active' : ''}`;
+            btn.textContent = scope.name;
+            btn.addEventListener('click', () => {
+              activeScopeId = scope.id;
+              renderScopeControls();
+              renderTableRows();
+              renderSummary();
+              renderMeta();
+            });
+            nav.appendChild(btn);
+          });
+          scopeControls.appendChild(nav);
+
+          const action = document.createElement('div');
+          action.className = 'sales-scope-action-row';
+
+          const nameInput = document.createElement('input');
+          nameInput.type = 'text';
+          nameInput.placeholder = isEn ? 'Factory name' : '공장명';
+          nameInput.value = getActiveScope()?.name || '';
+
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'chip';
+          addBtn.textContent = isEn ? 'Add Factory Table' : '공장표 추가';
+          addBtn.addEventListener('click', () => {
+            const nextName = String(nameInput.value || '').trim() || (isEn ? 'New Factory' : '새 공장');
+            if (!Array.isArray(tab.groups)) tab.groups = [];
+            tab.groups.push({
+              id: `scope-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              name: nextName.slice(0, 80),
+              rows: []
+            });
+            activeScopeId = tab.groups[tab.groups.length - 1].id;
+            dirty = true;
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          const renameBtn = document.createElement('button');
+          renameBtn.type = 'button';
+          renameBtn.className = 'chip';
+          renameBtn.textContent = isEn ? 'Rename' : '이름변경';
+          renameBtn.addEventListener('click', () => {
+            const scope = getActiveScope();
+            if (!scope) return;
+            const nextName = String(nameInput.value || '').trim();
+            if (!nextName) return;
+            scope.name = nextName.slice(0, 80);
+            dirty = true;
+            renderScopeControls();
+            renderMeta();
+          });
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'chip';
+          deleteBtn.textContent = isEn ? 'Delete' : '삭제';
+          deleteBtn.addEventListener('click', () => {
+            if (!Array.isArray(tab.groups) || tab.groups.length <= 1) {
+              showError(isEn ? 'At least one factory table is required.' : '공장표는 최소 1개가 필요합니다.');
+              return;
+            }
+            clearError();
+            tab.groups = tab.groups.filter((scope) => scope.id !== activeScopeId);
+            activeScopeId = tab.groups[0]?.id || '';
+            dirty = true;
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          action.append(nameInput, addBtn, renameBtn, deleteBtn);
+          scopeControls.appendChild(action);
+          return;
+        }
+
+        const action = document.createElement('div');
+        action.className = 'sales-scope-action-row';
+
+        const roundLabel = document.createElement('label');
+        roundLabel.className = 'sales-round-select-wrap';
+        const roundCaption = document.createElement('span');
+        roundCaption.textContent = isEn ? 'Round/Batch' : '차수/회차';
+        const roundSelect = document.createElement('select');
+        scopes.forEach((scope) => {
+          const option = document.createElement('option');
+          option.value = scope.id;
+          option.textContent = scope.name;
+          option.selected = scope.id === activeScopeId;
+          roundSelect.appendChild(option);
+        });
+        roundSelect.addEventListener('change', () => {
+          activeScopeId = roundSelect.value;
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta();
+        });
+        roundLabel.append(roundCaption, roundSelect);
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = isEn ? 'Round/Batch name' : '차수/회차명';
+        nameInput.value = getActiveScope()?.name || '';
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'chip';
+        addBtn.textContent = isEn ? 'Add' : '추가';
+        addBtn.addEventListener('click', () => {
+          if (!Array.isArray(tab.rounds)) tab.rounds = [];
+          const fallbackName = tab.key === 'preorder'
+            ? `${tab.rounds.length + 1}차`
+            : (isEn ? `Batch ${tab.rounds.length + 1}` : `회차 ${tab.rounds.length + 1}`);
+          const nextName = String(nameInput.value || '').trim() || fallbackName;
+          tab.rounds.push({
+            id: `round-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: nextName.slice(0, 80),
+            rows: []
+          });
+          activeScopeId = tab.rounds[tab.rounds.length - 1].id;
+          dirty = true;
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta();
+        });
+
+        const renameBtn = document.createElement('button');
+        renameBtn.type = 'button';
+        renameBtn.className = 'chip';
+        renameBtn.textContent = isEn ? 'Rename' : '이름변경';
+        renameBtn.addEventListener('click', () => {
+          const scope = getActiveScope();
+          if (!scope) return;
+          const nextName = String(nameInput.value || '').trim();
+          if (!nextName) return;
+          scope.name = nextName.slice(0, 80);
+          dirty = true;
+          renderScopeControls();
+          renderMeta();
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'chip';
+        deleteBtn.textContent = isEn ? 'Delete' : '삭제';
+        deleteBtn.addEventListener('click', () => {
+          if (!Array.isArray(tab.rounds) || tab.rounds.length <= 1) {
+            showError(isEn ? 'At least one round is required.' : '차수/회차는 최소 1개가 필요합니다.');
+            return;
+          }
+          clearError();
+          tab.rounds = tab.rounds.filter((scope) => scope.id !== activeScopeId);
+          activeScopeId = tab.rounds[0]?.id || '';
+          dirty = true;
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta();
+        });
+
+        action.append(roundLabel, nameInput, addBtn, renameBtn, deleteBtn);
+        scopeControls.appendChild(action);
+      };
+
+      const setMainTab = (tabKey) => {
+        activeTabKey = tabKey;
+        mainTabButtons.forEach((button) => {
+          button.classList.toggle('active', button.getAttribute('data-sales-main-tab') === tabKey);
+        });
+        ensureActiveScope();
+        renderScopeControls();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      };
+
+      const saveWorkbook = async () => {
+        if (!workbook) return;
+        clearError();
         try {
-          const query = new URLSearchParams({ tab: tabKey });
-          if (force) query.set('refresh', '1');
-          const response = await fetch(`/admin/sales/data?${query.toString()}`, {
-            headers: { accept: 'application/json' }
+          const response = await fetch('/admin/sales/workbook', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              accept: 'application/json'
+            },
+            body: JSON.stringify({ workbook })
           });
           const payload = await response.json();
-          if (!response.ok || !payload?.ok) {
-            throw new Error(payload?.message || (isEn ? 'Failed to load sales data.' : '매출 데이터를 불러오지 못했습니다.'));
+          if (!response.ok || !payload?.ok || !payload?.workbook) {
+            throw new Error(payload?.message || (isEn ? 'Save failed.' : '저장 실패'));
           }
-
-          const tab = Array.isArray(payload.tabs) ? payload.tabs[0] : null;
-          if (!tab || tab.status !== 'ok') {
-            throw new Error(tab?.errorMessage || (isEn ? 'Sheet sync failed.' : '시트 동기화에 실패했습니다.'));
-          }
-
-          renderSummary(tab.summary || {});
-          renderTable(tab.headers || [], tab.rows || []);
-          renderMeta(tab, payload.fetchedAt || '');
+          workbook = payload.workbook;
+          dirty = false;
+          ensureActiveScope();
+          renderGlobalFields();
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta(isEn ? 'saved' : '저장됨');
         } catch (error) {
-          renderSummary({ rowCount: 0, totalCost: 0, totalSales: 0, totalMargin: 0, totalQty: 0 });
-          renderTable([], []);
           showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
         }
       };
 
-      tabButtons.forEach((button) => {
+      const loadWorkbook = async (options = {}) => {
+        clearError();
+        const importFromSheet = options.importFromSheet === true;
+        try {
+          const query = new URLSearchParams();
+          if (importFromSheet) query.set('importFromSheet', '1');
+          const response = await fetch(`/admin/sales/data${query.toString() ? `?${query.toString()}` : ''}`, {
+            headers: { accept: 'application/json' }
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload?.ok || !payload?.workbook) {
+            throw new Error(payload?.message || (isEn ? 'Failed to load workbook.' : '워크북을 불러오지 못했습니다.'));
+          }
+          workbook = payload.workbook;
+          ensureActiveScope();
+          dirty = false;
+          renderGlobalFields();
+          setMainTab(activeTabKey);
+        } catch (error) {
+          showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+        }
+      };
+
+      mainTabButtons.forEach((button) => {
         button.addEventListener('click', () => {
-          const tabKey = button.getAttribute('data-sales-tab') || '';
-          void loadTab(tabKey, false);
+          const tabKey = button.getAttribute('data-sales-main-tab') || '';
+          setMainTab(tabKey);
         });
       });
 
-      refreshButton?.addEventListener('click', () => {
-        void loadTab(currentTab, true);
+      tableBody.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const rowId = String(target.dataset.rowId || '');
+        const field = String(target.dataset.field || '');
+        if (!rowId || !field) return;
+
+        const scope = getActiveScope();
+        if (!scope || !Array.isArray(scope.rows)) return;
+        const row = scope.rows.find((item) => item.id === rowId);
+        if (!row) return;
+
+        if (field === 'costRmb' || field === 'saleKrw') {
+          row[field] = toPositive(target.value, 0);
+        } else if (field === 'quantity') {
+          row[field] = Math.max(1, Math.floor(toPositive(target.value, 1) || 1));
+        } else {
+          row[field] = String(target.value || '').slice(0, field === 'memo' ? 500 : 200);
+        }
+
+        const tr = target.closest('tr');
+        if (tr) updateComputedCells(tr, row);
+        dirty = true;
+        renderSummary();
+        renderMeta();
       });
 
-      void loadTab(currentTab, false);
+      tableBody.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLButtonElement)) return;
+        const rowId = String(target.dataset.rowDelete || '');
+        if (!rowId) return;
+
+        const scope = getActiveScope();
+        if (!scope || !Array.isArray(scope.rows)) return;
+        scope.rows = scope.rows.filter((row) => row.id !== rowId);
+        dirty = true;
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      addRowBtn?.addEventListener('click', () => {
+        const scope = getActiveScope();
+        if (!scope || !Array.isArray(scope.rows)) return;
+        scope.rows.push({
+          id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          factory: getTabDef().scopeType === 'factory' ? scope.name : '',
+          brand: '',
+          model: '',
+          reference: '',
+          spec: '',
+          costRmb: 0,
+          saleKrw: 0,
+          quantity: 1,
+          memo: ''
+        });
+        dirty = true;
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      exchangeRateInput?.addEventListener('input', () => {
+        if (!workbook?.globals) return;
+        workbook.globals.exchangeRate = Math.max(0.0001, toPositive(exchangeRateInput.value, 0.0001));
+        dirty = true;
+        renderGlobalFields();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      shippingFeeInput?.addEventListener('input', () => {
+        if (!workbook?.globals) return;
+        workbook.globals.shippingFeeKrw = Math.max(0, Math.round(toPositive(shippingFeeInput.value, 0)));
+        dirty = true;
+        renderGlobalFields();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      applyGlobalBtn?.addEventListener('click', () => {
+        void saveWorkbook();
+      });
+
+      saveBtn?.addEventListener('click', () => {
+        void saveWorkbook();
+      });
+
+      fxSyncBtn?.addEventListener('click', async () => {
+        clearError();
+        try {
+          const response = await fetch('/admin/sales/fx-sync', {
+            method: 'POST',
+            headers: { accept: 'application/json' }
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload?.ok || !payload?.workbook) {
+            throw new Error(payload?.message || (isEn ? 'FX sync failed.' : '환율 자동 반영 실패'));
+          }
+          workbook = payload.workbook;
+          dirty = false;
+          ensureActiveScope();
+          renderGlobalFields();
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta(isEn ? 'Naver/Hana rate applied' : '네이버/하나은행 환율 반영됨');
+        } catch (error) {
+          showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+        }
+      });
+
+      importBtn?.addEventListener('click', async () => {
+        await loadWorkbook({ importFromSheet: true });
+      });
+
+      void loadWorkbook({ importFromSheet: false });
     })();
   </script>
   <% } %>
-
   <% if (tab === 'inquiries') { %>
   <article class="block-card">
     <h3><%= isEn ? 'Inquiry Answer Management' : '문의 답변 관리' %></h3>
