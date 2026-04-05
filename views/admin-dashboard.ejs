@@ -1028,7 +1028,7 @@
             type="text"
             name="memberKeyword"
             value="<%= memberFilters.keyword || '' %>"
-            placeholder="<%= isEn ? 'Account / Name / Email / Phone' : '계정 / 이름 / 이메일 / 전화번호' %>"
+            placeholder="<%= isEn ? 'UID / Account / Nickname / Name / Email / Phone' : 'UID / 계정 / 닉네임 / 이름 / 이메일 / 전화번호' %>"
           />
         </label>
         <% if (memberSection === 'active' || memberSection === 'blocked') { %>
@@ -1050,86 +1050,122 @@
       <p class="muted-label"><%= isEn ? `Total ${memberPager.totalCount} records · Page ${memberPager.page}/${memberPager.totalPages}` : `총 ${memberPager.totalCount}건 · ${memberPager.page}/${memberPager.totalPages} 페이지` %></p>
 
       <% if (memberSection === 'active' || memberSection === 'blocked') { %>
-        <div class="admin-list">
-          <% if (memberPanel.members.length === 0) { %>
-            <p class="muted-label"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></p>
-          <% } %>
-
-          <% memberPanel.members.forEach((memberItem) => { %>
-            <div class="admin-list-item admin-account-item">
-              <div class="admin-account-row">
-                <div class="admin-account-brief">
-                  <strong><%= memberItem.username %></strong>
-                  <span><%= memberItem.full_name || '-' %> · <%= memberItem.email || '-' %></span>
-                  <span class="admin-account-level-line">
+        <div class="table-wrap">
+          <table class="member-admin-table">
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th><%= isEn ? 'Joined Date' : '가입일자' %></th>
+                <th>ID</th>
+                <th><%= isEn ? 'Nickname' : '닉네임' %></th>
+                <th><%= isEn ? 'Account ID' : '계정(아이디)' %></th>
+                <th><%= isEn ? 'Email' : '이메일' %></th>
+                <th><%= isEn ? 'Name (Profile)' : '이름(정보설정시)' %></th>
+                <th><%= isEn ? 'Phone (Profile)' : '전화번호(정보설정시)' %></th>
+                <th><%= isEn ? 'Level (Rate)' : '등급(적립률)' %></th>
+                <th><%= isEn ? 'Accumulated Amount' : '누적 구매금액' %></th>
+                <th><%= isEn ? 'Total Orders' : '누적구매건수' %></th>
+                <th><%= isEn ? 'Received Points' : '받은포인트' %></th>
+                <th><%= isEn ? 'Used Points' : '사용포인트' %></th>
+                <th><%= isEn ? 'Available Points' : '사용가능포인트' %></th>
+                <th><%= isEn ? 'Manage' : '관리' %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (memberPanel.members.length === 0) { %>
+                <tr>
+                  <td colspan="15"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></td>
+                </tr>
+              <% } %>
+              <% memberPanel.members.forEach((memberItem) => { %>
+                <tr>
+                  <td><strong><%= memberItem.member_uid || '-' %></strong></td>
+                  <td>
+                    <%= memberItem.created_at ? memberItem.created_at.slice(0, 10) : '-' %>
+                    <small><%= memberItem.created_at ? memberItem.created_at.slice(11, 16) : '' %></small>
+                  </td>
+                  <td><%= memberItem.id %></td>
+                  <td><%= memberItem.nickname || '-' %></td>
+                  <td><%= memberItem.username || '-' %></td>
+                  <td><%= memberItem.email || '-' %></td>
+                  <td><%= memberItem.full_name || '-' %></td>
+                  <td><%= memberItem.phone || '-' %></td>
+                  <td>
                     <span class="chip dark"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span>
-                    <span>
-                      <%= isEn ? 'Accumulated' : '누적' %>:
-                      ₩<%= Number(memberItem.level_applied_amount || 0).toLocaleString('ko-KR') %>
-                      · <%= isEn ? 'Point' : '적립률' %>:
-                      <%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%
-                    </span>
-                  </span>
-                </div>
-                <div class="admin-account-actions">
-                  <% if (memberItem.is_blocked) { %>
-                    <span class="chip"><%= isEn ? 'Blocked' : '블락됨' %></span>
-                  <% } %>
-                  <button
-                    type="button"
-                    class="chip"
-                    data-member-edit-toggle="<%= memberItem.id %>"
-                    aria-expanded="false"
-                    aria-controls="member-editor-<%= memberItem.id %>"
-                  ><%= isEn ? 'Edit' : '수정' %></button>
-                  <% if (memberItem.is_blocked) { %>
-                    <form method="post" action="/admin/member/<%= memberItem.id %>/unblock" class="inline-form">
-                      <button type="submit" class="chip dark"><%= isEn ? 'Unblock' : '블락해제' %></button>
-                    </form>
-                  <% } else { %>
-                    <form method="post" action="/admin/member/<%= memberItem.id %>/block" class="inline-form" data-member-block-form>
-                      <input type="hidden" name="blockReason" value="" data-member-block-reason />
-                      <button type="submit" class="chip"><%= isEn ? 'Block' : '블락' %></button>
-                    </form>
-                  <% } %>
-                </div>
-              </div>
+                    <small><%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%</small>
+                  </td>
+                  <td>₩<%= Number(memberItem.level_applied_amount || 0).toLocaleString('ko-KR') %></td>
+                  <td><%= Number(memberItem.order_count || 0).toLocaleString('ko-KR') %></td>
+                  <td><%= Number(memberItem.reward_points_received || 0).toLocaleString('ko-KR') %>P</td>
+                  <td><%= Number(memberItem.used_points_total || 0).toLocaleString('ko-KR') %>P</td>
+                  <td><%= Number(memberItem.reward_points_available || 0).toLocaleString('ko-KR') %>P</td>
+                  <td>
+                    <div class="admin-account-actions member-admin-actions">
+                      <% if (memberItem.is_blocked) { %>
+                        <span class="chip"><%= isEn ? 'Blocked' : '블락됨' %></span>
+                      <% } %>
+                      <button
+                        type="button"
+                        class="chip"
+                        data-member-edit-toggle="<%= memberItem.id %>"
+                        aria-expanded="false"
+                        aria-controls="member-editor-<%= memberItem.id %>"
+                      ><%= isEn ? 'Edit' : '수정' %></button>
+                      <% if (memberItem.is_blocked) { %>
+                        <form method="post" action="/admin/member/<%= memberItem.id %>/unblock" class="inline-form">
+                          <button type="submit" class="chip dark"><%= isEn ? 'Unblock' : '블락해제' %></button>
+                        </form>
+                      <% } else { %>
+                        <form method="post" action="/admin/member/<%= memberItem.id %>/block" class="inline-form" data-member-block-form>
+                          <input type="hidden" name="blockReason" value="" data-member-block-reason />
+                          <button type="submit" class="chip"><%= isEn ? 'Block' : '블락' %></button>
+                        </form>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+                <tr class="member-admin-editor-row">
+                  <td colspan="15">
+                    <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
+                      <div class="admin-account-meta">
+                        <small>UID: <%= memberItem.member_uid || '-' %></small>
+                        <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
+                        <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
+                        <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
+                        <small>
+                          <%= isEn ? 'Level' : '회원 레벨' %>: <%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %>
+                          (<%= memberItem.level_operator_label || '-' %> ₩<%= Number(memberItem.level_threshold_amount || 0).toLocaleString('ko-KR') %>)
+                        </small>
+                        <% if (memberItem.is_blocked) { %>
+                          <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
+                        <% } %>
+                      </div>
 
-              <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
-                <div class="admin-account-meta">
-                  <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
-                  <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
-                  <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
-                  <small>
-                    <%= isEn ? 'Level' : '회원 레벨' %>: <%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %>
-                    (<%= memberItem.level_operator_label || '-' %> ₩<%= Number(memberItem.level_threshold_amount || 0).toLocaleString('ko-KR') %>)
-                  </small>
-                  <% if (memberItem.is_blocked) { %>
-                    <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
-                  <% } %>
-                </div>
+                      <form method="post" action="/admin/member/<%= memberItem.id %>/update" class="form-grid compact">
+                        <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
+                        <label><span><%= isEn ? 'Nickname' : '닉네임' %></span><input type="text" name="nickname" maxlength="40" value="<%= memberItem.nickname || '' %>" required /></label>
+                        <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= memberItem.full_name || '' %>" /></label>
+                        <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= memberItem.email || '' %>" required /></label>
+                        <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= memberItem.phone || '' %>" /></label>
+                        <label class="check-row"><input type="checkbox" name="agreedTerms" <%= memberItem.agreed_terms ? 'checked' : '' %> /> <span><%= isEn ? 'Terms Agreed' : '약관 동의' %></span></label>
+                        <button type="submit" class="chip"><%= isEn ? 'Confirm Update' : '정보 수정 확인' %></button>
+                      </form>
 
-                <form method="post" action="/admin/member/<%= memberItem.id %>/update" class="form-grid compact">
-                  <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
-                  <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= memberItem.full_name || '' %>" /></label>
-                  <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= memberItem.email || '' %>" required /></label>
-                  <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= memberItem.phone || '' %>" /></label>
-                  <label class="check-row"><input type="checkbox" name="agreedTerms" <%= memberItem.agreed_terms ? 'checked' : '' %> /> <span><%= isEn ? 'Terms Agreed' : '약관 동의' %></span></label>
-                  <button type="submit" class="chip"><%= isEn ? 'Confirm Update' : '정보 수정 확인' %></button>
-                </form>
+                      <form method="post" action="/admin/member/<%= memberItem.id %>/password" class="form-grid compact">
+                        <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
+                        <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
+                        <button type="submit" class="chip"><%= isEn ? 'Reset Password' : '비밀번호 재설정' %></button>
+                      </form>
 
-                <form method="post" action="/admin/member/<%= memberItem.id %>/password" class="form-grid compact">
-                  <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
-                  <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
-                  <button type="submit" class="chip"><%= isEn ? 'Reset Password' : '비밀번호 재설정' %></button>
-                </form>
-
-                <% if (memberItem.is_blocked) { %>
-                  <p class="muted-label"><%= isEn ? 'Block Reason' : '블락 사유' %>: <%= memberItem.blocked_reason || (isEn ? 'No reason' : '사유 없음') %></p>
-                <% } %>
-              </div>
-            </div>
-          <% }) %>
+                      <% if (memberItem.is_blocked) { %>
+                        <p class="muted-label"><%= isEn ? 'Block Reason' : '블락 사유' %>: <%= memberItem.blocked_reason || (isEn ? 'No reason' : '사유 없음') %></p>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
         </div>
       <% } %>
 

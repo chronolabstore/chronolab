@@ -2953,6 +2953,40 @@ function generateOrderNo() {
   return `CL-${datePart}-${random}`;
 }
 
+function parseMemberUidSequence(rawUid = '') {
+  const matched = String(rawUid || '').trim().match(/^U(\d{1,12})$/i);
+  if (!matched) {
+    return 0;
+  }
+  const parsed = Number.parseInt(matched[1], 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function formatMemberUid(sequence = 1) {
+  const safe = Number.isInteger(sequence) && sequence > 0 ? sequence : 1;
+  return `U${String(safe).padStart(5, '0')}`;
+}
+
+function generateNextMemberUid() {
+  const latest = db
+    .prepare(
+      `
+        SELECT member_uid
+        FROM users
+        WHERE is_admin = 0
+          AND COALESCE(TRIM(member_uid), '') != ''
+        ORDER BY CAST(SUBSTR(member_uid, 2) AS INTEGER) DESC
+        LIMIT 1
+      `
+    )
+    .get();
+  const latestSequence = parseMemberUidSequence(latest?.member_uid || '');
+  return formatMemberUid(latestSequence + 1);
+}
+
 function issueSignupCaptcha(req) {
   const left = Math.floor(Math.random() * 9) + 1;
   const right = Math.floor(Math.random() * 9) + 1;
@@ -4979,6 +5013,11 @@ app.get('/mypage', requireAuth, (req, res) => {
     availablePoints,
     cartCount: getMemberCartCount(req.user.id)
   };
+  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const memberLevelInfo = {
+    name: memberPointProfile.levelName || (res.locals.ctx.lang === 'en' ? 'Unassigned' : '미지정'),
+    pointRate: parsePointRate(memberPointProfile.pointRate, 0)
+  };
 
   const ordersQuery = [
     'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
@@ -5077,6 +5116,7 @@ app.get('/mypage', requireAuth, (req, res) => {
       rewardPoints: Number(profile.reward_points || 0),
       profileImagePath: profile.profile_image_path || ''
     },
+    memberLevelInfo,
     addressBookEntries
   });
 });
@@ -5747,11 +5787,12 @@ app.post(
     const hash = await bcrypt.hash(password, 10);
     const signupBonusPoints = getSignupBonusPointsSetting();
     const createMember = db.transaction((nextEmail, nextAccount, nextNickname, nextPhone, nextHash, bonusPoints) => {
+      const memberUid = generateNextMemberUid();
       const inserted = db
         .prepare(
-          'INSERT INTO users (email, username, nickname, phone, password_hash, agreed_terms, is_admin) VALUES (?, ?, ?, ?, ?, 1, 0)'
+          'INSERT INTO users (member_uid, email, username, nickname, phone, password_hash, agreed_terms, is_admin) VALUES (?, ?, ?, ?, ?, ?, 1, 0)'
         )
-        .run(nextEmail, nextAccount, nextNickname, nextPhone, nextHash);
+        .run(memberUid, nextEmail, nextAccount, nextNickname, nextPhone, nextHash);
 
       const userId = Number(inserted.lastInsertRowid);
       if (bonusPoints > 0) {
@@ -7205,8 +7246,14 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
       const levelPointRate = levelId
         ? parsePointRate(pointRateMap[levelId], 0)
         : getLegacyPurchasePointRateSetting();
+      const availablePoints = parseNonNegativeInt(row.reward_points, 0);
+      const orderAwardedPoints = parseNonNegativeInt(row.awarded_points_total, 0);
+      const usedPoints = Math.max(0, orderAwardedPoints - availablePoints);
+      const receivedPoints = availablePoints + usedPoints;
       return {
         ...row,
+        member_uid: String(row.member_uid || '').trim(),
+        nickname: String(row.nickname || '').trim() || String(row.username || '').trim(),
         agreed_terms: Number(row.agreed_terms) === 1,
         is_blocked: Number(row.is_blocked) === 1,
         order_count: Number(row.order_count || 0),
@@ -7216,7 +7263,11 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
         level_threshold_amount: Number(levelRule?.thresholdAmount || 0),
         level_operator: levelRule?.operator || MEMBER_LEVEL_OPERATORS.GTE,
         level_operator_label: getMemberLevelOperatorLabel(levelRule?.operator || MEMBER_LEVEL_OPERATORS.GTE, lang),
-        level_applied_amount: totalAmount
+        level_applied_amount: totalAmount,
+        awarded_points_total: orderAwardedPoints,
+        used_points_total: usedPoints,
+        reward_points_available: availablePoints,
+        reward_points_received: receivedPoints
       };
     });
   };
@@ -7257,16 +7308,20 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
   }
 
   if (filters.keyword) {
-    where.push('(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)');
+    where.push(
+      '(u.member_uid LIKE ? OR u.username LIKE ? OR u.nickname LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)'
+    );
     const likeKeyword = `%${filters.keyword}%`;
-    params.push(likeKeyword, likeKeyword, likeKeyword, likeKeyword);
+    params.push(likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword);
   }
 
   const whereSql = where.join(' AND ');
   const baseMemberSelectSql = `
     SELECT
       u.id,
+      u.member_uid,
       u.username,
+      u.nickname,
       u.full_name,
       u.email,
       u.phone,
@@ -7274,12 +7329,18 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
       u.is_blocked,
       u.blocked_reason,
       u.blocked_at,
+      u.reward_points,
       u.created_at,
       (
         SELECT COUNT(*)
         FROM orders o
         WHERE o.created_by_user_id = u.id
-      ) AS order_count
+      ) AS order_count,
+      (
+        SELECT COALESCE(SUM(o.awarded_points), 0)
+        FROM orders o
+        WHERE o.created_by_user_id = u.id
+      ) AS awarded_points_total
     FROM users u
     WHERE ${whereSql}
     ORDER BY u.id DESC
@@ -7314,7 +7375,9 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
         `
           SELECT
             u.id,
+            u.member_uid,
             u.username,
+            u.nickname,
             u.full_name,
             u.email,
             u.phone,
@@ -7322,12 +7385,18 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
             u.is_blocked,
             u.blocked_reason,
             u.blocked_at,
+            u.reward_points,
             u.created_at,
             (
               SELECT COUNT(*)
               FROM orders o
               WHERE o.created_by_user_id = u.id
-            ) AS order_count
+            ) AS order_count,
+            (
+              SELECT COALESCE(SUM(o.awarded_points), 0)
+              FROM orders o
+              WHERE o.created_by_user_id = u.id
+            ) AS awarded_points_total
           FROM users u
           WHERE u.is_admin = 0
           ORDER BY u.id DESC
@@ -8043,13 +8112,14 @@ app.post('/admin/member/:id/update', requireAdmin, (req, res) => {
   }
 
   const username = String(req.body.username || '').trim();
+  const nickname = String(req.body.nickname || '').trim();
   const fullName = String(req.body.fullName || '').trim();
   const email = String(req.body.email || '').trim();
   const phone = normalizePhone(req.body.phone || '');
   const agreedTerms = req.body.agreedTerms === 'on' ? 1 : 0;
 
-  if (!username || !email) {
-    setFlash(req, 'error', '계정과 이메일은 필수입니다.');
+  if (!username || !nickname || !email) {
+    setFlash(req, 'error', '계정, 닉네임, 이메일은 필수입니다.');
     return res.redirect(backPath);
   }
 
@@ -8063,6 +8133,11 @@ app.post('/admin/member/:id/update', requireAdmin, (req, res) => {
     return res.redirect(backPath);
   }
 
+  if (nickname.length < 2 || nickname.length > 40) {
+    setFlash(req, 'error', '닉네임은 2~40자로 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
   if (phone && !PHONE_REGEX.test(phone)) {
     setFlash(req, 'error', '전화번호 형식이 올바르지 않습니다.');
     return res.redirect(backPath);
@@ -8072,10 +8147,10 @@ app.post('/admin/member/:id/update', requireAdmin, (req, res) => {
     db.prepare(
       `
         UPDATE users
-        SET username = ?, full_name = ?, email = ?, phone = ?, agreed_terms = ?
+        SET username = ?, nickname = ?, full_name = ?, email = ?, phone = ?, agreed_terms = ?
         WHERE id = ? AND is_admin = 0
       `
-    ).run(username, fullName, email, phone, agreedTerms, targetId);
+    ).run(username, nickname, fullName, email, phone, agreedTerms, targetId);
   } catch {
     setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
     return res.redirect(backPath);

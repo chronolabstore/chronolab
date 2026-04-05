@@ -9,7 +9,11 @@
 <% const summary = myPageSummary || { totalPurchaseAmount: 0, totalEarnedPoints: 0, usedPoints: 0, availablePoints: 0, cartCount: 0 }; %>
 <% const profileImage = profile.profileImagePath || ''; %>
 <% const nickname = profile.nickname || profile.username || (ctx.currentUser && ctx.currentUser.username) || '-'; %>
+<% const fullName = profile.fullName || '-'; %>
 <% const email = profile.email || (ctx.currentUser && ctx.currentUser.email) || '-'; %>
+<% const levelInfo = memberLevelInfo || {}; %>
+<% const levelName = levelInfo.name || (isEn ? 'Unassigned' : '미지정'); %>
+<% const levelRate = Number(levelInfo.pointRate || 0); %>
 
 <section class="block-card">
   <div class="section-head">
@@ -50,8 +54,16 @@
             </button>
           </form>
         </div>
-        <h3><%= nickname %></h3>
-        <p><%= email %></p>
+        <div class="mypage-identity">
+          <div class="mypage-identity-main">
+            <h3><%= nickname %></h3>
+            <span class="chip dark mypage-level-chip">
+              <%= `${isEn ? 'Level' : '회원등급'}: ${levelName} (${String(levelRate.toFixed(2)).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}%)` %>
+            </span>
+          </div>
+          <p class="mypage-identity-name"><%= fullName %></p>
+          <p class="mypage-identity-email"><%= email %></p>
+        </div>
       </article>
 
       <article class="mypage-info-stats">

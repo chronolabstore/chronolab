@@ -401,6 +401,84 @@ function ensureUserMemberProfileColumns() {
   ).run();
 }
 
+function parseMemberUidSequence(rawUid = '') {
+  const matched = String(rawUid || '').trim().match(/^U(\d{1,12})$/i);
+  if (!matched) {
+    return 0;
+  }
+  const parsed = Number.parseInt(matched[1], 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function formatMemberUid(sequence = 1) {
+  const safe = Number.isInteger(sequence) && sequence > 0 ? sequence : 1;
+  return `U${String(safe).padStart(5, '0')}`;
+}
+
+function ensureUserMemberUidColumn() {
+  const columns = db.prepare('PRAGMA table_info(users)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('member_uid')) {
+    db.prepare("ALTER TABLE users ADD COLUMN member_uid TEXT NOT NULL DEFAULT ''").run();
+    columnNames.add('member_uid');
+  }
+
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_users_member_uid ON users (member_uid)').run();
+
+  const usedRows = db
+    .prepare(
+      `
+        SELECT member_uid
+        FROM users
+        WHERE is_admin = 0
+          AND COALESCE(TRIM(member_uid), '') != ''
+      `
+    )
+    .all();
+  const usedSeq = new Set(
+    usedRows
+      .map((row) => parseMemberUidSequence(row.member_uid))
+      .filter((num) => Number.isInteger(num) && num > 0)
+  );
+
+  const missingRows = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE is_admin = 0
+          AND COALESCE(TRIM(member_uid), '') = ''
+        ORDER BY datetime(created_at) ASC, id ASC
+      `
+    )
+    .all();
+
+  if (missingRows.length === 0) {
+    return;
+  }
+
+  const assignTx = db.transaction(() => {
+    let cursor = 1;
+    for (const row of missingRows) {
+      while (usedSeq.has(cursor)) {
+        cursor += 1;
+      }
+      db.prepare('UPDATE users SET member_uid = ? WHERE id = ? AND is_admin = 0').run(
+        formatMemberUid(cursor),
+        row.id
+      );
+      usedSeq.add(cursor);
+      cursor += 1;
+    }
+  });
+
+  assignTx();
+}
+
 function ensureAddressBookTable() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS address_book (
@@ -1304,6 +1382,7 @@ export function initDb() {
   ensureProductsExtraFieldsColumn();
   ensureUserAdminProfileColumns();
   ensureUserMemberProfileColumns();
+  ensureUserMemberUidColumn();
   ensureAddressBookTable();
   ensureUserPointColumns();
   ensureUserBlockColumns();
@@ -1333,6 +1412,7 @@ export function initDb() {
   ensureAdminUser();
   normalizeAdminRoles();
   const demoUserId = ensureDemoMemberUser();
+  ensureUserMemberUidColumn();
 
   seedProducts();
   seedNotices();

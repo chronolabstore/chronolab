@@ -2364,6 +2364,38 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   text-align: center;
 }
 
+.mypage-identity {
+  width: 100%;
+  display: grid;
+  gap: 5px;
+  text-align: center;
+}
+
+.mypage-identity-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mypage-level-chip {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.mypage-identity-name,
+.mypage-identity-email {
+  margin: 0;
+  color: var(--muted);
+}
+
+.mypage-identity-name {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
 .mypage-avatar-wrap {
   width: 108px;
   height: 108px;
@@ -2940,6 +2972,81 @@ th {
 
 .product-list-table td:nth-child(6) {
   min-width: 240px;
+}
+
+.member-admin-table {
+  min-width: 1700px;
+}
+
+.member-admin-table th {
+  font-size: 0.76rem;
+  background: var(--chip);
+}
+
+.member-admin-table td {
+  font-size: 0.78rem;
+  vertical-align: middle;
+}
+
+.member-admin-table td small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.member-admin-table th:nth-child(1),
+.member-admin-table th:nth-child(2),
+.member-admin-table th:nth-child(3),
+.member-admin-table th:nth-child(11),
+.member-admin-table th:nth-child(12),
+.member-admin-table th:nth-child(13),
+.member-admin-table th:nth-child(14),
+.member-admin-table td:nth-child(1),
+.member-admin-table td:nth-child(2),
+.member-admin-table td:nth-child(3),
+.member-admin-table td:nth-child(11),
+.member-admin-table td:nth-child(12),
+.member-admin-table td:nth-child(13),
+.member-admin-table td:nth-child(14) {
+  text-align: center;
+}
+
+.member-admin-table td:nth-child(4),
+.member-admin-table td:nth-child(5),
+.member-admin-table td:nth-child(6),
+.member-admin-table td:nth-child(7),
+.member-admin-table td:nth-child(8) {
+  min-width: 130px;
+}
+
+.member-admin-table td:nth-child(9) {
+  min-width: 145px;
+}
+
+.member-admin-table td:nth-child(10) {
+  min-width: 120px;
+  text-align: right;
+}
+
+.member-admin-table td:nth-child(15) {
+  min-width: 170px;
+}
+
+.member-admin-actions {
+  justify-content: center;
+}
+
+.member-admin-editor-row td {
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
+.member-admin-editor-row .admin-account-editor {
+  border-top: none;
+  background: var(--card);
+  padding: 12px;
 }
 
 .mypage-order-table th:nth-child(1),
