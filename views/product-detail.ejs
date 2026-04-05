@@ -69,17 +69,19 @@
 
     <% if (isFactoryLikeProduct) { %>
       <div class="spec-grid">
-        <span>Reference: <strong><%= product.reference || '-' %></strong></span>
-        <span>Factory: <strong><%= product.factory_name || '-' %></strong></span>
-        <span>Version: <strong><%= product.version_name || '-' %></strong></span>
-        <span>Movement: <strong><%= product.movement || '-' %></strong></span>
-        <span>Case Size: <strong><%= product.case_size || '-' %></strong></span>
-        <span>Dial: <strong><%= product.dial_color || '-' %></strong></span>
-        <span>Case: <strong><%= product.case_material || '-' %></strong></span>
-        <span>Bracelet/Strap: <strong><%= product.strap_material || '-' %></strong></span>
-        <span><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></span>
+        <% if ((productDisplay?.specPairs || []).length === 0) { %>
+          <span><strong><%= isEn ? 'No configured spec fields.' : '설정된 스펙 항목이 없습니다.' %></strong></span>
+        <% } %>
+        <% (productDisplay?.specPairs || []).forEach((field) => { %>
+          <span>
+            <%= isEn ? (field.labelEn || field.labelKo || field.key) : (field.labelKo || field.labelEn || field.key) %>:
+            <strong><%= field.value || '-' %></strong>
+          </span>
+        <% }) %>
       </div>
-      <p class="feature-copy"><%= product.features || '-' %></p>
+      <% if (productDisplay?.featureCopy) { %>
+        <p class="feature-copy"><%= productDisplay.featureCopy %></p>
+      <% } %>
     <% } else { %>
       <div class="spec-grid">
         <span><%= isEn ? 'Detailed Description' : '상세설명' %>: <strong><%= productDisplay?.summary || '-' %></strong></span>

@@ -862,51 +862,93 @@ function buildProductDisplayData(product, groupConfig) {
   const fieldValues = getProductFieldValues(safeProduct, groupConfig);
   const isFactoryLike = isFactoryLikeGroup(groupConfig);
   const title = String(fieldValues.title || fieldValues.brand || safeProduct.brand || '').trim();
-  const summary = String(
-    fieldValues.detailed_description || fieldValues.features || safeProduct.sub_model || ''
-  ).trim();
-  const skipKeys = new Set(['title', 'detailed_description']);
-  if (isFactoryLike) {
-    [
-      'brand',
-      'model',
-      'sub_model',
-      'reference',
-      'factory_name',
-      'version_name',
-      'movement',
-      'case_size',
-      'dial_color',
-      'case_material',
-      'strap_material',
-      'features',
-      'price',
-      'shipping_period'
-    ].forEach((key) => skipKeys.add(key));
-  }
-  const customPairs = customFields
+
+  const fieldDefs = customFields
     .map((field) => {
-      const key = normalizeProductFieldAliasKey(field.key || '');
-      const value = String(fieldValues[key] || '').trim();
-      if (!value || skipKeys.has(key)) {
+      const key = normalizeProductFieldAliasKey(field?.key || '');
+      if (!key) {
         return null;
       }
       return {
         key,
-        labelKo: field.labelKo || field.key,
-        labelEn: field.labelEn || field.labelKo || field.key,
+        labelKo: String(field?.labelKo || field?.key || key).trim() || key,
+        labelEn: String(field?.labelEn || field?.labelKo || field?.key || key).trim() || key
+      };
+    })
+    .filter(Boolean);
+
+  const fieldDefByKey = new Map(fieldDefs.map((field) => [field.key, field]));
+  const hasField = (key) => fieldDefByKey.has(key);
+  const readField = (key) => String(fieldValues[key] || '').trim();
+
+  const summary = String(
+    readField('detailed_description') ||
+      readField('features') ||
+      safeProduct.sub_model ||
+      ''
+  ).trim();
+
+  const featureCopy = String(
+    readField('features') ||
+      (isFactoryLike ? '' : readField('detailed_description')) ||
+      ''
+  ).trim();
+
+  const skipKeys = new Set(['title', 'price']);
+  const customPairs = fieldDefs
+    .map((field) => {
+      const { key } = field;
+      const value = readField(key);
+      if (skipKeys.has(key)) {
+        return null;
+      }
+      if (!isFactoryLike && key === 'detailed_description') {
+        return null;
+      }
+      if (key === 'features') {
+        return null;
+      }
+      if (!value) {
+        return {
+          key,
+          labelKo: field.labelKo,
+          labelEn: field.labelEn,
+          value: '-'
+        };
+      }
+      return {
+        key,
+        labelKo: field.labelKo,
+        labelEn: field.labelEn,
         value
       };
     })
     .filter(Boolean);
 
+  const specPairs = isFactoryLike ? customPairs : [];
+  const factoryMeta = [];
+  if (isFactoryLike && hasField('case_material')) {
+    const caseMaterial = readField('case_material');
+    if (caseMaterial) factoryMeta.push(caseMaterial);
+  }
+  if (isFactoryLike && hasField('movement')) {
+    const movement = readField('movement');
+    if (movement) factoryMeta.push(movement);
+  }
+  const fallbackMeta = customPairs
+    .map((pair) => String(pair.value || '').trim())
+    .filter((value) => value && value !== '-')
+    .slice(0, 2);
+
   return {
     title: title || `${safeProduct.brand || ''} ${safeProduct.model || ''}`.trim() || '-',
     subtitle: summary || String(safeProduct.sub_model || '').trim(),
     meta: isFactoryLike
-      ? [safeProduct.case_material, safeProduct.movement].filter(Boolean).join(' / ')
-      : customPairs.map((pair) => pair.value).join(' / '),
+      ? (factoryMeta.length > 0 ? factoryMeta : fallbackMeta).join(' / ')
+      : customPairs.map((pair) => pair.value).filter((value) => value && value !== '-').join(' / '),
     summary: summary || String(safeProduct.features || '').trim(),
+    featureCopy,
+    specPairs,
     customPairs
   };
 }
