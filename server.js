@@ -3153,7 +3153,7 @@ function parsePointRate(rawValue, fallback = 0) {
 }
 
 function getSignupBonusPointsSetting() {
-  return parseNonNegativeInt(getSetting('signupBonusPoints', '0'), 0);
+  return parseNonNegativeInt(getSetting('signupBonusPoints', '10000'), 10000);
 }
 
 function getLegacyPurchasePointRateSetting() {

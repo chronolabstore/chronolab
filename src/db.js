@@ -180,7 +180,7 @@ const defaultSettings = {
   backgroundValue: '#f4f6fb',
   menus: JSON.stringify(defaultMenus),
   bankAccountInfo: '입금계좌: 은행명 000-0000-0000 (예금주: Chrono Lab)',
-  signupBonusPoints: '0',
+  signupBonusPoints: '10000',
   purchasePointRate: '0',
   memberLevelIncludedGroups: JSON.stringify(SHOP_PRODUCT_GROUPS),
   memberLevelRules: JSON.stringify(DEFAULT_MEMBER_LEVEL_RULES),
@@ -202,6 +202,17 @@ function upsertDefaultSetting(key, value) {
 
 function upsertMetric(key, value = 0) {
   db.prepare('INSERT OR IGNORE INTO metrics (metric_key, metric_value) VALUES (?, ?)').run(key, value);
+}
+
+function ensureSignupBonusBaseline() {
+  const row = db
+    .prepare('SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1')
+    .get('signupBonusPoints');
+  const raw = String(row?.setting_value ?? '').trim();
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    setSetting('signupBonusPoints', '10000');
+  }
 }
 
 function migrateLegacyThemeAssetSettings() {
@@ -1398,6 +1409,7 @@ export function initDb() {
   for (const [key, value] of Object.entries(defaultSettings)) {
     upsertDefaultSetting(key, value);
   }
+  ensureSignupBonusBaseline();
 
   migrateLegacyThemeAssetSettings();
 
