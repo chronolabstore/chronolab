@@ -916,9 +916,6 @@
       <a href="/admin/members?memberSection=levels" class="menu-pill <%= memberSection === 'levels' ? 'active' : '' %>">
         <%= isEn ? 'Level Settings' : '회원레벨 설정' %>
       </a>
-      <a href="/admin/members?memberSection=member-levels" class="menu-pill <%= memberSection === 'member-levels' ? 'active' : '' %>">
-        <%= isEn ? 'Member Levels' : '회원별 등급' %>
-      </a>
     </div>
 
     <% if (memberSection === 'levels') { %>
@@ -1034,7 +1031,7 @@
             placeholder="<%= isEn ? 'Account / Name / Email / Phone' : '계정 / 이름 / 이메일 / 전화번호' %>"
           />
         </label>
-        <% if (memberSection === 'member-levels') { %>
+        <% if (memberSection === 'active' || memberSection === 'blocked') { %>
           <label class="admin-filter-item">
             <span><%= isEn ? 'Level' : '회원 레벨' %></span>
             <select name="memberLevelRuleId">
@@ -1052,45 +1049,6 @@
       </form>
       <p class="muted-label"><%= isEn ? `Total ${memberPager.totalCount} records · Page ${memberPager.page}/${memberPager.totalPages}` : `총 ${memberPager.totalCount}건 · ${memberPager.page}/${memberPager.totalPages} 페이지` %></p>
 
-      <% if (memberSection === 'member-levels') { %>
-        <div class="table-wrap">
-          <table class="member-level-table">
-            <thead>
-              <tr>
-                <th><%= isEn ? 'Account' : '계정' %></th>
-                <th><%= isEn ? 'Member' : '회원' %></th>
-                <th><%= isEn ? 'Accumulated Amount' : '누적 구매금액' %></th>
-                <th><%= isEn ? 'Level' : '등급' %></th>
-                <th><%= isEn ? 'Point Rate' : '포인트율' %></th>
-                <th><%= isEn ? 'Orders' : '주문건수' %></th>
-                <th><%= isEn ? 'Created' : '가입일' %></th>
-              </tr>
-            </thead>
-            <tbody>
-              <% if (memberPanel.members.length === 0) { %>
-                <tr>
-                  <td colspan="7"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></td>
-                </tr>
-              <% } %>
-              <% memberPanel.members.forEach((memberItem) => { %>
-                <tr>
-                  <td><strong><%= memberItem.username %></strong></td>
-                  <td>
-                    <%= memberItem.full_name || '-' %>
-                    <small><%= memberItem.email || '-' %></small>
-                  </td>
-                  <td><strong>₩<%= Number(memberItem.level_applied_amount || 0).toLocaleString('ko-KR') %></strong></td>
-                  <td><span class="chip dark"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span></td>
-                  <td><%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%</td>
-                  <td><%= Number(memberItem.order_count || 0).toLocaleString() %></td>
-                  <td><%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></td>
-                </tr>
-              <% }) %>
-            </tbody>
-          </table>
-        </div>
-      <% } %>
-
       <% if (memberSection === 'active' || memberSection === 'blocked') { %>
         <div class="admin-list">
           <% if (memberPanel.members.length === 0) { %>
@@ -1103,6 +1061,15 @@
                 <div class="admin-account-brief">
                   <strong><%= memberItem.username %></strong>
                   <span><%= memberItem.full_name || '-' %> · <%= memberItem.email || '-' %></span>
+                  <span class="admin-account-level-line">
+                    <span class="chip dark"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span>
+                    <span>
+                      <%= isEn ? 'Accumulated' : '누적' %>:
+                      ₩<%= Number(memberItem.level_applied_amount || 0).toLocaleString('ko-KR') %>
+                      · <%= isEn ? 'Point' : '적립률' %>:
+                      <%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%
+                    </span>
+                  </span>
                 </div>
                 <div class="admin-account-actions">
                   <% if (memberItem.is_blocked) { %>
@@ -1133,6 +1100,10 @@
                   <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
                   <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
                   <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
+                  <small>
+                    <%= isEn ? 'Level' : '회원 레벨' %>: <%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %>
+                    (<%= memberItem.level_operator_label || '-' %> ₩<%= Number(memberItem.level_threshold_amount || 0).toLocaleString('ko-KR') %>)
+                  </small>
                   <% if (memberItem.is_blocked) { %>
                     <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
                   <% } %>

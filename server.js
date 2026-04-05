@@ -104,7 +104,7 @@ const SALES_CNY_NAVER_SEARCH_URL =
   'https://search.naver.com/search.naver?where=nexearch&query=%EC%9C%84%EC%95%88%ED%99%94+%ED%99%98%EC%9C%A8';
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
-const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels', 'member-levels']);
+const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels']);
 const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'level-rates']);
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
@@ -1486,7 +1486,7 @@ function normalizeMemberManageSection(rawSection = '') {
     return 'levels';
   }
   if (section === 'member-levels' || section === 'level-members') {
-    return 'member-levels';
+    return 'active';
   }
   return 'active';
 }
@@ -7290,7 +7290,12 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
   let totalPages = 1;
   let totalCount = 0;
 
-  if (filters.section === 'member-levels') {
+  if (filters.section === 'levels') {
+    members = [];
+    totalCount = 0;
+    totalPages = 1;
+    page = 1;
+  } else {
     const allRows = db.prepare(baseMemberSelectSql).all(...params);
     let decoratedRows = decorateRowsWithLevel(allRows);
     if (filters.levelRuleFilter !== 'all') {
@@ -7301,29 +7306,6 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
     page = clampPage(options.page, totalPages);
     const offset = (page - 1) * MEMBER_PAGE_SIZE;
     members = decoratedRows.slice(offset, offset + MEMBER_PAGE_SIZE);
-  } else if (filters.section === 'levels') {
-    members = [];
-    totalCount = 0;
-    totalPages = 1;
-    page = 1;
-  } else {
-    const totalRow = db
-      .prepare(
-        `
-          SELECT COUNT(*) AS count
-          FROM users u
-          WHERE ${whereSql}
-        `
-      )
-      .get(...params);
-    totalCount = Number(totalRow?.count || 0);
-    totalPages = Math.max(1, Math.ceil(totalCount / MEMBER_PAGE_SIZE));
-    page = clampPage(options.page, totalPages);
-    const offset = (page - 1) * MEMBER_PAGE_SIZE;
-    const pagedRows = db
-      .prepare(`${baseMemberSelectSql}\nLIMIT ?\nOFFSET ?`)
-      .all(...params, MEMBER_PAGE_SIZE, offset);
-    members = decorateRowsWithLevel(pagedRows);
   }
 
   const allMembersForSummary = decorateRowsWithLevel(
