@@ -20,7 +20,9 @@ import {
   incrementFunnelEvent,
   incrementVisit,
   setSetting,
-  SHOP_PRODUCT_GROUPS
+  SHOP_PRODUCT_GROUPS,
+  DEFAULT_MEMBER_LEVEL_RULES,
+  DEFAULT_MEMBER_LEVEL_POINT_RATES
 } from './src/db.js';
 import { resolveLanguage, t } from './src/i18n.js';
 
@@ -69,6 +71,7 @@ const ADMIN_MENUS = Object.freeze([
   { id: 'admin-site', labelKo: '사이트설정', labelEn: 'Site', path: '/admin/site' },
   { id: 'admin-menus', labelKo: '메뉴관리', labelEn: 'Menus', path: '/admin/menus' },
   { id: 'admin-members', labelKo: '회원관리', labelEn: 'Members', path: '/admin/members' },
+  { id: 'admin-points', labelKo: '포인트관리', labelEn: 'Points', path: '/admin/points' },
   { id: 'admin-products', labelKo: '상품관리', labelEn: 'Products', path: '/admin/products' },
   { id: 'admin-orders', labelKo: '주문관리', labelEn: 'Orders', path: '/admin/orders' },
   { id: 'admin-sales', labelKo: '매출관리', labelEn: 'Sales', path: '/admin/sales' },
@@ -101,6 +104,8 @@ const SALES_CNY_NAVER_SEARCH_URL =
   'https://search.naver.com/search.naver?where=nexearch&query=%EC%9C%84%EC%95%88%ED%99%94+%ED%99%98%EC%9C%A8';
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
+const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels', 'member-levels']);
+const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'level-rates']);
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
 const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -110,6 +115,12 @@ const PRODUCT_GROUP_MODE = Object.freeze({
   SIMPLE: 'simple'
 });
 const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
+const MEMBER_LEVEL_OPERATORS = Object.freeze({
+  LT: 'lt',
+  LTE: 'lte',
+  GT: 'gt',
+  GTE: 'gte'
+});
 
 const FACTORY_DEFAULT_FIELDS = Object.freeze([
   { key: 'brand', labelKo: '브랜드', labelEn: 'Brand', type: 'text', required: true },
@@ -1471,14 +1482,34 @@ function normalizeMemberManageSection(rawSection = '') {
   if (section === 'blocked' || section === 'blacklist') {
     return 'blocked';
   }
+  if (section === 'levels' || section === 'level-config') {
+    return 'levels';
+  }
+  if (section === 'member-levels' || section === 'level-members') {
+    return 'member-levels';
+  }
   return 'active';
 }
 
 function parseMemberManageQuery(query = {}) {
+  const section = normalizeMemberManageSection(query.memberSection || query.section || '');
+  const levelRules = getMemberLevelRulesSetting();
+  const levelRuleIds = levelRules.map((rule) => rule.id);
+  const selectedLevelRuleId = String(query.memberLevelRuleId || query.levelRuleId || '').trim();
+  const levelRuleFilter =
+    selectedLevelRuleId && levelRuleIds.includes(selectedLevelRuleId) ? selectedLevelRuleId : 'all';
+
   return {
-    section: normalizeMemberManageSection(query.memberSection || query.section || ''),
+    section,
     keyword: String(query.memberKeyword || query.keyword || '').trim().slice(0, 120),
+    levelRuleFilter,
     page: normalizePositivePage(query.memberPage || query.page || 1)
+  };
+}
+
+function parsePointManageQuery(query = {}) {
+  return {
+    section: normalizePointManageSection(query.pointSection || query.section || '')
   };
 }
 
@@ -1518,6 +1549,14 @@ function normalizeSiteManageSection(rawSection = '') {
     return 'theme';
   }
   return 'basic';
+}
+
+function normalizePointManageSection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  if (POINT_MANAGE_SECTIONS.includes(section)) {
+    return section;
+  }
+  return 'signup';
 }
 
 function normalizeProductManageSection(rawSection = '') {
@@ -3083,7 +3122,7 @@ function getSignupBonusPointsSetting() {
   return parseNonNegativeInt(getSetting('signupBonusPoints', '0'), 0);
 }
 
-function getPurchasePointRateSetting() {
+function getLegacyPurchasePointRateSetting() {
   return parsePointRate(getSetting('purchasePointRate', '0'), 0);
 }
 
@@ -3094,6 +3133,343 @@ function calculateEarnedPoints(totalPrice, pointRate) {
     return 0;
   }
   return Math.max(0, Math.floor((amount * rate) / 100));
+}
+
+function normalizeMemberLevelOperator(rawOperator = '') {
+  const operator = String(rawOperator || '').trim().toLowerCase();
+  if (operator === MEMBER_LEVEL_OPERATORS.LT || operator === '<' || operator === '미만') {
+    return MEMBER_LEVEL_OPERATORS.LT;
+  }
+  if (operator === MEMBER_LEVEL_OPERATORS.LTE || operator === '<=' || operator === '이하') {
+    return MEMBER_LEVEL_OPERATORS.LTE;
+  }
+  if (operator === MEMBER_LEVEL_OPERATORS.GT || operator === '>' || operator === '초과') {
+    return MEMBER_LEVEL_OPERATORS.GT;
+  }
+  if (operator === MEMBER_LEVEL_OPERATORS.GTE || operator === '>=' || operator === '이상') {
+    return MEMBER_LEVEL_OPERATORS.GTE;
+  }
+  return MEMBER_LEVEL_OPERATORS.GTE;
+}
+
+function getMemberLevelOperatorLabel(rawOperator = '', lang = 'ko') {
+  const operator = normalizeMemberLevelOperator(rawOperator);
+  if (operator === MEMBER_LEVEL_OPERATORS.LT) {
+    return lang === 'en' ? 'less than (<)' : '미만 (<)';
+  }
+  if (operator === MEMBER_LEVEL_OPERATORS.LTE) {
+    return lang === 'en' ? 'or below (<=)' : '이하 (<=)';
+  }
+  if (operator === MEMBER_LEVEL_OPERATORS.GT) {
+    return lang === 'en' ? 'greater than (>)' : '초과 (>)';
+  }
+  return lang === 'en' ? 'or above (>=)' : '이상 (>=)';
+}
+
+function getMemberLevelOperatorPriority(rawOperator = '') {
+  const operator = normalizeMemberLevelOperator(rawOperator);
+  if (operator === MEMBER_LEVEL_OPERATORS.GTE) return 0;
+  if (operator === MEMBER_LEVEL_OPERATORS.GT) return 1;
+  if (operator === MEMBER_LEVEL_OPERATORS.LTE) return 2;
+  return 3;
+}
+
+function buildDefaultMemberLevelRules() {
+  return DEFAULT_MEMBER_LEVEL_RULES.map((rule, index) => ({
+    id: String(rule.id || `level-${index + 1}`),
+    name: String(rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    operator: normalizeMemberLevelOperator(rule.operator || MEMBER_LEVEL_OPERATORS.GTE),
+    thresholdAmount: parseNonNegativeInt(rule.thresholdAmount, 0)
+  }));
+}
+
+function normalizeMemberLevelName(rawName = '', fallbackName = '') {
+  const name = String(rawName || '').trim().slice(0, 40);
+  if (name) {
+    return name;
+  }
+  return String(fallbackName || '').trim().slice(0, 40);
+}
+
+function parseMemberLevelThresholdAmount(rawAmount = '', fallback = 0) {
+  const digits = String(rawAmount ?? '')
+    .replace(/[^0-9]/g, '')
+    .trim();
+  if (!digits) {
+    return parseNonNegativeInt(fallback, 0);
+  }
+  return parseNonNegativeInt(digits, parseNonNegativeInt(fallback, 0));
+}
+
+function buildUniqueMemberLevelId(rawBase = '', existingIds = []) {
+  const normalizedBase = String(rawBase || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 54);
+  const base = normalizedBase || 'level';
+  const used = new Set((Array.isArray(existingIds) ? existingIds : []).map((item) => String(item || '').trim()));
+
+  let candidate = base;
+  let seq = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${seq}`;
+    seq += 1;
+  }
+  return candidate.slice(0, 64);
+}
+
+function parseMemberLevelRules(rawValue = '', fallbackRules = []) {
+  let parsed = [];
+  try {
+    const maybeParsed = JSON.parse(String(rawValue || '[]'));
+    if (Array.isArray(maybeParsed)) {
+      parsed = maybeParsed;
+    }
+  } catch {
+    parsed = [];
+  }
+
+  const usedIds = new Set();
+  const normalized = parsed
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => {
+      const idCandidate = String(item.id || '').trim().slice(0, 64);
+      let levelId = idCandidate || `level-${index + 1}`;
+      if (usedIds.has(levelId)) {
+        levelId = `${levelId}-${index + 1}`;
+      }
+      usedIds.add(levelId);
+      const name = String(item.name || item.label || '').trim().slice(0, 40) || `등급${index + 1}`;
+      return {
+        id: levelId,
+        name,
+        operator: normalizeMemberLevelOperator(item.operator || item.condition || item.direction),
+        thresholdAmount: parseNonNegativeInt(item.thresholdAmount ?? item.amount ?? item.threshold, 0)
+      };
+    })
+    .filter((item) => item.name);
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return fallbackRules.map((rule, index) => ({
+    id: String(rule.id || `level-${index + 1}`),
+    name: String(rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    operator: normalizeMemberLevelOperator(rule.operator || MEMBER_LEVEL_OPERATORS.GTE),
+    thresholdAmount: parseNonNegativeInt(rule.thresholdAmount, 0)
+  }));
+}
+
+function getMemberLevelRulesSetting() {
+  const fallbackRules = buildDefaultMemberLevelRules();
+  const rawValue = getSetting('memberLevelRules', JSON.stringify(fallbackRules));
+  return parseMemberLevelRules(rawValue, fallbackRules);
+}
+
+function getMemberLevelIncludedGroupsSetting(availableGroups = []) {
+  const fallbackGroups = availableGroups.length > 0 ? [...availableGroups] : [...SHOP_PRODUCT_GROUPS];
+  let parsed = [];
+  try {
+    const maybeParsed = JSON.parse(
+      String(getSetting('memberLevelIncludedGroups', JSON.stringify(fallbackGroups)) || '[]')
+    );
+    if (Array.isArray(maybeParsed)) {
+      parsed = maybeParsed;
+    }
+  } catch {
+    parsed = [];
+  }
+
+  const normalized = parsed
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index);
+
+  const onlyAllowed = normalized.filter((item) => fallbackGroups.includes(item));
+  if (onlyAllowed.length > 0) {
+    return onlyAllowed;
+  }
+  return fallbackGroups;
+}
+
+function getMemberLevelPointRateMapSetting(levelRules = []) {
+  let parsed = {};
+  try {
+    const maybeParsed = JSON.parse(
+      String(
+        getSetting('memberLevelPointRates', JSON.stringify(DEFAULT_MEMBER_LEVEL_POINT_RATES)) || '{}'
+      )
+    );
+    if (maybeParsed && typeof maybeParsed === 'object' && !Array.isArray(maybeParsed)) {
+      parsed = maybeParsed;
+    }
+  } catch {
+    parsed = {};
+  }
+
+  const nextMap = {};
+  levelRules.forEach((rule) => {
+    nextMap[rule.id] = parsePointRate(parsed[rule.id], parsePointRate(DEFAULT_MEMBER_LEVEL_POINT_RATES[rule.id], 0));
+  });
+  return nextMap;
+}
+
+function getRawMemberLevelPointRateSetting() {
+  let parsed = {};
+  try {
+    const maybeParsed = JSON.parse(
+      String(
+        getSetting('memberLevelPointRates', JSON.stringify(DEFAULT_MEMBER_LEVEL_POINT_RATES)) || '{}'
+      )
+    );
+    if (maybeParsed && typeof maybeParsed === 'object' && !Array.isArray(maybeParsed)) {
+      parsed = maybeParsed;
+    }
+  } catch {
+    parsed = {};
+  }
+  return parsed;
+}
+
+function saveMemberLevelPointRates(levelRules = [], sourceMap = {}) {
+  const nextMap = {};
+  const safeSource = sourceMap && typeof sourceMap === 'object' && !Array.isArray(sourceMap)
+    ? sourceMap
+    : {};
+  levelRules.forEach((rule) => {
+    nextMap[rule.id] = parsePointRate(
+      safeSource[rule.id],
+      parsePointRate(DEFAULT_MEMBER_LEVEL_POINT_RATES[rule.id], 0)
+    );
+  });
+  setSetting('memberLevelPointRates', JSON.stringify(nextMap));
+  return nextMap;
+}
+
+function resolveMemberLevelByAmount(totalAmount, levelRules = []) {
+  const amount = Number(totalAmount || 0);
+  if (!Number.isFinite(amount) || amount < 0 || levelRules.length === 0) {
+    return null;
+  }
+
+  const matched = levelRules.filter((rule) => {
+    const operator = normalizeMemberLevelOperator(rule.operator || MEMBER_LEVEL_OPERATORS.GTE);
+    const threshold = Number(rule.thresholdAmount || 0);
+    if (operator === MEMBER_LEVEL_OPERATORS.LT) {
+      return amount < threshold;
+    }
+    if (operator === MEMBER_LEVEL_OPERATORS.LTE) {
+      return amount <= threshold;
+    }
+    if (operator === MEMBER_LEVEL_OPERATORS.GT) {
+      return amount > threshold;
+    }
+    return amount >= threshold;
+  });
+
+  if (matched.length === 0) {
+    return null;
+  }
+
+  matched.sort((a, b) => {
+    const thresholdDiff = Number(b.thresholdAmount || 0) - Number(a.thresholdAmount || 0);
+    if (thresholdDiff !== 0) {
+      return thresholdDiff;
+    }
+    return getMemberLevelOperatorPriority(a.operator) - getMemberLevelOperatorPriority(b.operator);
+  });
+
+  return matched[0];
+}
+
+function getMemberAccumulatedPurchaseAmount(userId, includedGroups = []) {
+  const targetUserId = Number(userId || 0);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return 0;
+  }
+  if (!Array.isArray(includedGroups) || includedGroups.length === 0) {
+    return 0;
+  }
+
+  const placeholders = includedGroups.map(() => '?').join(', ');
+  const row = db
+    .prepare(
+      `
+        SELECT COALESCE(SUM(o.total_price), 0) AS total_amount
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE o.created_by_user_id = ?
+          AND UPPER(TRIM(o.status)) != ?
+          AND p.category_group IN (${placeholders})
+      `
+    )
+    .get(targetUserId, ORDER_STATUS.PENDING_REVIEW, ...includedGroups);
+
+  return Number(row?.total_amount || 0);
+}
+
+function getMemberAccumulatedTotalsMap(userIds = [], includedGroups = []) {
+  const uniqueUserIds = [...new Set((Array.isArray(userIds) ? userIds : [])
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0))];
+
+  const resultMap = new Map();
+  if (uniqueUserIds.length === 0 || !Array.isArray(includedGroups) || includedGroups.length === 0) {
+    return resultMap;
+  }
+
+  const userPlaceholders = uniqueUserIds.map(() => '?').join(', ');
+  const groupPlaceholders = includedGroups.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          o.created_by_user_id AS user_id,
+          COALESCE(SUM(o.total_price), 0) AS total_amount
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE o.created_by_user_id IN (${userPlaceholders})
+          AND UPPER(TRIM(o.status)) != ?
+          AND p.category_group IN (${groupPlaceholders})
+        GROUP BY o.created_by_user_id
+      `
+    )
+    .all(...uniqueUserIds, ORDER_STATUS.PENDING_REVIEW, ...includedGroups);
+
+  rows.forEach((row) => {
+    resultMap.set(Number(row.user_id), Number(row.total_amount || 0));
+  });
+  return resultMap;
+}
+
+function getMemberPointProfile(userId) {
+  const groupConfigs = getProductGroupConfigs();
+  const availableGroups = groupConfigs.map((group) => group.key);
+  const includedGroups = getMemberLevelIncludedGroupsSetting(availableGroups);
+  const levelRules = getMemberLevelRulesSetting();
+  const pointRateMap = getMemberLevelPointRateMapSetting(levelRules);
+  const totalAmount = getMemberAccumulatedPurchaseAmount(userId, includedGroups);
+  const levelRule = resolveMemberLevelByAmount(totalAmount, levelRules);
+  const levelId = levelRule?.id || '';
+  const levelName = levelRule?.name || '';
+  const pointRate = levelId
+    ? parsePointRate(pointRateMap[levelId], 0)
+    : getLegacyPurchasePointRateSetting();
+
+  return {
+    totalAmount,
+    levelRule,
+    levelId,
+    levelName,
+    pointRate,
+    includedGroups,
+    availableGroups,
+    levelRules,
+    pointRateMap
+  };
 }
 
 function buildAdminProductSubmission(rawBody, groupConfig) {
@@ -3613,7 +3989,7 @@ app.use((req, res, next) => {
       nightThemeAssets,
       bankAccountInfo: getSetting('bankAccountInfo', ''),
       signupBonusPoints: getSignupBonusPointsSetting(),
-      purchasePointRate: getPurchasePointRateSetting(),
+      purchasePointRate: getLegacyPurchasePointRateSetting(),
       contactInfo: getSetting('contactInfo', ''),
       businessInfo: getSetting('businessInfo', '')
     },
@@ -4149,7 +4525,6 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const productGroupLabel = productGroupLabelMap[product.category_group] || product.category_group;
 
   incrementFunnelEventUniqueInSession(req, FUNNEL_EVENT.PURCHASE_VIEW, `product:${id}`);
-  const purchasePointRate = getPurchasePointRateSetting();
   const addressBookEntries = getAddressBookEntries(req.user.id);
   const defaultAddressEntry = addressBookEntries.find((entry) => entry.isDefault) || null;
   const defaultPostcode = req.user.defaultPostcode || defaultAddressEntry?.postcode || '';
@@ -4169,7 +4544,8 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     setAsDefaultAddress: '',
     quantity: 1
   };
-
+  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const purchasePointRate = memberPointProfile.pointRate;
   return res.render('purchase-form', {
     title: 'Purchase',
     product,
@@ -4177,6 +4553,7 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     addressBookEntries,
     productGroupLabel,
     purchasePointRate,
+    memberLevelName: memberPointProfile.levelName,
     expectedPoints: calculateEarnedPoints(product.price, purchasePointRate)
   });
 });
@@ -4245,7 +4622,8 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     setAsDefaultAddress: setAsDefaultAddress ? '1' : '',
     quantity
   };
-  const purchasePointRate = getPurchasePointRateSetting();
+  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const purchasePointRate = memberPointProfile.pointRate;
 
   const renderWithError = (message) => {
     res.locals.ctx.flash = { type: 'error', message };
@@ -4256,6 +4634,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
       addressBookEntries,
       productGroupLabel,
       purchasePointRate,
+      memberLevelName: memberPointProfile.levelName,
       expectedPoints: calculateEarnedPoints(product.price * quantity, purchasePointRate)
     });
   };
@@ -4300,8 +4679,11 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
         quantity,
         total_price,
         status,
+        point_rate_snapshot,
+        point_level_id,
+        point_level_name,
         created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     orderNo,
@@ -4314,6 +4696,9 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     quantity,
     totalPrice,
     ORDER_STATUS.PENDING_REVIEW,
+    purchasePointRate,
+    memberPointProfile.levelId || '',
+    memberPointProfile.levelName || '',
     req.user.id
   );
 
@@ -4442,6 +4827,10 @@ app.post('/order/create', (req, res) => {
   }
 
   const totalPrice = Number(product.price) * quantity;
+  const memberPointProfile = req.user ? getMemberPointProfile(req.user.id) : null;
+  const pointRateSnapshot = memberPointProfile ? memberPointProfile.pointRate : 0;
+  const pointLevelIdSnapshot = memberPointProfile?.levelId || '';
+  const pointLevelNameSnapshot = memberPointProfile?.levelName || '';
 
   const createdOrder = db.prepare(
     `
@@ -4456,8 +4845,11 @@ app.post('/order/create', (req, res) => {
         quantity,
         total_price,
         status,
+        point_rate_snapshot,
+        point_level_id,
+        point_level_name,
         created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     orderNo,
@@ -4470,6 +4862,9 @@ app.post('/order/create', (req, res) => {
     quantity,
     totalPrice,
     ORDER_STATUS.PENDING_REVIEW,
+    pointRateSnapshot,
+    pointLevelIdSnapshot,
+    pointLevelNameSnapshot,
     req.user ? req.user.id : null
   );
 
@@ -4506,7 +4901,9 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
 
   const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
   const isMemberOrder = Number(order.created_by_user_id || 0) > 0;
-  const purchasePointRate = getPurchasePointRateSetting();
+  const purchasePointRate = isMemberOrder
+    ? parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting())
+    : 0;
   const expectedPoints = isMemberOrder ? calculateEarnedPoints(order.total_price, purchasePointRate) : 0;
   const awardedPoints = parseNonNegativeInt(order.awarded_points, 0);
 
@@ -4516,6 +4913,7 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
     statusMeta,
     isMemberOrder,
     purchasePointRate,
+    memberLevelName: String(order.point_level_name || '').trim(),
     expectedPoints,
     awardedPoints
   });
@@ -6777,17 +7175,84 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
 }
 
 function buildMemberManagePanelData(lang = 'ko', options = {}) {
+  const availableGroupsRaw = getProductGroupConfigs();
+  const availableGroupKeys = availableGroupsRaw.map((group) => group.key);
+  const availableGroups = availableGroupsRaw.map((group) => ({
+    key: group.key,
+    label: lang === 'en' ? (group.labelEn || group.key) : (group.labelKo || group.key)
+  }));
+  const includedGroups = getMemberLevelIncludedGroupsSetting(availableGroupKeys);
+  const levelRules = getMemberLevelRulesSetting();
+  const pointRateMap = getMemberLevelPointRateMapSetting(levelRules);
+
   const filters = {
     section: normalizeMemberManageSection(options.section || ''),
     keyword: String(options.keyword || '').trim().slice(0, 120)
   };
+  filters.levelRuleFilter = String(options.levelRuleFilter || 'all');
+  if (filters.levelRuleFilter !== 'all' && !levelRules.some((rule) => rule.id === filters.levelRuleFilter)) {
+    filters.levelRuleFilter = 'all';
+  }
+
+  const decorateRowsWithLevel = (rows = []) => {
+    const userIds = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+    const totalMap = getMemberAccumulatedTotalsMap(userIds, includedGroups);
+    return rows.map((row) => {
+      const totalAmount = Number(totalMap.get(Number(row.id)) || 0);
+      const levelRule = resolveMemberLevelByAmount(totalAmount, levelRules);
+      const levelId = levelRule?.id || '';
+      const levelName = levelRule?.name || (lang === 'en' ? 'Unassigned' : '미지정');
+      const levelPointRate = levelId
+        ? parsePointRate(pointRateMap[levelId], 0)
+        : getLegacyPurchasePointRateSetting();
+      return {
+        ...row,
+        agreed_terms: Number(row.agreed_terms) === 1,
+        is_blocked: Number(row.is_blocked) === 1,
+        order_count: Number(row.order_count || 0),
+        level_id: levelId,
+        level_name: levelName,
+        level_point_rate: levelPointRate,
+        level_threshold_amount: Number(levelRule?.thresholdAmount || 0),
+        level_operator: levelRule?.operator || MEMBER_LEVEL_OPERATORS.GTE,
+        level_operator_label: getMemberLevelOperatorLabel(levelRule?.operator || MEMBER_LEVEL_OPERATORS.GTE, lang),
+        level_applied_amount: totalAmount
+      };
+    });
+  };
+
+  const buildLevelSummary = (memberRows = []) => {
+    const countMap = new Map();
+    memberRows.forEach((member) => {
+      const key = member.level_id || '__unassigned__';
+      countMap.set(key, Number(countMap.get(key) || 0) + 1);
+    });
+    const summaries = levelRules.map((rule) => ({
+      id: rule.id,
+      name: rule.name,
+      operator: rule.operator,
+      operatorLabel: getMemberLevelOperatorLabel(rule.operator, lang),
+      thresholdAmount: Number(rule.thresholdAmount || 0),
+      pointRate: parsePointRate(pointRateMap[rule.id], 0),
+      memberCount: Number(countMap.get(rule.id) || 0)
+    }));
+    summaries.push({
+      id: '__unassigned__',
+      name: lang === 'en' ? 'Unassigned' : '미지정',
+      operator: '',
+      operatorLabel: '',
+      thresholdAmount: 0,
+      pointRate: getLegacyPurchasePointRateSetting(),
+      memberCount: Number(countMap.get('__unassigned__') || 0)
+    });
+    return summaries;
+  };
 
   const where = ['u.is_admin = 0'];
   const params = [];
-
   if (filters.section === 'blocked') {
     where.push('u.is_blocked = 1');
-  } else {
+  } else if (filters.section === 'active') {
     where.push('u.is_blocked = 0');
   }
 
@@ -6798,58 +7263,113 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
   }
 
   const whereSql = where.join(' AND ');
+  const baseMemberSelectSql = `
+    SELECT
+      u.id,
+      u.username,
+      u.full_name,
+      u.email,
+      u.phone,
+      u.agreed_terms,
+      u.is_blocked,
+      u.blocked_reason,
+      u.blocked_at,
+      u.created_at,
+      (
+        SELECT COUNT(*)
+        FROM orders o
+        WHERE o.created_by_user_id = u.id
+      ) AS order_count
+    FROM users u
+    WHERE ${whereSql}
+    ORDER BY u.id DESC
+  `;
 
-  const totalRow = db
-    .prepare(
-      `
-        SELECT COUNT(*) AS count
-        FROM users u
-        WHERE ${whereSql}
-      `
-    )
-    .get(...params);
-  const totalCount = Number(totalRow?.count || 0);
-  const totalPages = Math.max(1, Math.ceil(totalCount / MEMBER_PAGE_SIZE));
-  const page = clampPage(options.page, totalPages);
-  const offset = (page - 1) * MEMBER_PAGE_SIZE;
+  let members = [];
+  let page = 1;
+  let totalPages = 1;
+  let totalCount = 0;
 
-  const members = db
-    .prepare(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.full_name,
-          u.email,
-          u.phone,
-          u.agreed_terms,
-          u.is_blocked,
-          u.blocked_reason,
-          u.blocked_at,
-          u.created_at,
-          (
-            SELECT COUNT(*)
-            FROM orders o
-            WHERE o.created_by_user_id = u.id
-          ) AS order_count
-        FROM users u
-        WHERE ${whereSql}
-        ORDER BY u.id DESC
-        LIMIT ?
-        OFFSET ?
-      `
-    )
-    .all(...params, MEMBER_PAGE_SIZE, offset)
-    .map((row) => ({
-      ...row,
-      agreed_terms: Number(row.agreed_terms) === 1,
-      is_blocked: Number(row.is_blocked) === 1,
-      order_count: Number(row.order_count || 0)
-    }));
+  if (filters.section === 'member-levels') {
+    const allRows = db.prepare(baseMemberSelectSql).all(...params);
+    let decoratedRows = decorateRowsWithLevel(allRows);
+    if (filters.levelRuleFilter !== 'all') {
+      decoratedRows = decoratedRows.filter((member) => member.level_id === filters.levelRuleFilter);
+    }
+    totalCount = decoratedRows.length;
+    totalPages = Math.max(1, Math.ceil(totalCount / MEMBER_PAGE_SIZE));
+    page = clampPage(options.page, totalPages);
+    const offset = (page - 1) * MEMBER_PAGE_SIZE;
+    members = decoratedRows.slice(offset, offset + MEMBER_PAGE_SIZE);
+  } else if (filters.section === 'levels') {
+    members = [];
+    totalCount = 0;
+    totalPages = 1;
+    page = 1;
+  } else {
+    const totalRow = db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM users u
+          WHERE ${whereSql}
+        `
+      )
+      .get(...params);
+    totalCount = Number(totalRow?.count || 0);
+    totalPages = Math.max(1, Math.ceil(totalCount / MEMBER_PAGE_SIZE));
+    page = clampPage(options.page, totalPages);
+    const offset = (page - 1) * MEMBER_PAGE_SIZE;
+    const pagedRows = db
+      .prepare(`${baseMemberSelectSql}\nLIMIT ?\nOFFSET ?`)
+      .all(...params, MEMBER_PAGE_SIZE, offset);
+    members = decorateRowsWithLevel(pagedRows);
+  }
+
+  const allMembersForSummary = decorateRowsWithLevel(
+    db
+      .prepare(
+        `
+          SELECT
+            u.id,
+            u.username,
+            u.full_name,
+            u.email,
+            u.phone,
+            u.agreed_terms,
+            u.is_blocked,
+            u.blocked_reason,
+            u.blocked_at,
+            u.created_at,
+            (
+              SELECT COUNT(*)
+              FROM orders o
+              WHERE o.created_by_user_id = u.id
+            ) AS order_count
+          FROM users u
+          WHERE u.is_admin = 0
+          ORDER BY u.id DESC
+        `
+      )
+      .all()
+  );
+  const levelSummaries = buildLevelSummary(allMembersForSummary);
+  const levelRulesWithRates = levelRules.map((rule) => ({
+    ...rule,
+    pointRate: parsePointRate(pointRateMap[rule.id], 0),
+    operatorLabel: getMemberLevelOperatorLabel(rule.operator, lang)
+  }));
 
   return {
     members,
     filters,
+    levelConfig: {
+      availableGroups,
+      includedGroups,
+      rules: levelRulesWithRates,
+      pointRates: pointRateMap
+    },
+    levelSummaries,
     pagination: {
       page,
       totalPages,
@@ -6886,7 +7406,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     nightThemeAssets,
     bankAccountInfo: getSetting('bankAccountInfo', ''),
     signupBonusPoints: getSignupBonusPointsSetting(),
-    purchasePointRate: getPurchasePointRateSetting(),
+    purchasePointRate: getLegacyPurchasePointRateSetting(),
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
     salesSheetUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
@@ -7114,6 +7634,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     siteSection: normalizeSiteManageSection(extraData.siteSection || req.query.section || ''),
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
     productSection: normalizeProductManageSection(extraData.productSection || ''),
+    pointSection: normalizePointManageSection(extraData.pointSection || req.query.pointSection || req.query.section || ''),
     noticeSection: normalizeContentManageSection(extraData.noticeSection || req.query.section || ''),
     newsSection: normalizeContentManageSection(extraData.newsSection || req.query.section || ''),
     qcSection: normalizeContentManageSection(extraData.qcSection || req.query.section || ''),
@@ -7135,6 +7656,7 @@ function handleSecurityDenied(req, res, securitySection = 'profile', securityOpt
     activeTab: 'security',
     securitySection: normalizeSecuritySection(securitySection),
     securityAccessDenied: true,
+    pointSection: normalizePointManageSection(req.query.pointSection || req.query.section || ''),
     ...buildAdminDashboardViewData(res.locals.ctx.lang, {
       securityOptions,
       memberOptions: parseMemberManageQuery(req.query || {}),
@@ -7723,6 +8245,173 @@ app.post('/admin/member/:id/unblock', requireAdmin, (req, res) => {
 
   logAdminActivity(req, 'MEMBER_UNBLOCK', `member:${targetId} unblocked`);
   setFlash(req, 'success', '회원 계정 블락이 해제되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/member-level/groups', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
+  const productGroups = getProductGroupConfigs().map((group) => group.key);
+  const submitted = req.body.includedGroups ?? req.body['includedGroups[]'] ?? [];
+  const selectedGroups = (Array.isArray(submitted) ? submitted : [submitted])
+    .map((group) => String(group || '').trim())
+    .filter((group, index, arr) => group && arr.indexOf(group) === index)
+    .filter((group) => productGroups.includes(group));
+
+  if (selectedGroups.length === 0) {
+    setFlash(req, 'error', '누적금액 적용 쇼핑몰을 최소 1개 이상 선택해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  setSetting('memberLevelIncludedGroups', JSON.stringify(selectedGroups));
+  logAdminActivity(req, 'MEMBER_LEVEL_GROUPS_UPDATE', `groups:${selectedGroups.join(',')}`);
+  setFlash(req, 'success', '누적금액 적용 쇼핑몰 설정이 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/member-level/add', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
+  const levelName = normalizeMemberLevelName(req.body.levelName || '');
+  const thresholdAmount = parseMemberLevelThresholdAmount(req.body.thresholdAmount || '0', 0);
+  const operator = normalizeMemberLevelOperator(req.body.operator || MEMBER_LEVEL_OPERATORS.GTE);
+
+  if (!levelName) {
+    setFlash(req, 'error', '등급 명칭을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const currentRules = getMemberLevelRulesSetting();
+  const nextLevelId = buildUniqueMemberLevelId(levelName, currentRules.map((rule) => rule.id));
+  const nextRules = [
+    ...currentRules,
+    {
+      id: nextLevelId,
+      name: levelName,
+      operator,
+      thresholdAmount
+    }
+  ];
+  setSetting('memberLevelRules', JSON.stringify(nextRules));
+
+  const sourceRateMap = getRawMemberLevelPointRateSetting();
+  sourceRateMap[nextLevelId] = parsePointRate(sourceRateMap[nextLevelId], 0);
+  saveMemberLevelPointRates(nextRules, sourceRateMap);
+
+  logAdminActivity(req, 'MEMBER_LEVEL_ADD', `level:${nextLevelId}`);
+  setFlash(req, 'success', '회원 등급이 추가되었습니다. 포인트 퍼센테이지는 포인트관리에서 설정해 주세요.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/member-level/:id/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
+  const levelId = String(req.params.id || '').trim();
+  const levelName = normalizeMemberLevelName(req.body.levelName || '');
+  const thresholdAmount = parseMemberLevelThresholdAmount(req.body.thresholdAmount || '0', 0);
+  const operator = normalizeMemberLevelOperator(req.body.operator || MEMBER_LEVEL_OPERATORS.GTE);
+
+  if (!levelId) {
+    setFlash(req, 'error', '유효하지 않은 등급입니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!levelName) {
+    setFlash(req, 'error', '등급 명칭을 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const currentRules = getMemberLevelRulesSetting();
+  const targetIndex = currentRules.findIndex((rule) => rule.id === levelId);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '수정할 등급을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextRules = [...currentRules];
+  nextRules[targetIndex] = {
+    ...nextRules[targetIndex],
+    name: levelName,
+    operator,
+    thresholdAmount
+  };
+  setSetting('memberLevelRules', JSON.stringify(nextRules));
+  saveMemberLevelPointRates(nextRules, getRawMemberLevelPointRateSetting());
+
+  logAdminActivity(req, 'MEMBER_LEVEL_UPDATE', `level:${levelId}`);
+  setFlash(req, 'success', '회원 등급 조건이 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/member-level/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
+  const levelId = String(req.params.id || '').trim();
+
+  if (!levelId) {
+    setFlash(req, 'error', '유효하지 않은 등급입니다.');
+    return res.redirect(backPath);
+  }
+
+  const currentRules = getMemberLevelRulesSetting();
+  const nextRules = currentRules.filter((rule) => rule.id !== levelId);
+  if (nextRules.length === currentRules.length) {
+    setFlash(req, 'error', '삭제할 등급을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (nextRules.length === 0) {
+    setFlash(req, 'error', '최소 1개 이상의 회원 등급이 필요합니다.');
+    return res.redirect(backPath);
+  }
+
+  setSetting('memberLevelRules', JSON.stringify(nextRules));
+  const sourceRateMap = getRawMemberLevelPointRateSetting();
+  delete sourceRateMap[levelId];
+  saveMemberLevelPointRates(nextRules, sourceRateMap);
+
+  logAdminActivity(req, 'MEMBER_LEVEL_DELETE', `level:${levelId}`);
+  setFlash(req, 'success', '회원 등급이 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.get('/admin/points', requireAdmin, (req, res) =>
+  renderAdminDashboard(req, res, 'points', {
+    pointSection: parsePointManageQuery(req.query || {}).section
+  })
+);
+
+app.post('/admin/points/signup', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/points?section=signup');
+  const signupBonusPoints = parseNonNegativeInt(
+    String(req.body.signupBonusPoints ?? '0').replace(/[^0-9]/g, ''),
+    0
+  );
+
+  setSetting('signupBonusPoints', String(signupBonusPoints));
+  logAdminActivity(req, 'POINTS_SIGNUP_UPDATE', `signup_bonus:${signupBonusPoints}`);
+  setFlash(req, 'success', '회원가입 포인트가 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/points/level-rates', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/points?section=level-rates');
+  const levelRules = getMemberLevelRulesSetting();
+
+  if (levelRules.length === 0) {
+    setFlash(req, 'error', '설정된 회원 등급이 없습니다. 회원관리 > 회원레벨 설정에서 먼저 등급을 만들어 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextRateMap = {};
+  levelRules.forEach((rule) => {
+    const fieldName = `rate_${rule.id}`;
+    nextRateMap[rule.id] = parsePointRate(req.body[fieldName], 0);
+  });
+  saveMemberLevelPointRates(levelRules, nextRateMap);
+
+  logAdminActivity(req, 'POINTS_LEVEL_RATE_UPDATE', `levels:${levelRules.length}`);
+  setFlash(
+    req,
+    'success',
+    '등급별 포인트 퍼센테이지가 저장되었습니다. 변경된 값은 이후 신규 주문부터 적용됩니다.'
+  );
   return res.redirect(backPath);
 });
 
@@ -8333,16 +9022,12 @@ app.post(
     if (settingsSection === 'basic') {
       const siteName = String(req.body.siteName || getSetting('siteName', 'Chrono Lab')).trim();
       const bankAccountInfo = String(req.body.bankAccountInfo || '').trim();
-      const signupBonusPoints = parseNonNegativeInt(req.body.signupBonusPoints, 0);
-      const purchasePointRate = parsePointRate(req.body.purchasePointRate, 0);
       const contactInfo = String(req.body.contactInfo || '').trim();
       const businessInfo = String(req.body.businessInfo || '').trim();
       const languageDefault = resolveLanguage(req.body.languageDefault || getSetting('languageDefault', 'ko'), 'ko');
 
       setSetting('siteName', siteName || 'Chrono Lab');
       setSetting('bankAccountInfo', bankAccountInfo);
-      setSetting('signupBonusPoints', signupBonusPoints);
-      setSetting('purchasePointRate', purchasePointRate);
       setSetting('contactInfo', contactInfo);
       setSetting('businessInfo', businessInfo);
       setSetting('languageDefault', languageDefault);
@@ -9073,7 +9758,15 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   const order = db
     .prepare(
       `
-        SELECT id, order_no, status, total_price, created_by_user_id, awarded_points, points_awarded_at
+        SELECT
+          id,
+          order_no,
+          status,
+          total_price,
+          created_by_user_id,
+          awarded_points,
+          points_awarded_at,
+          point_rate_snapshot
         FROM orders
         WHERE id = ?
         LIMIT 1
@@ -9095,7 +9788,7 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   const memberUserId = Number(order.created_by_user_id || 0);
   const hasPointRecord =
     Boolean(order.points_awarded_at) || parseNonNegativeInt(order.awarded_points, 0) > 0;
-  const purchasePointRate = getPurchasePointRateSetting();
+  const purchasePointRate = parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting());
   const pointsToAward =
     memberUserId > 0 && !hasPointRecord ? calculateEarnedPoints(order.total_price, purchasePointRate) : 0;
 

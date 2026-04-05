@@ -85,14 +85,27 @@
   const memberPanel = memberManagePanelData || {
     members: [],
     filters: { section: 'active', keyword: '' },
+    levelConfig: { availableGroups: [], includedGroups: [], rules: [], pointRates: {} },
+    levelSummaries: [],
     pagination: { page: 1, totalPages: 1, totalCount: 0, pageSize: 20 }
   };
+  const memberLevelConfig = memberPanel.levelConfig || {
+    availableGroups: [],
+    includedGroups: [],
+    rules: [],
+    pointRates: {}
+  };
+  const memberLevelRules = Array.isArray(memberLevelConfig.rules) ? memberLevelConfig.rules : [];
+  const memberLevelSummaries = Array.isArray(memberPanel.levelSummaries) ? memberPanel.levelSummaries : [];
   const securityTab = ['profile', 'admins', 'logs', 'alerts'].includes(String(securitySection || ''))
     ? String(securitySection)
     : 'profile';
   const menusTab = ['public', 'groups', 'group-filters', 'fields'].includes(String(menuSection || ''))
     ? String(menuSection)
     : 'public';
+  const pointsTab = ['signup', 'level-rates'].includes(String(pointSection || ''))
+    ? String(pointSection)
+    : 'signup';
   const siteTab = String(siteSection || '') === 'theme' ? 'theme' : 'basic';
   const productsTab = ['upload', 'list'].includes(String(productSection || ''))
     ? String(productSection)
@@ -890,119 +903,288 @@
     <h3><%= isEn ? 'Member Management' : '회원 관리' %></h3>
     <% const memberFilters = memberPanel.filters || { section: 'active', keyword: '' }; %>
     <% const memberPager = memberPanel.pagination || { page: 1, totalPages: 1, totalCount: memberPanel.members.length }; %>
+    <% const memberSection = memberFilters.section || 'active'; %>
+    <% const levelRuleFilter = memberFilters.levelRuleFilter || 'all'; %>
 
     <div class="security-subnav">
-      <a href="/admin/members?memberSection=active" class="menu-pill <%= (memberFilters.section || 'active') === 'active' ? 'active' : '' %>">
+      <a href="/admin/members?memberSection=active" class="menu-pill <%= memberSection === 'active' ? 'active' : '' %>">
         <%= isEn ? 'Members' : '회원 목록' %>
       </a>
-      <a href="/admin/members?memberSection=blocked" class="menu-pill <%= (memberFilters.section || 'active') === 'blocked' ? 'active' : '' %>">
+      <a href="/admin/members?memberSection=blocked" class="menu-pill <%= memberSection === 'blocked' ? 'active' : '' %>">
         <%= isEn ? 'Blacklist' : '블랙리스트' %>
+      </a>
+      <a href="/admin/members?memberSection=levels" class="menu-pill <%= memberSection === 'levels' ? 'active' : '' %>">
+        <%= isEn ? 'Level Settings' : '회원레벨 설정' %>
+      </a>
+      <a href="/admin/members?memberSection=member-levels" class="menu-pill <%= memberSection === 'member-levels' ? 'active' : '' %>">
+        <%= isEn ? 'Member Levels' : '회원별 등급' %>
       </a>
     </div>
 
-    <form method="get" action="/admin/members" class="admin-filter-row member-filter-row">
-      <input type="hidden" name="memberSection" value="<%= memberFilters.section || 'active' %>" />
-      <label class="admin-filter-item member-search-item">
-        <span><%= isEn ? 'Search' : '검색어' %></span>
-        <input
-          type="text"
-          name="memberKeyword"
-          value="<%= memberFilters.keyword || '' %>"
-          placeholder="<%= isEn ? 'Account / Name / Email / Phone' : '계정 / 이름 / 이메일 / 전화번호' %>"
-        />
-      </label>
-      <div class="admin-filter-actions">
-        <button type="submit" class="chip dark"><%= isEn ? 'Filter' : '조회' %></button>
-        <a href="/admin/members?memberSection=<%= memberFilters.section || 'active' %>" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+    <% if (memberSection === 'levels') { %>
+      <div class="admin-grid">
+        <section class="kpi-card">
+          <h4><%= isEn ? 'Accumulated Amount Group Scope' : '누적금액 적용 쇼핑몰 선택' %></h4>
+          <p class="muted-label">
+            <%= isEn ? 'Selected shop groups are used for member level accumulated amount.' : '선택한 쇼핑몰 분류만 누적 구매금액 계산에 반영됩니다.' %>
+          </p>
+          <form method="post" action="/admin/member-level/groups" class="form-grid">
+            <div class="admin-field-chip-row member-level-group-grid">
+              <% const includedGroupSet = new Set((memberLevelConfig.includedGroups || []).map((group) => String(group))); %>
+              <% (memberLevelConfig.availableGroups || []).forEach((group) => { %>
+                <label class="check-chip">
+                  <input type="checkbox" name="includedGroups" value="<%= group.key %>" <%= includedGroupSet.has(group.key) ? 'checked' : '' %> />
+                  <span><%= group.label %></span>
+                </label>
+              <% }) %>
+            </div>
+            <button type="submit" class="chip dark"><%= isEn ? 'Apply Group Scope' : '적용' %></button>
+          </form>
+        </section>
+
+        <section class="kpi-card">
+          <h4><%= isEn ? 'Add Member Level' : '회원 레벨 추가' %></h4>
+          <form method="post" action="/admin/member-level/add" class="form-grid">
+            <label>
+              <%= isEn ? 'Level Name' : '등급 명칭' %>
+              <input type="text" name="levelName" maxlength="40" required />
+            </label>
+            <label>
+              <%= isEn ? 'Condition' : '조건' %>
+              <select name="operator">
+                <option value="lt"><%= isEn ? 'less than (<)' : '미만 (<)' %></option>
+                <option value="gt"><%= isEn ? 'greater than (>)' : '초과 (>)' %></option>
+                <option value="lte"><%= isEn ? 'or below (<=)' : '이하 (<=)' %></option>
+                <option value="gte" selected><%= isEn ? 'or above (>=)' : '이상 (>=)' %></option>
+              </select>
+            </label>
+            <label>
+              <%= isEn ? 'Accumulated Amount (KRW)' : '누적 구매금액 (원)' %>
+              <input type="text" name="thresholdAmount" inputmode="numeric" placeholder="2000000" required />
+            </label>
+            <button type="submit" class="chip dark"><%= isEn ? 'Add Level' : '등급 추가' %></button>
+          </form>
+        </section>
       </div>
-    </form>
-    <p class="muted-label"><%= isEn ? `Total ${memberPager.totalCount} records · Page ${memberPager.page}/${memberPager.totalPages}` : `총 ${memberPager.totalCount}건 · ${memberPager.page}/${memberPager.totalPages} 페이지` %></p>
 
-    <div class="admin-list">
-      <% if (memberPanel.members.length === 0) { %>
-        <p class="muted-label"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></p>
-      <% } %>
-
-      <% memberPanel.members.forEach((memberItem) => { %>
-        <div class="admin-list-item admin-account-item">
-          <div class="admin-account-row">
-            <div class="admin-account-brief">
-              <strong><%= memberItem.username %></strong>
-              <span><%= memberItem.full_name || '-' %> · <%= memberItem.email || '-' %></span>
-            </div>
-            <div class="admin-account-actions">
-              <% if (memberItem.is_blocked) { %>
-                <span class="chip"><%= isEn ? 'Blocked' : '블락됨' %></span>
-              <% } %>
-              <button
-                type="button"
-                class="chip"
-                data-member-edit-toggle="<%= memberItem.id %>"
-                aria-expanded="false"
-                aria-controls="member-editor-<%= memberItem.id %>"
-              ><%= isEn ? 'Edit' : '수정' %></button>
-              <% if (memberItem.is_blocked) { %>
-                <form method="post" action="/admin/member/<%= memberItem.id %>/unblock" class="inline-form">
-                  <button type="submit" class="chip dark"><%= isEn ? 'Unblock' : '블락해제' %></button>
-                </form>
-              <% } else { %>
-                <form method="post" action="/admin/member/<%= memberItem.id %>/block" class="inline-form" data-member-block-form>
-                  <input type="hidden" name="blockReason" value="" data-member-block-reason />
-                  <button type="submit" class="chip"><%= isEn ? 'Block' : '블락' %></button>
-                </form>
-              <% } %>
-            </div>
-          </div>
-
-          <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
-            <div class="admin-account-meta">
-              <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
-              <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
-              <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
-              <% if (memberItem.is_blocked) { %>
-                <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
-              <% } %>
-            </div>
-
-            <form method="post" action="/admin/member/<%= memberItem.id %>/update" class="form-grid compact">
-              <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
-              <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= memberItem.full_name || '' %>" /></label>
-              <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= memberItem.email || '' %>" required /></label>
-              <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= memberItem.phone || '' %>" /></label>
-              <label class="check-row"><input type="checkbox" name="agreedTerms" <%= memberItem.agreed_terms ? 'checked' : '' %> /> <span><%= isEn ? 'Terms Agreed' : '약관 동의' %></span></label>
-              <button type="submit" class="chip"><%= isEn ? 'Confirm Update' : '정보 수정 확인' %></button>
-            </form>
-
-            <form method="post" action="/admin/member/<%= memberItem.id %>/password" class="form-grid compact">
-              <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
-              <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
-              <button type="submit" class="chip"><%= isEn ? 'Reset Password' : '비밀번호 재설정' %></button>
-            </form>
-
-            <% if (memberItem.is_blocked) { %>
-              <p class="muted-label"><%= isEn ? 'Block Reason' : '블락 사유' %>: <%= memberItem.blocked_reason || (isEn ? 'No reason' : '사유 없음') %></p>
-            <% } %>
-          </div>
+      <section class="kpi-card">
+        <div class="kpi-head-row">
+          <h4><%= isEn ? 'Configured Member Levels' : '설정된 회원 레벨' %></h4>
+          <a href="/admin/points?section=level-rates" class="chip"><%= isEn ? 'Go to Point Rates' : '포인트관리로 이동' %></a>
         </div>
-      <% }) %>
-    </div>
+        <% if (memberLevelSummaries.length > 0) { %>
+          <div class="admin-field-chip-row">
+            <% memberLevelSummaries.forEach((summary) => { %>
+              <span class="chip">
+                <%= summary.name %> · <%= summary.memberCount %><%= isEn ? ' members' : '명' %>
+              </span>
+            <% }) %>
+          </div>
+        <% } %>
 
-    <div class="admin-pagination">
-      <% if (memberPager.page > 1) { %>
-        <a
-          class="chip"
-          href="/admin/members?memberSection=<%= memberFilters.section || 'active' %>&memberPage=<%= memberPager.page - 1 %><%= memberFilters.keyword ? `&memberKeyword=${encodeURIComponent(memberFilters.keyword)}` : '' %>"
-        ><%= isEn ? 'Prev' : '이전' %></a>
-      <% } %>
-      <span class="chip muted"><%= memberPager.page %> / <%= memberPager.totalPages %></span>
-      <% if (memberPager.page < memberPager.totalPages) { %>
-        <a
-          class="chip"
-          href="/admin/members?memberSection=<%= memberFilters.section || 'active' %>&memberPage=<%= memberPager.page + 1 %><%= memberFilters.keyword ? `&memberKeyword=${encodeURIComponent(memberFilters.keyword)}` : '' %>"
-        ><%= isEn ? 'Next' : '다음' %></a>
-      <% } %>
-    </div>
+        <div class="admin-list">
+          <% if (memberLevelRules.length === 0) { %>
+            <p class="muted-label"><%= isEn ? 'No member levels configured.' : '설정된 회원 레벨이 없습니다.' %></p>
+          <% } %>
+          <% memberLevelRules.forEach((rule) => { %>
+            <div class="admin-list-item member-level-rule-item">
+              <form method="post" action="/admin/member-level/<%= encodeURIComponent(rule.id) %>/update" class="form-grid compact member-level-rule-form">
+                <label>
+                  <span><%= isEn ? 'Level Name' : '등급 명칭' %></span>
+                  <input type="text" name="levelName" value="<%= rule.name %>" maxlength="40" required />
+                </label>
+                <label>
+                  <span><%= isEn ? 'Condition' : '조건' %></span>
+                  <select name="operator">
+                    <option value="lt" <%= rule.operator === 'lt' ? 'selected' : '' %>><%= isEn ? 'less than (<)' : '미만 (<)' %></option>
+                    <option value="gt" <%= rule.operator === 'gt' ? 'selected' : '' %>><%= isEn ? 'greater than (>)' : '초과 (>)' %></option>
+                    <option value="lte" <%= rule.operator === 'lte' ? 'selected' : '' %>><%= isEn ? 'or below (<=)' : '이하 (<=)' %></option>
+                    <option value="gte" <%= rule.operator === 'gte' ? 'selected' : '' %>><%= isEn ? 'or above (>=)' : '이상 (>=)' %></option>
+                  </select>
+                </label>
+                <label>
+                  <span><%= isEn ? 'Accumulated Amount (KRW)' : '누적 구매금액 (원)' %></span>
+                  <input type="text" name="thresholdAmount" inputmode="numeric" value="<%= Number(rule.thresholdAmount || 0) %>" required />
+                </label>
+                <div class="admin-account-actions">
+                  <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+                </div>
+              </form>
+              <% if (memberLevelRules.length > 1) { %>
+                <form method="post" action="/admin/member-level/<%= encodeURIComponent(rule.id) %>/delete" class="inline-form member-level-delete-form">
+                  <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                </form>
+              <% } %>
+            </div>
+          <% }) %>
+        </div>
+        <p class="muted-label member-level-help-note">
+          <%= isEn ? 'Point rates are edited in Point Management. Updated rates affect only new purchases after update.' : '포인트 퍼센테이지는 포인트관리에서 설정합니다. 변경된 적립률은 변경 이후 신규 구매건부터 적용됩니다.' %>
+        </p>
+      </section>
+    <% } else { %>
+      <form method="get" action="/admin/members" class="admin-filter-row member-filter-row">
+        <input type="hidden" name="memberSection" value="<%= memberSection %>" />
+        <label class="admin-filter-item member-search-item">
+          <span><%= isEn ? 'Search' : '검색어' %></span>
+          <input
+            type="text"
+            name="memberKeyword"
+            value="<%= memberFilters.keyword || '' %>"
+            placeholder="<%= isEn ? 'Account / Name / Email / Phone' : '계정 / 이름 / 이메일 / 전화번호' %>"
+          />
+        </label>
+        <% if (memberSection === 'member-levels') { %>
+          <label class="admin-filter-item">
+            <span><%= isEn ? 'Level' : '회원 레벨' %></span>
+            <select name="memberLevelRuleId">
+              <option value="all" <%= levelRuleFilter === 'all' ? 'selected' : '' %>><%= isEn ? 'All Levels' : '전체 레벨' %></option>
+              <% memberLevelRules.forEach((rule) => { %>
+                <option value="<%= rule.id %>" <%= levelRuleFilter === rule.id ? 'selected' : '' %>><%= rule.name %></option>
+              <% }) %>
+            </select>
+          </label>
+        <% } %>
+        <div class="admin-filter-actions">
+          <button type="submit" class="chip dark"><%= isEn ? 'Filter' : '조회' %></button>
+          <a href="/admin/members?memberSection=<%= memberSection %>" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+        </div>
+      </form>
+      <p class="muted-label"><%= isEn ? `Total ${memberPager.totalCount} records · Page ${memberPager.page}/${memberPager.totalPages}` : `총 ${memberPager.totalCount}건 · ${memberPager.page}/${memberPager.totalPages} 페이지` %></p>
 
+      <% if (memberSection === 'member-levels') { %>
+        <div class="table-wrap">
+          <table class="member-level-table">
+            <thead>
+              <tr>
+                <th><%= isEn ? 'Account' : '계정' %></th>
+                <th><%= isEn ? 'Member' : '회원' %></th>
+                <th><%= isEn ? 'Accumulated Amount' : '누적 구매금액' %></th>
+                <th><%= isEn ? 'Level' : '등급' %></th>
+                <th><%= isEn ? 'Point Rate' : '포인트율' %></th>
+                <th><%= isEn ? 'Orders' : '주문건수' %></th>
+                <th><%= isEn ? 'Created' : '가입일' %></th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (memberPanel.members.length === 0) { %>
+                <tr>
+                  <td colspan="7"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></td>
+                </tr>
+              <% } %>
+              <% memberPanel.members.forEach((memberItem) => { %>
+                <tr>
+                  <td><strong><%= memberItem.username %></strong></td>
+                  <td>
+                    <%= memberItem.full_name || '-' %>
+                    <small><%= memberItem.email || '-' %></small>
+                  </td>
+                  <td><strong>₩<%= Number(memberItem.level_applied_amount || 0).toLocaleString('ko-KR') %></strong></td>
+                  <td><span class="chip dark"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span></td>
+                  <td><%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%</td>
+                  <td><%= Number(memberItem.order_count || 0).toLocaleString() %></td>
+                  <td><%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+
+      <% if (memberSection === 'active' || memberSection === 'blocked') { %>
+        <div class="admin-list">
+          <% if (memberPanel.members.length === 0) { %>
+            <p class="muted-label"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></p>
+          <% } %>
+
+          <% memberPanel.members.forEach((memberItem) => { %>
+            <div class="admin-list-item admin-account-item">
+              <div class="admin-account-row">
+                <div class="admin-account-brief">
+                  <strong><%= memberItem.username %></strong>
+                  <span><%= memberItem.full_name || '-' %> · <%= memberItem.email || '-' %></span>
+                </div>
+                <div class="admin-account-actions">
+                  <% if (memberItem.is_blocked) { %>
+                    <span class="chip"><%= isEn ? 'Blocked' : '블락됨' %></span>
+                  <% } %>
+                  <button
+                    type="button"
+                    class="chip"
+                    data-member-edit-toggle="<%= memberItem.id %>"
+                    aria-expanded="false"
+                    aria-controls="member-editor-<%= memberItem.id %>"
+                  ><%= isEn ? 'Edit' : '수정' %></button>
+                  <% if (memberItem.is_blocked) { %>
+                    <form method="post" action="/admin/member/<%= memberItem.id %>/unblock" class="inline-form">
+                      <button type="submit" class="chip dark"><%= isEn ? 'Unblock' : '블락해제' %></button>
+                    </form>
+                  <% } else { %>
+                    <form method="post" action="/admin/member/<%= memberItem.id %>/block" class="inline-form" data-member-block-form>
+                      <input type="hidden" name="blockReason" value="" data-member-block-reason />
+                      <button type="submit" class="chip"><%= isEn ? 'Block' : '블락' %></button>
+                    </form>
+                  <% } %>
+                </div>
+              </div>
+
+              <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
+                <div class="admin-account-meta">
+                  <small><%= isEn ? 'No.' : '번호' %>: <%= memberItem.id %></small>
+                  <small><%= isEn ? 'Created' : '가입일' %>: <%= memberItem.created_at ? memberItem.created_at.slice(0, 16) : '-' %></small>
+                  <small><%= isEn ? 'Order Count' : '주문건수' %>: <%= memberItem.order_count %></small>
+                  <% if (memberItem.is_blocked) { %>
+                    <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
+                  <% } %>
+                </div>
+
+                <form method="post" action="/admin/member/<%= memberItem.id %>/update" class="form-grid compact">
+                  <label><span><%= isEn ? 'Account' : '계정' %></span><input type="text" name="username" value="<%= memberItem.username %>" required /></label>
+                  <label><span><%= isEn ? 'Name' : '이름' %></span><input type="text" name="fullName" value="<%= memberItem.full_name || '' %>" /></label>
+                  <label><span><%= isEn ? 'Email' : '이메일' %></span><input type="email" name="email" value="<%= memberItem.email || '' %>" required /></label>
+                  <label><span><%= isEn ? 'Phone' : '전화번호' %></span><input type="text" name="phone" value="<%= memberItem.phone || '' %>" /></label>
+                  <label class="check-row"><input type="checkbox" name="agreedTerms" <%= memberItem.agreed_terms ? 'checked' : '' %> /> <span><%= isEn ? 'Terms Agreed' : '약관 동의' %></span></label>
+                  <button type="submit" class="chip"><%= isEn ? 'Confirm Update' : '정보 수정 확인' %></button>
+                </form>
+
+                <form method="post" action="/admin/member/<%= memberItem.id %>/password" class="form-grid compact">
+                  <label><span><%= isEn ? 'New Password' : '새 비밀번호' %></span><input type="password" name="newPassword" required /></label>
+                  <label><span><%= isEn ? 'Confirm Password' : '비밀번호 확인' %></span><input type="password" name="newPasswordConfirm" required /></label>
+                  <button type="submit" class="chip"><%= isEn ? 'Reset Password' : '비밀번호 재설정' %></button>
+                </form>
+
+                <% if (memberItem.is_blocked) { %>
+                  <p class="muted-label"><%= isEn ? 'Block Reason' : '블락 사유' %>: <%= memberItem.blocked_reason || (isEn ? 'No reason' : '사유 없음') %></p>
+                <% } %>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      <% } %>
+
+      <%
+        const memberFilterQuery = `${memberFilters.keyword ? `&memberKeyword=${encodeURIComponent(memberFilters.keyword)}` : ''}${
+          levelRuleFilter && levelRuleFilter !== 'all' ? `&memberLevelRuleId=${encodeURIComponent(levelRuleFilter)}` : ''
+        }`;
+      %>
+      <div class="admin-pagination">
+        <% if (memberPager.page > 1) { %>
+          <a
+            class="chip"
+            href="/admin/members?memberSection=<%= memberSection %>&memberPage=<%= memberPager.page - 1 %><%= memberFilterQuery %>"
+          ><%= isEn ? 'Prev' : '이전' %></a>
+        <% } %>
+        <span class="chip muted"><%= memberPager.page %> / <%= memberPager.totalPages %></span>
+        <% if (memberPager.page < memberPager.totalPages) { %>
+          <a
+            class="chip"
+            href="/admin/members?memberSection=<%= memberSection %>&memberPage=<%= memberPager.page + 1 %><%= memberFilterQuery %>"
+          ><%= isEn ? 'Next' : '다음' %></a>
+        <% } %>
+      </div>
+    <% } %>
+
+    <% if (memberSection === 'active' || memberSection === 'blocked') { %>
     <script>
       (() => {
         const toggles = Array.from(document.querySelectorAll('[data-member-edit-toggle]'));
@@ -1058,6 +1240,72 @@
         });
       })();
     </script>
+    <% } %>
+  </article>
+  <% } %>
+
+  <% if (tab === 'points') { %>
+  <article class="block-card">
+    <h3><%= isEn ? 'Point Management' : '포인트 관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/points?section=signup" class="menu-pill <%= pointsTab === 'signup' ? 'active' : '' %>"><%= isEn ? 'Signup Points' : '회원가입 포인트' %></a>
+      <a href="/admin/points?section=level-rates" class="menu-pill <%= pointsTab === 'level-rates' ? 'active' : '' %>"><%= isEn ? 'Level Point Rates' : '등급별 적용 포인트' %></a>
+    </div>
+
+    <% if (pointsTab === 'signup') { %>
+      <section class="kpi-card">
+        <h4><%= isEn ? 'Signup Bonus Points' : '회원가입 포인트 설정' %></h4>
+        <p class="muted-label"><%= isEn ? 'Set how many points are credited immediately after signup. (1 point = 1 KRW)' : '회원가입 완료 즉시 지급할 포인트를 설정합니다. (1포인트 = 1원)' %></p>
+        <form method="post" action="/admin/points/signup" class="form-grid">
+          <label>
+            <%= isEn ? 'Signup Bonus Points' : '회원가입 포인트' %>
+            <input type="number" name="signupBonusPoints" min="0" step="1" value="<%= Number(settings.signupBonusPoints || 0) %>" required />
+          </label>
+          <button type="submit" class="chip dark"><%= isEn ? 'Save Signup Points' : '회원가입 포인트 저장' %></button>
+        </form>
+      </section>
+    <% } %>
+
+    <% if (pointsTab === 'level-rates') { %>
+      <section class="kpi-card">
+        <h4><%= isEn ? 'Level Point Rate Settings' : '등급별 포인트 적립률 설정' %></h4>
+        <p class="muted-label">
+          <%= isEn ? 'Manage point percentage per member level. Updated rates apply only to new purchases after update.' : '회원등급별 포인트 적립 퍼센테이지를 설정합니다. 변경된 적립률은 변경 이후 신규 구매건부터 적용됩니다.' %>
+        </p>
+
+        <% if (memberLevelRules.length === 0) { %>
+          <p class="muted-label"><%= isEn ? 'No member levels configured. Please create levels first in Member Management.' : '설정된 회원등급이 없습니다. 회원관리 > 회원레벨 설정에서 먼저 등급을 생성해 주세요.' %></p>
+        <% } else { %>
+          <form method="post" action="/admin/points/level-rates" class="form-grid">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><%= isEn ? 'Level' : '등급' %></th>
+                    <th><%= isEn ? 'Condition' : '조건' %></th>
+                    <th><%= isEn ? 'Accumulated Amount' : '누적 구매금액' %></th>
+                    <th><%= isEn ? 'Point Rate (%)' : '포인트 적립률 (%)' %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% memberLevelRules.forEach((rule) => { %>
+                    <tr>
+                      <td><strong><%= rule.name %></strong></td>
+                      <td><%= rule.operatorLabel || '-' %></td>
+                      <td>₩<%= Number(rule.thresholdAmount || 0).toLocaleString('ko-KR') %></td>
+                      <td>
+                        <input type="number" min="0" max="100" step="0.01" name="rate_<%= rule.id %>" value="<%= Number(rule.pointRate || 0) %>" />
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+            <button type="submit" class="chip dark"><%= isEn ? 'Save Level Point Rates' : '등급별 포인트 저장' %></button>
+          </form>
+        <% } %>
+      </section>
+    <% } %>
   </article>
   <% } %>
 
@@ -1100,27 +1348,6 @@
 
       <label><%= isEn ? 'Bank Account Info' : '입금 계좌 정보' %>
         <textarea name="bankAccountInfo" rows="2"><%= settings.bankAccountInfo %></textarea>
-      </label>
-
-      <label><%= isEn ? 'Signup Bonus Points (1 point = 1 KRW)' : '가입 보너스 포인트 (1포인트 = 1원)' %>
-        <input
-          type="number"
-          name="signupBonusPoints"
-          min="0"
-          step="1"
-          value="<%= Number(settings.signupBonusPoints || 0) %>"
-        />
-      </label>
-
-      <label><%= isEn ? 'Purchase Point Rate (%)' : '구매 적립률 (%)' %>
-        <input
-          type="number"
-          name="purchasePointRate"
-          min="0"
-          max="100"
-          step="0.01"
-          value="<%= Number(settings.purchasePointRate || 0) %>"
-        />
       </label>
 
       <label><%= isEn ? 'Menu JSON (Advanced)' : '메뉴 JSON (고급)' %>

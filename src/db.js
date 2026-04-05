@@ -98,6 +98,40 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
 
 export const SHOP_PRODUCT_GROUPS = DEFAULT_PRODUCT_GROUP_CONFIGS.map((group) => group.key);
 
+export const DEFAULT_MEMBER_LEVEL_RULES = [
+  {
+    id: 'starter',
+    name: '입문자',
+    operator: 'lt',
+    thresholdAmount: 2000000
+  },
+  {
+    id: 'collector',
+    name: '수집가',
+    operator: 'gte',
+    thresholdAmount: 2000000
+  },
+  {
+    id: 'enthusiast',
+    name: '애호가',
+    operator: 'gte',
+    thresholdAmount: 10000000
+  },
+  {
+    id: 'expert',
+    name: '전문가',
+    operator: 'gte',
+    thresholdAmount: 30000000
+  }
+];
+
+export const DEFAULT_MEMBER_LEVEL_POINT_RATES = {
+  starter: 0.5,
+  collector: 1,
+  enthusiast: 1.5,
+  expert: 2
+};
+
 const defaultMenus = [
   { id: 'home', labelKo: '메인페이지', labelEn: 'Main', path: '/main', isHidden: false },
   { id: 'notice', labelKo: '공지사항', labelEn: 'Notice', path: '/notice', isHidden: false },
@@ -148,6 +182,9 @@ const defaultSettings = {
   bankAccountInfo: '입금계좌: 은행명 000-0000-0000 (예금주: Chrono Lab)',
   signupBonusPoints: '0',
   purchasePointRate: '0',
+  memberLevelIncludedGroups: JSON.stringify(SHOP_PRODUCT_GROUPS),
+  memberLevelRules: JSON.stringify(DEFAULT_MEMBER_LEVEL_RULES),
+  memberLevelPointRates: JSON.stringify(DEFAULT_MEMBER_LEVEL_POINT_RATES),
   contactInfo: '고객센터: 010-0000-0000 / 카카오톡: @chronolab',
   businessInfo: '상호: Chrono Lab | 대표: Chrono Team | 사업자번호: 000-00-00000',
   languageDefault: 'ko',
@@ -471,6 +508,9 @@ function ensureOrdersPointColumns() {
 
   addColumnIfMissing('awarded_points', 'awarded_points INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('points_awarded_at', 'points_awarded_at TEXT');
+  addColumnIfMissing('point_rate_snapshot', 'point_rate_snapshot REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing('point_level_id', "point_level_id TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('point_level_name', "point_level_name TEXT NOT NULL DEFAULT ''");
 }
 
 function ensureDailyVisitSplitColumns() {

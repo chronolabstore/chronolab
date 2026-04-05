@@ -2193,6 +2193,50 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   gap: 6px;
 }
 
+.member-level-group-grid {
+  gap: 8px;
+}
+
+.check-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+
+.check-chip input {
+  width: auto;
+  margin: 0;
+}
+
+.member-level-rule-item {
+  align-items: start;
+}
+
+.member-level-rule-form {
+  width: 100%;
+}
+
+.member-level-rule-form input[readonly] {
+  background: var(--chip);
+}
+
+.member-level-delete-form {
+  margin-left: auto;
+}
+
+.member-level-help-note {
+  margin-top: 8px;
+}
+
+.member-level-table td .chip {
+  white-space: nowrap;
+}
+
 .admin-account-editor {
   border-top: 1px solid var(--line);
   padding-top: 10px;
