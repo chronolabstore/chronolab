@@ -2767,6 +2767,18 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   width: 100%;
 }
 
+.sales-global-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-global-actions .chip {
+  min-height: 38px;
+}
+
 .sales-global-hint {
   border: 1px dashed var(--line);
   border-radius: 10px;
@@ -2794,6 +2806,27 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.sales-date-action-group {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-date-action-separator {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .sales-date-action-group {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .sales-scope-action-row input,

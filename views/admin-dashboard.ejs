@@ -119,9 +119,9 @@
     : [
       { key: 'price', labelKo: '공장제 가격표', labelEn: 'Factory Price Table', scopeType: 'factory' },
       { key: 'preorder', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement', scopeType: 'round' },
-      { key: 'factory', labelKo: '공장제 매출', labelEn: 'Factory Sales', scopeType: 'round' },
-      { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'round' },
-      { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'round' }
+      { key: 'factory', labelKo: '공장제 매출', labelEn: 'Factory Sales', scopeType: 'date' },
+      { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'date' },
+      { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'date' }
     ];
   const salesManageTab = String((typeof salesSection === 'undefined' ? '' : salesSection) || '') === 'daily' ? 'daily' : 'editor';
   const salesDaily = salesDailyData || {
@@ -130,7 +130,6 @@
     rows: [],
     totals: { orderCount: 0, salesKrw: 0, costKrw: 0, marginKrw: 0, realMarginKrw: 0 }
   };
-  const salesSourceUrl = settings?.salesSheetUrl || salesSheetDefaultUrl || '';
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
   const uploadActiveGroupKey =
     String(editingItem?.category_group || productGroupKeys[0] || defaultGroupKey);
@@ -2695,12 +2694,6 @@
   <article class="block-card sales-editor-card">
     <div class="sales-manage-head">
       <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
-      <div class="admin-field-chip-row">
-        <% if (salesSourceUrl) { %>
-          <a href="<%= salesSourceUrl %>" target="_blank" rel="noreferrer" class="chip"><%= isEn ? 'Open Google Sheet' : '구글시트 열기' %></a>
-        <% } %>
-        <button type="button" class="chip" id="salesImportBtn"><%= isEn ? 'Re-Import From Sheet' : '시트에서 다시 불러오기' %></button>
-      </div>
     </div>
 
     <p class="muted-label">
@@ -2720,13 +2713,9 @@
         <span><%= isEn ? 'Base Date (for round/date tabs)' : '기준일자 (차수/날짜 탭용)' %></span>
         <input type="date" id="salesScopeDateInput" />
       </label>
-      <div class="sales-global-hint">
-        <strong id="salesShippingRmbText">-</strong>
-        <small class="muted-label"><%= isEn ? 'Converted shipping (RMB)' : '환산 배송비 (RMB)' %></small>
-      </div>
-      <div class="admin-field-chip-row">
-        <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Apply to Current Scope + Save' : '현재 분류 적용 + 저장' %></button>
-        <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Fetch Naver/Hana Cash Rate (Current Scope)' : '네이버(하나은행 현찰 살때) 반영 (현재 분류)' %></button>
+      <div class="sales-global-actions">
+        <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Save' : '저장' %></button>
+        <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Sync Naver FX' : '네이버 환율 반영' %></button>
       </div>
     </div>
 
@@ -2779,7 +2768,6 @@
   <script>
     (() => {
       const mainTabButtons = Array.from(document.querySelectorAll('#salesMainTabNav [data-sales-main-tab]'));
-      const importBtn = document.getElementById('salesImportBtn');
       const fxSyncBtn = document.getElementById('salesFxSyncBtn');
       const applyGlobalBtn = document.getElementById('salesApplyGlobalBtn');
       const saveBtn = document.getElementById('salesSaveBtn');
@@ -2788,19 +2776,17 @@
       const exchangeRateInput = document.getElementById('salesExchangeRateInput');
       const shippingFeeInput = document.getElementById('salesShippingFeeInput');
       const scopeDateInput = document.getElementById('salesScopeDateInput');
-      const shippingRmbText = document.getElementById('salesShippingRmbText');
       const summaryGrid = document.getElementById('salesSummaryGrid');
       const tableBody = document.getElementById('salesEditorTbody');
       const metaText = document.getElementById('salesMetaText');
       const errorText = document.getElementById('salesErrorText');
 
-      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !scopeDateInput || !shippingRmbText || !summaryGrid || !tableBody || !metaText || !errorText) {
+      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !scopeDateInput || !summaryGrid || !tableBody || !metaText || !errorText) {
         return;
       }
 
       const isEn = <%= isEn ? 'true' : 'false' %>;
       const tabDefs = <%- JSON.stringify(salesTabs || []) %>;
-      const numberFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR', { maximumFractionDigits: 4 });
       const integerFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
 
       let workbook = null;
@@ -2881,12 +2867,13 @@
       };
 
       const getScopes = () => {
-        const tabDef = getTabDef();
         const tab = getTabData();
         if (!tab) return [];
-        return tabDef.scopeType === 'factory'
-          ? (Array.isArray(tab.groups) ? tab.groups : [])
-          : (Array.isArray(tab.rounds) ? tab.rounds : []);
+        const mode = getScopeMode(activeTabKey);
+        if (mode === 'factory') {
+          return Array.isArray(tab.groups) ? tab.groups : [];
+        }
+        return Array.isArray(tab.rounds) ? tab.rounds : [];
       };
 
       const ensureActiveScope = () => {
@@ -2993,8 +2980,6 @@
         exchangeRateInput.value = exchangeRate;
         shippingFeeInput.value = shippingKrw;
         scopeDateInput.value = normalizeDate(activeSettings.baseDate || '');
-        const shippingRmb = exchangeRate > 0 ? shippingKrw / exchangeRate : 0;
-        shippingRmbText.textContent = `${numberFmt.format(Number(shippingRmb.toFixed(2)))} RMB`;
       };
 
       const renderSummary = () => {
@@ -3093,7 +3078,7 @@
           const indexCell = makeCell(String(index + 1));
           indexCell.className = 'sales-row-index';
           tr.appendChild(indexCell);
-          tr.appendChild(makeCell(makeInput('factory', row.factory || (getTabDef().scopeType === 'factory' ? scope.name : ''))));
+          tr.appendChild(makeCell(makeInput('factory', row.factory || (getScopeMode(activeTabKey) === 'factory' ? scope.name : ''))));
           tr.appendChild(makeCell(makeInput('brand', row.brand)));
           tr.appendChild(makeCell(makeInput('model', row.model)));
           tr.appendChild(makeCell(makeInput('reference', row.reference)));
@@ -3259,17 +3244,22 @@
           dateLabel.className = 'sales-round-select-wrap';
           const dateCaption = document.createElement('span');
           dateCaption.textContent = isEn ? 'Date' : '날짜';
-          const dateSelect = document.createElement('select');
-          scopes.forEach((scope) => {
-            const settings = ensureScopeSettings(scope, 'date');
-            const option = document.createElement('option');
-            option.value = scope.id;
-            option.textContent = settings?.baseDate || scope.name || '-';
-            option.selected = scope.id === activeScopeId;
-            dateSelect.appendChild(option);
-          });
-          dateSelect.addEventListener('change', () => {
-            activeScopeId = dateSelect.value;
+          const datePickerInput = document.createElement('input');
+          datePickerInput.type = 'date';
+          datePickerInput.value = normalizeDate(
+            getActiveScope()?.settings?.baseDate || getActiveScope()?.name || todayDateString()
+          );
+          datePickerInput.addEventListener('change', () => {
+            const selectedDate = normalizeDate(datePickerInput.value || '');
+            if (!selectedDate) return;
+            const matchedScope = scopes.find(
+              (scope) => normalizeDate(scope?.settings?.baseDate || scope?.name || '') === selectedDate
+            );
+            if (!matchedScope) {
+              renderMeta(isEn ? 'date selected (not created yet)' : '날짜 선택됨 (아직 생성 전)');
+              return;
+            }
+            activeScopeId = matchedScope.id;
             clearError();
             renderGlobalFields();
             renderScopeControls();
@@ -3277,11 +3267,7 @@
             renderSummary();
             renderMeta();
           });
-          dateLabel.append(dateCaption, dateSelect);
-
-          const dateInput = document.createElement('input');
-          dateInput.type = 'date';
-          dateInput.value = normalizeDate(getActiveScope()?.settings?.baseDate || getActiveScope()?.name || todayDateString());
+          dateLabel.append(dateCaption, datePickerInput);
 
           const addBtn = document.createElement('button');
           addBtn.type = 'button';
@@ -3289,7 +3275,7 @@
           addBtn.textContent = isEn ? 'Add Date' : '날짜 추가';
           addBtn.addEventListener('click', () => {
             if (!Array.isArray(tab.rounds)) tab.rounds = [];
-            const nextDate = normalizeDate(dateInput.value || '') || todayDateString();
+            const nextDate = normalizeDate(datePickerInput.value || '') || todayDateString();
             const exists = tab.rounds.find((scope) => normalizeDate(scope?.settings?.baseDate || scope?.name || '') === nextDate);
             if (exists) {
               activeScopeId = exists.id;
@@ -3328,7 +3314,7 @@
           saveDateBtn.addEventListener('click', () => {
             const scope = getActiveScope();
             if (!scope) return;
-            const nextDate = normalizeDate(dateInput.value || '');
+            const nextDate = normalizeDate(datePickerInput.value || '');
             if (!nextDate) {
               showError(isEn ? 'Select a valid date.' : '올바른 날짜를 선택해 주세요.');
               return;
@@ -3373,7 +3359,14 @@
             renderMeta();
           });
 
-          action.append(dateLabel, dateInput, addBtn, saveDateBtn, deleteBtn);
+          const topActionGroup = document.createElement('div');
+          topActionGroup.className = 'sales-date-action-group';
+          const groupSeparator = document.createElement('span');
+          groupSeparator.className = 'sales-date-action-separator';
+          groupSeparator.textContent = '|';
+          topActionGroup.append(groupSeparator, addBtn, saveDateBtn, deleteBtn);
+
+          action.append(dateLabel, topActionGroup);
           scopeControls.appendChild(action);
           return;
         }
@@ -3544,13 +3537,10 @@
         }
       };
 
-      const loadWorkbook = async (options = {}) => {
+      const loadWorkbook = async () => {
         clearError();
-        const importFromSheet = options.importFromSheet === true;
         try {
-          const query = new URLSearchParams();
-          if (importFromSheet) query.set('importFromSheet', '1');
-          const response = await fetch(`/admin/sales/data${query.toString() ? `?${query.toString()}` : ''}`, {
+          const response = await fetch('/admin/sales/data', {
             headers: { accept: 'application/json' }
           });
           const payload = await response.json();
@@ -3621,7 +3611,7 @@
         if (!scope || !Array.isArray(scope.rows)) return;
         scope.rows.push({
           id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          factory: getTabDef().scopeType === 'factory' ? scope.name : '',
+          factory: getScopeMode(activeTabKey) === 'factory' ? scope.name : '',
           brand: '',
           model: '',
           reference: '',
@@ -3735,11 +3725,7 @@
         }
       });
 
-      importBtn?.addEventListener('click', async () => {
-        await loadWorkbook({ importFromSheet: true });
-      });
-
-      void loadWorkbook({ importFromSheet: false });
+      void loadWorkbook();
     })();
   </script>
   <% } else { %>

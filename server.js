@@ -87,9 +87,9 @@ const SALES_WORKBOOK_SETTING_KEY = 'salesWorkbookV1';
 const SALES_MAIN_TABS = Object.freeze([
   { key: 'price', labelKo: '공장제 가격표', labelEn: 'Factory Price Table', scopeType: 'factory' },
   { key: 'preorder', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement', scopeType: 'round' },
-  { key: 'factory', labelKo: '공장제 매출', labelEn: 'Factory Sales', scopeType: 'round' },
-  { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'round' },
-  { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'round' }
+  { key: 'factory', labelKo: '공장제 매출', labelEn: 'Factory Sales', scopeType: 'date' },
+  { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'date' },
+  { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'date' }
 ]);
 const SALES_IMPORT_TABS = Object.freeze([
   { key: 'price', gid: '1876177949', labelKo: '공장제 가격표', labelEn: 'Factory Price Table' },
