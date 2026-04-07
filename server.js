@@ -2181,6 +2181,51 @@ function normalizeSalesText(value, maxLength = 120) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
+function getTodayDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeSalesDate(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/[./]/g, '-');
+  if (!normalized) return '';
+  if (!DATE_INPUT_REGEX.test(normalized)) return '';
+  return normalized;
+}
+
+function getSalesScopeMode(tabKey = '') {
+  const key = String(tabKey || '').trim();
+  if (key === 'price') return 'factory';
+  if (key === 'preorder') return 'round';
+  return 'date';
+}
+
+function normalizeSalesSettingValues(raw = {}, fallback = {}) {
+  const now = new Date().toISOString();
+  return {
+    exchangeRate: Number(
+      parseNonNegativeNumber(
+        raw?.exchangeRate,
+        parseNonNegativeNumber(fallback?.exchangeRate, SALES_DEFAULT_EXCHANGE_RATE)
+      ).toFixed(2)
+    ),
+    shippingFeeKrw: Math.round(
+      parseNonNegativeNumber(
+        raw?.shippingFeeKrw,
+        parseNonNegativeNumber(fallback?.shippingFeeKrw, SALES_DEFAULT_SHIPPING_FEE_KRW)
+      )
+    ),
+    fxSource: normalizeSalesText(raw?.fxSource, 40) || normalizeSalesText(fallback?.fxSource, 40) || 'manual',
+    fxUpdatedAt: normalizeSalesText(raw?.fxUpdatedAt, 40) || normalizeSalesText(fallback?.fxUpdatedAt, 40),
+    updatedAt: normalizeSalesText(raw?.updatedAt, 40) || normalizeSalesText(fallback?.updatedAt, 40) || now
+  };
+}
+
 function extractGoogleSheetId(sourceUrl = '') {
   const value = String(sourceUrl || '').trim();
   if (!value) return '';
@@ -2297,33 +2342,53 @@ function createDefaultRoundName(tabKey = '', index = 1) {
   if (tabKey === 'preorder') {
     return `${index}차`;
   }
+  if (getSalesScopeMode(tabKey) === 'date') {
+    return getTodayDateString();
+  }
   return index === 1 ? '기본' : `회차 ${index}`;
 }
 
 function buildDefaultSalesWorkbook() {
   const now = new Date().toISOString();
+  const defaultSettings = normalizeSalesSettingValues({
+    exchangeRate: SALES_DEFAULT_EXCHANGE_RATE,
+    shippingFeeKrw: SALES_DEFAULT_SHIPPING_FEE_KRW,
+    fxSource: 'manual',
+    fxUpdatedAt: '',
+    updatedAt: now
+  });
   const tabs = {};
   for (const tab of SALES_MAIN_TABS) {
+    const tabMode = getSalesScopeMode(tab.key);
+    const tabSettings = { ...defaultSettings };
     if (tab.scopeType === 'factory') {
       tabs[tab.key] = {
         key: tab.key,
         labelKo: tab.labelKo,
         labelEn: tab.labelEn,
         scopeType: tab.scopeType,
+        settings: tabSettings,
         groups: buildDefaultPriceScopes()
       };
       continue;
     }
 
+    const defaultScopeDate = tabMode === 'date' ? getTodayDateString() : '';
     tabs[tab.key] = {
       key: tab.key,
       labelKo: tab.labelKo,
       labelEn: tab.labelEn,
       scopeType: tab.scopeType,
+      settings: tabSettings,
       rounds: [
         {
           id: createSalesId(`round-${tab.key}`),
           name: createDefaultRoundName(tab.key, 1),
+          date: defaultScopeDate,
+          settings: {
+            ...tabSettings,
+            baseDate: defaultScopeDate
+          },
           rows: []
         }
       ]
@@ -2331,13 +2396,9 @@ function buildDefaultSalesWorkbook() {
   }
 
   return {
-    version: 1,
+    version: 2,
     globals: {
-      exchangeRate: SALES_DEFAULT_EXCHANGE_RATE,
-      shippingFeeKrw: SALES_DEFAULT_SHIPPING_FEE_KRW,
-      fxSource: 'manual',
-      fxUpdatedAt: '',
-      updatedAt: now
+      ...defaultSettings
     },
     tabs,
     meta: {
@@ -2348,10 +2409,11 @@ function buildDefaultSalesWorkbook() {
   };
 }
 
-function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 'round') {
+function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 'round', fallbackSettings = {}) {
   const fallbackPrefix = scopeType === 'factory' ? 'scope' : 'round';
   const fallbackName = scopeType === 'factory' ? `Factory ${index + 1}` : createDefaultRoundName(tabKey, index + 1);
   const rows = Array.isArray(rawScope?.rows) ? rawScope.rows : [];
+  const scopeMode = getSalesScopeMode(tabKey);
 
   const normalizedRows = rows
     .map((row) => createDefaultSalesRow(row))
@@ -2361,9 +2423,30 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
       return hasText || hasNumeric;
     });
 
+  const normalizedName = normalizeSalesText(rawScope?.name, 80) || fallbackName;
+  const explicitDate = normalizeSalesDate(rawScope?.date || rawScope?.baseDate || rawScope?.settings?.baseDate || '');
+  const inferredDate = normalizeSalesDate(normalizedName);
+  const scopeDate = explicitDate || (scopeMode === 'date' ? inferredDate || getTodayDateString() : '');
+  const scopeSettings = normalizeSalesSettingValues(
+    {
+      ...(rawScope?.settings && typeof rawScope.settings === 'object' ? rawScope.settings : {}),
+      exchangeRate: rawScope?.settings?.exchangeRate ?? rawScope?.exchangeRate,
+      shippingFeeKrw: rawScope?.settings?.shippingFeeKrw ?? rawScope?.shippingFeeKrw,
+      fxSource: rawScope?.settings?.fxSource ?? rawScope?.fxSource,
+      fxUpdatedAt: rawScope?.settings?.fxUpdatedAt ?? rawScope?.fxUpdatedAt,
+      updatedAt: rawScope?.settings?.updatedAt ?? rawScope?.updatedAt
+    },
+    fallbackSettings
+  );
+
   return {
     id: normalizeSalesText(rawScope?.id, 80) || createSalesId(`${fallbackPrefix}-${index + 1}`),
-    name: normalizeSalesText(rawScope?.name, 80) || fallbackName,
+    name: scopeMode === 'date' ? scopeDate || normalizedName : normalizedName,
+    date: scopeDate,
+    settings: {
+      ...scopeSettings,
+      baseDate: scopeDate
+    },
     rows: normalizedRows
   };
 }
@@ -2376,32 +2459,36 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
   const sourceMeta = source.meta && typeof source.meta === 'object' ? source.meta : {};
   const now = new Date().toISOString();
 
-  const globals = {
-    exchangeRate: Number(parseNonNegativeNumber(sourceGlobals.exchangeRate, SALES_DEFAULT_EXCHANGE_RATE).toFixed(4)),
-    shippingFeeKrw: Math.round(parseNonNegativeNumber(sourceGlobals.shippingFeeKrw, SALES_DEFAULT_SHIPPING_FEE_KRW)),
-    fxSource: normalizeSalesText(sourceGlobals.fxSource, 40) || 'manual',
-    fxUpdatedAt: normalizeSalesText(sourceGlobals.fxUpdatedAt, 40),
-    updatedAt: normalizeSalesText(sourceGlobals.updatedAt, 40) || now
-  };
+  const globals = normalizeSalesSettingValues(sourceGlobals, {
+    exchangeRate: SALES_DEFAULT_EXCHANGE_RATE,
+    shippingFeeKrw: SALES_DEFAULT_SHIPPING_FEE_KRW,
+    fxSource: 'manual',
+    fxUpdatedAt: '',
+    updatedAt: now
+  });
 
   const tabs = {};
   for (const tab of SALES_MAIN_TABS) {
     const rawTab = sourceTabs[tab.key] && typeof sourceTabs[tab.key] === 'object' ? sourceTabs[tab.key] : {};
+    const tabSettings = normalizeSalesSettingValues(rawTab.settings || {}, globals);
     if (tab.scopeType === 'factory') {
       const rawGroups = Array.isArray(rawTab.groups)
         ? rawTab.groups
         : Array.isArray(rawTab.scopes)
           ? rawTab.scopes
           : [];
-      let groups = rawGroups.map((group, index) => normalizeSalesScope(group, index, tab.key, 'factory'));
+      let groups = rawGroups.map((group, index) => normalizeSalesScope(group, index, tab.key, 'factory', tabSettings));
       if (groups.length === 0) {
-        groups = fallback.tabs[tab.key].groups.map((group, index) => normalizeSalesScope(group, index, tab.key, 'factory'));
+        groups = fallback.tabs[tab.key].groups.map((group, index) =>
+          normalizeSalesScope(group, index, tab.key, 'factory', tabSettings)
+        );
       }
       tabs[tab.key] = {
         key: tab.key,
         labelKo: tab.labelKo,
         labelEn: tab.labelEn,
         scopeType: tab.scopeType,
+        settings: tabSettings,
         groups
       };
       continue;
@@ -2412,9 +2499,11 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
       : Array.isArray(rawTab.scopes)
         ? rawTab.scopes
         : [];
-    let rounds = rawRounds.map((round, index) => normalizeSalesScope(round, index, tab.key, 'round'));
+    let rounds = rawRounds.map((round, index) => normalizeSalesScope(round, index, tab.key, 'round', tabSettings));
     if (rounds.length === 0) {
-      rounds = fallback.tabs[tab.key].rounds.map((round, index) => normalizeSalesScope(round, index, tab.key, 'round'));
+      rounds = fallback.tabs[tab.key].rounds.map((round, index) =>
+        normalizeSalesScope(round, index, tab.key, 'round', tabSettings)
+      );
     }
 
     tabs[tab.key] = {
@@ -2422,12 +2511,13 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
       labelKo: tab.labelKo,
       labelEn: tab.labelEn,
       scopeType: tab.scopeType,
+      settings: tabSettings,
       rounds
     };
   }
 
   return {
-    version: 1,
+    version: 2,
     globals,
     tabs,
     meta: {
@@ -2492,9 +2582,18 @@ function getSalesScopeList(tab = null) {
   return Array.isArray(tab.rounds) ? tab.rounds : [];
 }
 
-function buildSalesRowComputed(row = {}, globals = {}) {
-  const exchangeRate = parseNonNegativeNumber(globals.exchangeRate, SALES_DEFAULT_EXCHANGE_RATE);
-  const shippingFeeKrw = parseNonNegativeNumber(globals.shippingFeeKrw, SALES_DEFAULT_SHIPPING_FEE_KRW);
+function getEffectiveSalesSettings(tab = {}, scope = {}, globals = {}) {
+  const tabMode = getSalesScopeMode(tab?.key || '');
+  if (tabMode === 'factory') {
+    return normalizeSalesSettingValues(tab?.settings || {}, globals || {});
+  }
+  const scopeSettings = scope?.settings && typeof scope.settings === 'object' ? scope.settings : {};
+  return normalizeSalesSettingValues(scopeSettings, tab?.settings || globals || {});
+}
+
+function buildSalesRowComputed(row = {}, settings = {}) {
+  const exchangeRate = parseNonNegativeNumber(settings.exchangeRate, SALES_DEFAULT_EXCHANGE_RATE);
+  const shippingFeeKrw = parseNonNegativeNumber(settings.shippingFeeKrw, SALES_DEFAULT_SHIPPING_FEE_KRW);
   const costRmb = parseNonNegativeNumber(row.costRmb, 0);
   const saleKrw = parseNonNegativeNumber(row.saleKrw, 0);
   const quantity = Math.max(1, Math.floor(parseNonNegativeNumber(row.quantity, 1) || 1));
@@ -2513,7 +2612,7 @@ function buildSalesRowComputed(row = {}, globals = {}) {
   };
 }
 
-function buildSalesScopeSummary(scope = {}, globals = {}) {
+function buildSalesScopeSummary(scope = {}, settings = {}) {
   const rows = Array.isArray(scope.rows) ? scope.rows : [];
   let totalQty = 0;
   let totalCostKrw = 0;
@@ -2522,7 +2621,7 @@ function buildSalesScopeSummary(scope = {}, globals = {}) {
 
   for (const row of rows) {
     const quantity = Math.max(1, Math.floor(parseNonNegativeNumber(row.quantity, 1) || 1));
-    const computed = buildSalesRowComputed(row, globals);
+    const computed = buildSalesRowComputed(row, settings);
     totalQty += quantity;
     totalCostKrw += computed.totalCostKrw;
     totalSalesKrw += computed.totalSalesKrw;
@@ -2540,37 +2639,36 @@ function buildSalesScopeSummary(scope = {}, globals = {}) {
 
 function buildSalesWorkbookPayload(workbook) {
   const normalized = normalizeSalesWorkbook(workbook);
-  const shippingFeeRmb =
-    normalized.globals.exchangeRate > 0
-      ? Number((normalized.globals.shippingFeeKrw / normalized.globals.exchangeRate).toFixed(2))
-      : 0;
 
   const tabs = SALES_MAIN_TABS.map((tabInfo) => {
     const tab = normalized.tabs[tabInfo.key];
-    const scopes = getSalesScopeList(tab).map((scope) => ({
-      id: scope.id,
-      name: scope.name,
-      summary: buildSalesScopeSummary(scope, normalized.globals),
-      rows: scope.rows.map((row) => ({
-        ...row,
-        computed: buildSalesRowComputed(row, normalized.globals)
-      }))
-    }));
+    const scopes = getSalesScopeList(tab).map((scope) => {
+      const effectiveSettings = getEffectiveSalesSettings(tab, scope, normalized.globals);
+      return {
+        id: scope.id,
+        name: scope.name,
+        date: normalizeSalesDate(scope?.settings?.baseDate || scope?.date || ''),
+        settings: effectiveSettings,
+        summary: buildSalesScopeSummary(scope, effectiveSettings),
+        rows: scope.rows.map((row) => ({
+          ...row,
+          computed: buildSalesRowComputed(row, effectiveSettings)
+        }))
+      };
+    });
     return {
       key: tabInfo.key,
       labelKo: tabInfo.labelKo,
       labelEn: tabInfo.labelEn,
       scopeType: tabInfo.scopeType,
+      settings: normalizeSalesSettingValues(tab?.settings || {}, normalized.globals),
       scopes
     };
   });
 
   return {
     workbook: normalized,
-    globals: {
-      ...normalized.globals,
-      shippingFeeRmb
-    },
+    globals: normalized.globals,
     tabs
   };
 }
@@ -2598,8 +2696,15 @@ function extractRoundNameFromTitle(title = '', tabKey = '') {
   if (roundMatch?.[1]) {
     return roundMatch[1].replace(/\s+/g, '');
   }
+  const dateMatch = normalizeSalesDate(value);
+  if (dateMatch) {
+    return dateMatch;
+  }
   if (tabKey === 'preorder') {
     return '1차';
+  }
+  if (getSalesScopeMode(tabKey) === 'date') {
+    return getTodayDateString();
   }
   return '기본';
 }
@@ -2729,11 +2834,11 @@ function buildSalesWorkbookFromSheetSnapshot(snapshot = {}) {
   }
 
   const importedWorkbook = {
-    version: 1,
+    version: 2,
     globals: {
       exchangeRate:
         Number.isFinite(detectedExchangeRate) && detectedExchangeRate > 0
-          ? Number(detectedExchangeRate.toFixed(4))
+          ? Number(detectedExchangeRate.toFixed(2))
           : SALES_DEFAULT_EXCHANGE_RATE,
       shippingFeeKrw:
         Number.isFinite(detectedShippingFeeKrw) && detectedShippingFeeKrw > 0
@@ -8622,12 +8727,72 @@ app.post(
   asyncRoute(async (req, res) => {
     const fx = await fetchCnyKrwExchangeRate();
     const workbook = getSalesWorkbook();
-    workbook.globals.exchangeRate = fx.exchangeRate;
-    workbook.globals.fxSource = fx.provider;
-    workbook.globals.fxUpdatedAt = fx.updatedAt;
+    const tabKey = normalizeSalesText(req.body?.tabKey, 40);
+    const scopeId = normalizeSalesText(req.body?.scopeId, 120);
+    const requestedScopeDate = normalizeSalesDate(req.body?.scopeDate || '');
+    const targetTab = workbook.tabs && tabKey ? workbook.tabs[tabKey] : null;
+    const applyToGlobalFallback = () => {
+      workbook.globals = normalizeSalesSettingValues(
+        {
+          ...(workbook.globals || {}),
+          exchangeRate: fx.exchangeRate,
+          fxSource: fx.provider,
+          fxUpdatedAt: fx.updatedAt,
+          updatedAt: fx.updatedAt
+        },
+        workbook.globals || {}
+      );
+    };
+
+    if (!targetTab) {
+      applyToGlobalFallback();
+    } else if (getSalesScopeMode(tabKey) === 'factory') {
+      targetTab.settings = normalizeSalesSettingValues(
+        {
+          ...(targetTab.settings || {}),
+          exchangeRate: fx.exchangeRate,
+          fxSource: fx.provider,
+          fxUpdatedAt: fx.updatedAt,
+          updatedAt: fx.updatedAt
+        },
+        workbook.globals || {}
+      );
+    } else {
+      const scopes = getSalesScopeList(targetTab);
+      const targetScope =
+        scopes.find((scope) => String(scope.id || '') === scopeId) ||
+        scopes.find((scope) =>
+          normalizeSalesDate(scope?.settings?.baseDate || scope?.date || scope?.name || '') === requestedScopeDate
+        ) ||
+        null;
+      if (!targetScope) {
+        applyToGlobalFallback();
+      } else {
+        targetScope.settings = normalizeSalesSettingValues(
+          {
+            ...(targetScope.settings || {}),
+            exchangeRate: fx.exchangeRate,
+            fxSource: fx.provider,
+            fxUpdatedAt: fx.updatedAt,
+            updatedAt: fx.updatedAt
+          },
+          targetTab.settings || workbook.globals || {}
+        );
+        const nextScopeDate =
+          requestedScopeDate ||
+          normalizeSalesDate(targetScope?.settings?.baseDate || targetScope?.date || targetScope?.name || '');
+        if (nextScopeDate) {
+          targetScope.settings.baseDate = nextScopeDate;
+          targetScope.date = nextScopeDate;
+          if (getSalesScopeMode(tabKey) === 'date') {
+            targetScope.name = nextScopeDate;
+          }
+        }
+      }
+    }
     const savedWorkbook = saveSalesWorkbook(workbook);
 
-    logAdminActivity(req, 'SALES_FX_SYNC', `CNY/KRW=${fx.exchangeRate}`);
+    logAdminActivity(req, 'SALES_FX_SYNC', `tab:${tabKey || 'global'} scope:${scopeId || '-'} CNY/KRW=${fx.exchangeRate}`);
     return res.json({
       ok: true,
       sourceUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),

@@ -2684,25 +2684,29 @@
     </div>
 
     <p class="muted-label">
-      <%= isEn ? 'You can edit this area like an internal spreadsheet. Exchange rate and shipping fee are global and instantly applied to all sales sheets.' : '어드민 내부 스프레드시트처럼 직접 편집할 수 있습니다. 환율/배송비는 전역값으로 모든 매출 시트에 즉시 적용됩니다.' %>
+      <%= isEn ? 'Edit each sheet independently. Exchange rate and shipping fee are saved per selected tab/scope (round or date).' : '시트별로 독립 편집됩니다. 환율/배송비는 현재 선택한 탭/분류(차수·날짜) 기준으로 저장됩니다.' %>
     </p>
 
     <div class="sales-global-settings">
       <label class="sales-global-field">
         <span><%= isEn ? 'CNY Cash Buying (KRW)' : '위안화 환율 (하나은행 현찰 살때 KRW)' %></span>
-        <input type="number" min="0" step="0.0001" id="salesExchangeRateInput" />
+        <input type="number" min="0" step="0.01" id="salesExchangeRateInput" />
       </label>
       <label class="sales-global-field">
         <span><%= isEn ? 'Shipping Fee (KRW)' : '배송비 (KRW)' %></span>
-        <input type="number" min="0" step="1" id="salesShippingFeeInput" />
+        <input type="number" min="0" step="1000" id="salesShippingFeeInput" />
+      </label>
+      <label class="sales-global-field">
+        <span><%= isEn ? 'Base Date (for round/date tabs)' : '기준일자 (차수/날짜 탭용)' %></span>
+        <input type="date" id="salesScopeDateInput" />
       </label>
       <div class="sales-global-hint">
         <strong id="salesShippingRmbText">-</strong>
         <small class="muted-label"><%= isEn ? 'Converted shipping (RMB)' : '환산 배송비 (RMB)' %></small>
       </div>
       <div class="admin-field-chip-row">
-        <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Apply & Save' : '전역 적용 + 저장' %></button>
-        <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Fetch Naver/Hana Cash Rate' : '네이버(하나은행 현찰 살때) 자동 반영' %></button>
+        <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Apply to Current Scope + Save' : '현재 분류 적용 + 저장' %></button>
+        <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Fetch Naver/Hana Cash Rate (Current Scope)' : '네이버(하나은행 현찰 살때) 반영 (현재 분류)' %></button>
       </div>
     </div>
 
@@ -2763,13 +2767,14 @@
       const scopeControls = document.getElementById('salesScopeControls');
       const exchangeRateInput = document.getElementById('salesExchangeRateInput');
       const shippingFeeInput = document.getElementById('salesShippingFeeInput');
+      const scopeDateInput = document.getElementById('salesScopeDateInput');
       const shippingRmbText = document.getElementById('salesShippingRmbText');
       const summaryGrid = document.getElementById('salesSummaryGrid');
       const tableBody = document.getElementById('salesEditorTbody');
       const metaText = document.getElementById('salesMetaText');
       const errorText = document.getElementById('salesErrorText');
 
-      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !shippingRmbText || !summaryGrid || !tableBody || !metaText || !errorText) {
+      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !scopeDateInput || !shippingRmbText || !summaryGrid || !tableBody || !metaText || !errorText) {
         return;
       }
 
@@ -2795,6 +2800,32 @@
         return numeric;
       };
 
+      const normalizeDate = (value) => {
+        const raw = String(value || '').trim().replace(/[./]/g, '-');
+        if (!raw) return '';
+        return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+      };
+
+      const todayDateString = () => {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+
+      const roundToStep = (value, step = 1) => {
+        const safeStep = Math.max(0.000001, toPositive(step, 1));
+        const numeric = toPositive(value, 0);
+        return Math.round(numeric / safeStep) * safeStep;
+      };
+
+      const getScopeMode = (tabKey) => {
+        if (tabKey === 'price') return 'factory';
+        if (tabKey === 'preorder') return 'round';
+        return 'date';
+      };
+
       const formatKrw = (value) => {
         const amount = Math.round(toPositive(value, 0));
         return `${isEn ? 'KRW ' : '₩'}${integerFmt.format(amount)}`;
@@ -2812,6 +2843,23 @@
 
       const getTabDef = () => tabDefs.find((item) => item.key === activeTabKey) || tabDefs[0] || { key: 'price', scopeType: 'factory' };
       const getTabData = () => (workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs[activeTabKey] || null : null);
+
+      const normalizeSettings = (value, fallback = {}) => ({
+        exchangeRate: Number(roundToStep((value?.exchangeRate ?? fallback.exchangeRate ?? 229), 0.01).toFixed(2)),
+        shippingFeeKrw: Math.round(roundToStep((value?.shippingFeeKrw ?? fallback.shippingFeeKrw ?? 23000), 1000)),
+        fxSource: String(value?.fxSource || fallback.fxSource || 'manual').slice(0, 40),
+        fxUpdatedAt: String(value?.fxUpdatedAt || fallback.fxUpdatedAt || '').slice(0, 40),
+        updatedAt: String(value?.updatedAt || fallback.updatedAt || new Date().toISOString()).slice(0, 40),
+        baseDate: normalizeDate(value?.baseDate || value?.date || fallback.baseDate || '')
+      });
+
+      const ensureTabSettings = (tab) => {
+        if (!tab) return null;
+        const fallback = normalizeSettings(workbook?.globals || {}, { exchangeRate: 229, shippingFeeKrw: 23000 });
+        tab.settings = normalizeSettings(tab.settings || {}, fallback);
+        return tab.settings;
+      };
+
       const getScopes = () => {
         const tabDef = getTabDef();
         const tab = getTabData();
@@ -2834,9 +2882,56 @@
 
       const getActiveScope = () => getScopes().find((scope) => scope.id === activeScopeId) || getScopes()[0] || null;
 
+      const ensureScopeSettings = (scope, mode = getScopeMode(activeTabKey)) => {
+        if (!scope) return null;
+        const tab = getTabData();
+        const tabSettings = ensureTabSettings(tab) || normalizeSettings(workbook?.globals || {}, { exchangeRate: 229, shippingFeeKrw: 23000 });
+        scope.settings = normalizeSettings(scope.settings || {}, tabSettings);
+        if (mode === 'date') {
+          const normalizedDate = normalizeDate(scope.settings.baseDate || scope.date || scope.name || todayDateString());
+          scope.settings.baseDate = normalizedDate;
+          scope.date = normalizedDate;
+          scope.name = normalizedDate;
+        } else if (mode === 'round') {
+          const normalizedDate = normalizeDate(scope.settings.baseDate || scope.date || '');
+          scope.settings.baseDate = normalizedDate;
+          scope.date = normalizedDate;
+        } else {
+          const normalizedDate = normalizeDate(scope.settings.baseDate || '');
+          scope.settings.baseDate = normalizedDate;
+          scope.date = normalizedDate;
+        }
+        return scope.settings;
+      };
+
+      const getActiveSettings = () => {
+        const tab = getTabData();
+        const mode = getScopeMode(activeTabKey);
+        const tabSettings = ensureTabSettings(tab) || normalizeSettings(workbook?.globals || {}, { exchangeRate: 229, shippingFeeKrw: 23000 });
+        if (mode === 'factory') {
+          return tabSettings;
+        }
+        const scope = getActiveScope();
+        return ensureScopeSettings(scope, mode) || tabSettings;
+      };
+
+      const getScopeDisplayName = (scope) => {
+        if (!scope) return '-';
+        const mode = getScopeMode(activeTabKey);
+        const settings = ensureScopeSettings(scope, mode);
+        if (mode === 'date') {
+          return settings?.baseDate || scope.name || '-';
+        }
+        if (mode === 'round') {
+          return settings?.baseDate ? `${scope.name} (${settings.baseDate})` : (scope.name || '-');
+        }
+        return scope.name || '-';
+      };
+
       const calcRow = (row) => {
-        const exchangeRate = Math.max(0.0001, toPositive(workbook?.globals?.exchangeRate, 0));
-        const shippingFeeKrw = Math.max(0, toPositive(workbook?.globals?.shippingFeeKrw, 0));
+        const settings = getActiveSettings();
+        const exchangeRate = Math.max(0.01, toPositive(settings?.exchangeRate, 0.01));
+        const shippingFeeKrw = Math.max(0, toPositive(settings?.shippingFeeKrw, 0));
         const costRmb = Math.max(0, toPositive(row?.costRmb, 0));
         const saleKrw = Math.max(0, toPositive(row?.saleKrw, 0));
         const quantity = Math.max(1, Math.floor(toPositive(row?.quantity, 1) || 1));
@@ -2858,22 +2953,26 @@
       const renderMeta = (extraText = '') => {
         const tabDef = getTabDef();
         const scope = getActiveScope();
-        const updatedAt = workbook?.globals?.updatedAt
-          ? new Date(workbook.globals.updatedAt).toLocaleString(isEn ? 'en-US' : 'ko-KR')
+        const activeSettings = getActiveSettings();
+        const updatedAt = activeSettings?.updatedAt
+          ? new Date(activeSettings.updatedAt).toLocaleString(isEn ? 'en-US' : 'ko-KR')
           : '-';
         const statusText = dirty ? (isEn ? 'unsaved changes' : '저장되지 않은 변경') : (isEn ? 'saved' : '저장됨');
+        const scopeName = getScopeDisplayName(scope);
         const base = isEn
-          ? `Tab: ${tabDef?.labelEn || tabDef?.key || '-'} · Scope: ${scope?.name || '-'} · ${statusText} · Updated: ${updatedAt}`
-          : `탭: ${tabDef?.labelKo || tabDef?.key || '-'} · 분류: ${scope?.name || '-'} · ${statusText} · 마지막 저장: ${updatedAt}`;
+          ? `Tab: ${tabDef?.labelEn || tabDef?.key || '-'} · Scope: ${scopeName} · ${statusText} · Updated: ${updatedAt}`
+          : `탭: ${tabDef?.labelKo || tabDef?.key || '-'} · 분류: ${scopeName} · ${statusText} · 마지막 저장: ${updatedAt}`;
         metaText.textContent = extraText ? `${base} · ${extraText}` : base;
       };
 
       const renderGlobalFields = () => {
-        if (!workbook?.globals) return;
-        const exchangeRate = toPositive(workbook.globals.exchangeRate, 0);
-        const shippingKrw = Math.round(toPositive(workbook.globals.shippingFeeKrw, 0));
+        const activeSettings = getActiveSettings();
+        if (!activeSettings) return;
+        const exchangeRate = Number(roundToStep(toPositive(activeSettings.exchangeRate, 0), 0.01).toFixed(2));
+        const shippingKrw = Math.round(roundToStep(toPositive(activeSettings.shippingFeeKrw, 0), 1000));
         exchangeRateInput.value = exchangeRate;
         shippingFeeInput.value = shippingKrw;
+        scopeDateInput.value = normalizeDate(activeSettings.baseDate || '');
         const shippingRmb = exchangeRate > 0 ? shippingKrw / exchangeRate : 0;
         shippingRmbText.textContent = `${numberFmt.format(Number(shippingRmb.toFixed(2)))} RMB`;
       };
@@ -3020,15 +3119,26 @@
         const tab = getTabData();
         const scopes = getScopes();
         if (!tab) return;
+        const scopeMode = getScopeMode(tab.key);
 
         const caption = document.createElement('p');
         caption.className = 'muted-label';
-        caption.textContent = tabDef.scopeType === 'factory'
-          ? (isEn ? 'Factory sub-categories for factory price table' : '공장제 가격표의 공장별 하위 분류')
-          : (isEn ? 'Use dropdown rounds/batches for cleaner operation (instead of too many buttons).' : '버튼이 길어지는 문제를 피하려고 드롭다운 차수/회차 방식으로 구성했습니다.');
+        if (scopeMode === 'factory') {
+          caption.textContent = isEn
+            ? 'Factory sub-categories for factory price table'
+            : '공장제 가격표의 공장별 하위 분류';
+        } else if (scopeMode === 'round') {
+          caption.textContent = isEn
+            ? 'Rounds/batches are stored separately. Set date + FX per selected round.'
+            : '차수(회차)별로 별도 저장됩니다. 선택한 차수에 기준일자/환율/배송비를 저장하세요.';
+        } else {
+          caption.textContent = isEn
+            ? 'Sales are managed by date. Select or add date to edit that day only.'
+            : '매출은 날짜별로 관리됩니다. 날짜를 선택/추가해 해당 날짜 데이터만 편집하세요.';
+        }
         scopeControls.appendChild(caption);
 
-        if (tabDef.scopeType === 'factory') {
+        if (scopeMode === 'factory') {
           const nav = document.createElement('div');
           nav.className = 'security-subnav';
           scopes.forEach((scope) => {
@@ -3038,6 +3148,8 @@
             btn.textContent = scope.name;
             btn.addEventListener('click', () => {
               activeScopeId = scope.id;
+              clearError();
+              renderGlobalFields();
               renderScopeControls();
               renderTableRows();
               renderSummary();
@@ -3065,10 +3177,13 @@
             tab.groups.push({
               id: `scope-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
               name: nextName.slice(0, 80),
+              settings: normalizeSettings({}, ensureTabSettings(tab)),
               rows: []
             });
             activeScopeId = tab.groups[tab.groups.length - 1].id;
             dirty = true;
+            clearError();
+            renderGlobalFields();
             renderScopeControls();
             renderTableRows();
             renderSummary();
@@ -3086,6 +3201,7 @@
             if (!nextName) return;
             scope.name = nextName.slice(0, 80);
             dirty = true;
+            clearError();
             renderScopeControls();
             renderMeta();
           });
@@ -3103,6 +3219,7 @@
             tab.groups = tab.groups.filter((scope) => scope.id !== activeScopeId);
             activeScopeId = tab.groups[0]?.id || '';
             dirty = true;
+            renderGlobalFields();
             renderScopeControls();
             renderTableRows();
             renderSummary();
@@ -3110,6 +3227,133 @@
           });
 
           action.append(nameInput, addBtn, renameBtn, deleteBtn);
+          scopeControls.appendChild(action);
+          return;
+        }
+
+        if (scopeMode === 'date') {
+          const action = document.createElement('div');
+          action.className = 'sales-scope-action-row';
+
+          const dateLabel = document.createElement('label');
+          dateLabel.className = 'sales-round-select-wrap';
+          const dateCaption = document.createElement('span');
+          dateCaption.textContent = isEn ? 'Date' : '날짜';
+          const dateSelect = document.createElement('select');
+          scopes.forEach((scope) => {
+            const settings = ensureScopeSettings(scope, 'date');
+            const option = document.createElement('option');
+            option.value = scope.id;
+            option.textContent = settings?.baseDate || scope.name || '-';
+            option.selected = scope.id === activeScopeId;
+            dateSelect.appendChild(option);
+          });
+          dateSelect.addEventListener('change', () => {
+            activeScopeId = dateSelect.value;
+            clearError();
+            renderGlobalFields();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+          dateLabel.append(dateCaption, dateSelect);
+
+          const dateInput = document.createElement('input');
+          dateInput.type = 'date';
+          dateInput.value = normalizeDate(getActiveScope()?.settings?.baseDate || getActiveScope()?.name || todayDateString());
+
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'chip';
+          addBtn.textContent = isEn ? 'Add Date' : '날짜 추가';
+          addBtn.addEventListener('click', () => {
+            if (!Array.isArray(tab.rounds)) tab.rounds = [];
+            const nextDate = normalizeDate(dateInput.value || '') || todayDateString();
+            const exists = tab.rounds.find((scope) => normalizeDate(scope?.settings?.baseDate || scope?.name || '') === nextDate);
+            if (exists) {
+              activeScopeId = exists.id;
+              clearError();
+              renderGlobalFields();
+              renderScopeControls();
+              renderTableRows();
+              renderSummary();
+              renderMeta(isEn ? 'existing date selected' : '이미 등록된 날짜를 선택했습니다.');
+              return;
+            }
+            tab.rounds.push({
+              id: `date-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              name: nextDate,
+              date: nextDate,
+              settings: {
+                ...normalizeSettings({}, ensureTabSettings(tab)),
+                baseDate: nextDate
+              },
+              rows: []
+            });
+            activeScopeId = tab.rounds[tab.rounds.length - 1].id;
+            dirty = true;
+            clearError();
+            renderGlobalFields();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          const saveDateBtn = document.createElement('button');
+          saveDateBtn.type = 'button';
+          saveDateBtn.className = 'chip';
+          saveDateBtn.textContent = isEn ? 'Save Date' : '날짜 저장';
+          saveDateBtn.addEventListener('click', () => {
+            const scope = getActiveScope();
+            if (!scope) return;
+            const nextDate = normalizeDate(dateInput.value || '');
+            if (!nextDate) {
+              showError(isEn ? 'Select a valid date.' : '올바른 날짜를 선택해 주세요.');
+              return;
+            }
+            const duplicated = tab.rounds.find(
+              (candidate) =>
+                candidate.id !== scope.id &&
+                normalizeDate(candidate?.settings?.baseDate || candidate?.name || '') === nextDate
+            );
+            if (duplicated) {
+              showError(isEn ? 'This date already exists.' : '이미 등록된 날짜입니다.');
+              return;
+            }
+            ensureScopeSettings(scope, 'date');
+            scope.settings.baseDate = nextDate;
+            scope.date = nextDate;
+            scope.name = nextDate;
+            dirty = true;
+            clearError();
+            renderGlobalFields();
+            renderScopeControls();
+            renderMeta();
+          });
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'chip';
+          deleteBtn.textContent = isEn ? 'Delete' : '삭제';
+          deleteBtn.addEventListener('click', () => {
+            if (!Array.isArray(tab.rounds) || tab.rounds.length <= 1) {
+              showError(isEn ? 'At least one date is required.' : '날짜는 최소 1개가 필요합니다.');
+              return;
+            }
+            clearError();
+            tab.rounds = tab.rounds.filter((scope) => scope.id !== activeScopeId);
+            activeScopeId = tab.rounds[0]?.id || '';
+            dirty = true;
+            renderGlobalFields();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          action.append(dateLabel, dateInput, addBtn, saveDateBtn, deleteBtn);
           scopeControls.appendChild(action);
           return;
         }
@@ -3123,14 +3367,17 @@
         roundCaption.textContent = isEn ? 'Round/Batch' : '차수/회차';
         const roundSelect = document.createElement('select');
         scopes.forEach((scope) => {
+          ensureScopeSettings(scope, 'round');
           const option = document.createElement('option');
           option.value = scope.id;
-          option.textContent = scope.name;
+          option.textContent = getScopeDisplayName(scope);
           option.selected = scope.id === activeScopeId;
           roundSelect.appendChild(option);
         });
         roundSelect.addEventListener('change', () => {
           activeScopeId = roundSelect.value;
+          clearError();
+          renderGlobalFields();
           renderScopeControls();
           renderTableRows();
           renderSummary();
@@ -3143,6 +3390,10 @@
         nameInput.placeholder = isEn ? 'Round/Batch name' : '차수/회차명';
         nameInput.value = getActiveScope()?.name || '';
 
+        const roundDateInput = document.createElement('input');
+        roundDateInput.type = 'date';
+        roundDateInput.value = normalizeDate(getActiveScope()?.settings?.baseDate || getActiveScope()?.date || '');
+
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
         addBtn.className = 'chip';
@@ -3153,13 +3404,21 @@
             ? `${tab.rounds.length + 1}차`
             : (isEn ? `Batch ${tab.rounds.length + 1}` : `회차 ${tab.rounds.length + 1}`);
           const nextName = String(nameInput.value || '').trim() || fallbackName;
+          const nextDate = normalizeDate(roundDateInput.value || '');
           tab.rounds.push({
             id: `round-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             name: nextName.slice(0, 80),
+            date: nextDate,
+            settings: {
+              ...normalizeSettings({}, ensureTabSettings(tab)),
+              baseDate: nextDate
+            },
             rows: []
           });
           activeScopeId = tab.rounds[tab.rounds.length - 1].id;
           dirty = true;
+          clearError();
+          renderGlobalFields();
           renderScopeControls();
           renderTableRows();
           renderSummary();
@@ -3177,6 +3436,24 @@
           if (!nextName) return;
           scope.name = nextName.slice(0, 80);
           dirty = true;
+          clearError();
+          renderScopeControls();
+          renderMeta();
+        });
+
+        const saveDateBtn = document.createElement('button');
+        saveDateBtn.type = 'button';
+        saveDateBtn.className = 'chip';
+        saveDateBtn.textContent = isEn ? 'Save Date' : '날짜 저장';
+        saveDateBtn.addEventListener('click', () => {
+          const scope = getActiveScope();
+          if (!scope) return;
+          ensureScopeSettings(scope, 'round');
+          scope.settings.baseDate = normalizeDate(roundDateInput.value || '');
+          scope.date = scope.settings.baseDate;
+          dirty = true;
+          clearError();
+          renderGlobalFields();
           renderScopeControls();
           renderMeta();
         });
@@ -3194,13 +3471,14 @@
           tab.rounds = tab.rounds.filter((scope) => scope.id !== activeScopeId);
           activeScopeId = tab.rounds[0]?.id || '';
           dirty = true;
+          renderGlobalFields();
           renderScopeControls();
           renderTableRows();
           renderSummary();
           renderMeta();
         });
 
-        action.append(roundLabel, nameInput, addBtn, renameBtn, deleteBtn);
+        action.append(roundLabel, nameInput, roundDateInput, addBtn, renameBtn, saveDateBtn, deleteBtn);
         scopeControls.appendChild(action);
       };
 
@@ -3210,6 +3488,7 @@
           button.classList.toggle('active', button.getAttribute('data-sales-main-tab') === tabKey);
         });
         ensureActiveScope();
+        renderGlobalFields();
         renderScopeControls();
         renderTableRows();
         renderSummary();
@@ -3338,10 +3617,37 @@
         renderMeta();
       });
 
-      exchangeRateInput?.addEventListener('input', () => {
-        if (!workbook?.globals) return;
-        workbook.globals.exchangeRate = Math.max(0.0001, toPositive(exchangeRateInput.value, 0.0001));
+      const applySettingsInputsToActiveScope = () => {
+        const tab = getTabData();
+        const scope = getActiveScope();
+        const activeSettings = getActiveSettings();
+        if (!tab || !activeSettings) return;
+
+        activeSettings.exchangeRate = Number(
+          roundToStep(Math.max(0.01, toPositive(exchangeRateInput.value, activeSettings.exchangeRate || 0.01)), 0.01).toFixed(2)
+        );
+        activeSettings.shippingFeeKrw = Math.max(
+          0,
+          Math.round(roundToStep(toPositive(shippingFeeInput.value, activeSettings.shippingFeeKrw || 0), 1000))
+        );
+        activeSettings.updatedAt = new Date().toISOString();
+
+        const mode = getScopeMode(activeTabKey);
+        const nextScopeDate = normalizeDate(scopeDateInput.value || '');
+        if (nextScopeDate && scope) {
+          ensureScopeSettings(scope, mode);
+          scope.settings.baseDate = nextScopeDate;
+          scope.date = nextScopeDate;
+          if (mode === 'date') {
+            scope.name = nextScopeDate;
+          }
+        }
+
         dirty = true;
+      };
+
+      exchangeRateInput?.addEventListener('input', () => {
+        applySettingsInputsToActiveScope();
         renderGlobalFields();
         renderTableRows();
         renderSummary();
@@ -3349,16 +3655,24 @@
       });
 
       shippingFeeInput?.addEventListener('input', () => {
-        if (!workbook?.globals) return;
-        workbook.globals.shippingFeeKrw = Math.max(0, Math.round(toPositive(shippingFeeInput.value, 0)));
-        dirty = true;
+        applySettingsInputsToActiveScope();
         renderGlobalFields();
         renderTableRows();
         renderSummary();
         renderMeta();
       });
 
+      scopeDateInput?.addEventListener('change', () => {
+        applySettingsInputsToActiveScope();
+        renderGlobalFields();
+        renderScopeControls();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
       applyGlobalBtn?.addEventListener('click', () => {
+        applySettingsInputsToActiveScope();
         void saveWorkbook();
       });
 
@@ -3369,9 +3683,20 @@
       fxSyncBtn?.addEventListener('click', async () => {
         clearError();
         try {
+          const requestBody = {
+            tabKey: activeTabKey,
+            scopeId: activeScopeId || '',
+            scopeDate:
+              normalizeDate(scopeDateInput.value || '') ||
+              normalizeDate(getActiveScope()?.settings?.baseDate || getActiveScope()?.date || '')
+          };
           const response = await fetch('/admin/sales/fx-sync', {
             method: 'POST',
-            headers: { accept: 'application/json' }
+            headers: {
+              accept: 'application/json',
+              'content-type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
           });
           const payload = await response.json();
           if (!response.ok || !payload?.ok || !payload?.workbook) {
