@@ -1609,6 +1609,14 @@ function normalizeProductManageSection(rawSection = '') {
   return 'upload';
 }
 
+function normalizeSalesManageSection(rawSection = '') {
+  const section = String(rawSection || '').trim().toLowerCase();
+  if (section === 'daily' || section === 'summary') {
+    return 'daily';
+  }
+  return 'editor';
+}
+
 function normalizeContentManageSection(rawSection = '') {
   const section = String(rawSection || '').trim().toLowerCase();
   if (section === 'list') {
@@ -1727,6 +1735,26 @@ function parseAdminOrderManageQuery(query = {}, availableGroupKeys = []) {
     orderStatusFilter,
     orderDateFrom,
     orderDateTo
+  };
+}
+
+function parseSalesManageQuery(query = {}, availableGroupKeys = []) {
+  const salesSection = normalizeSalesManageSection(query.salesSection || query.section || '');
+  const salesGroupFilter = normalizeAdminOrderGroupFilter(query.salesGroup || query.group || '', availableGroupKeys);
+  let salesDateFrom = normalizeDateInput(query.salesDateFrom || query.dateFrom || '');
+  let salesDateTo = normalizeDateInput(query.salesDateTo || query.dateTo || '');
+
+  if (salesDateFrom && salesDateTo && salesDateFrom > salesDateTo) {
+    const temp = salesDateFrom;
+    salesDateFrom = salesDateTo;
+    salesDateTo = temp;
+  }
+
+  return {
+    salesSection,
+    salesGroupFilter,
+    salesDateFrom,
+    salesDateTo
   };
 }
 
@@ -2670,6 +2698,205 @@ function buildSalesWorkbookPayload(workbook) {
     workbook: normalized,
     globals: normalized.globals,
     tabs
+  };
+}
+
+function normalizeSalesMatchToken(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9가-힣]/g, '');
+}
+
+function isSalesTokenMatch(a = '', b = '') {
+  const left = normalizeSalesMatchToken(a);
+  const right = normalizeSalesMatchToken(b);
+  if (!left || !right) {
+    return false;
+  }
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function getSalesTabKeyForCategoryGroup(categoryGroup = '') {
+  const normalized = normalizeProductGroupKey(categoryGroup || '');
+  if (normalized === '공장제') return 'factory';
+  if (normalized === '젠파츠') return 'genparts';
+  if (normalized === '현지중고') return 'used';
+  return '';
+}
+
+function resolveSalesScopeDate(scope = {}) {
+  return normalizeSalesDate(scope?.settings?.baseDate || scope?.date || scope?.name || '');
+}
+
+function pickSalesScopeForDate(tab = {}, tabKey = '', targetDate = '') {
+  const scopes = getSalesScopeList(tab);
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    return null;
+  }
+
+  if (getSalesScopeMode(tabKey) !== 'date') {
+    return scopes[0];
+  }
+
+  const normalizedTargetDate = normalizeSalesDate(targetDate || '');
+  const datedScopes = scopes
+    .map((scope) => ({
+      scope,
+      scopeDate: resolveSalesScopeDate(scope)
+    }))
+    .filter((item) => item.scopeDate);
+
+  if (datedScopes.length === 0) {
+    return scopes[0];
+  }
+
+  if (normalizedTargetDate) {
+    const exact = datedScopes.find((item) => item.scopeDate === normalizedTargetDate);
+    if (exact) {
+      return exact.scope;
+    }
+
+    const previousOrSame = datedScopes
+      .filter((item) => item.scopeDate <= normalizedTargetDate)
+      .sort((a, b) => (a.scopeDate < b.scopeDate ? 1 : -1));
+    if (previousOrSame.length > 0) {
+      return previousOrSame[0].scope;
+    }
+  }
+
+  datedScopes.sort((a, b) => (a.scopeDate < b.scopeDate ? 1 : -1));
+  return datedScopes[0].scope;
+}
+
+function scoreSalesRowForProduct(row = {}, product = {}) {
+  const productReference = normalizeSalesMatchToken(product.reference || '');
+  const productBrand = normalizeSalesMatchToken(product.brand || '');
+  const productModel = normalizeSalesMatchToken(product.model || '');
+  const productFactory = normalizeSalesMatchToken(product.factory_name || '');
+  const productSubModel = normalizeSalesMatchToken(product.sub_model || '');
+
+  const rowReference = normalizeSalesMatchToken(row.reference || '');
+  const rowBrand = normalizeSalesMatchToken(row.brand || '');
+  const rowModel = normalizeSalesMatchToken(row.model || '');
+  const rowFactory = normalizeSalesMatchToken(row.factory || '');
+  const rowSpec = normalizeSalesMatchToken(row.spec || row.model || '');
+
+  let score = 0;
+  let strongMatched = false;
+
+  const referenceMatched =
+    Boolean(productReference) && Boolean(rowReference) && isSalesTokenMatch(productReference, rowReference);
+  if (referenceMatched) {
+    score += 100;
+    strongMatched = true;
+  }
+
+  const brandMatched = Boolean(productBrand) && Boolean(rowBrand) && isSalesTokenMatch(productBrand, rowBrand);
+  const modelMatched = Boolean(productModel) && Boolean(rowModel) && isSalesTokenMatch(productModel, rowModel);
+  if (brandMatched) score += 20;
+  if (modelMatched) score += 30;
+  if (brandMatched && modelMatched) {
+    score += 20;
+    strongMatched = true;
+  }
+
+  if (productFactory && rowFactory && isSalesTokenMatch(productFactory, rowFactory)) {
+    score += 8;
+  }
+  if (productSubModel && rowSpec && isSalesTokenMatch(productSubModel, rowSpec)) {
+    score += 6;
+  }
+
+  if (!strongMatched) {
+    return 0;
+  }
+  return score;
+}
+
+function findBestSalesRowForProduct(rows = [], product = {}) {
+  let bestRow = null;
+  let bestScore = 0;
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const score = scoreSalesRowForProduct(row, product);
+    if (score > bestScore) {
+      bestRow = row;
+      bestScore = score;
+    }
+  }
+
+  return {
+    row: bestRow,
+    score: bestScore
+  };
+}
+
+function buildOrderSalesSnapshot(input = {}) {
+  const product = input?.product && typeof input.product === 'object' ? input.product : {};
+  const quantity = Math.max(1, Math.floor(parseNonNegativeNumber(input.quantity, 1) || 1));
+  const totalPrice = Math.max(0, Math.round(parseNonNegativeNumber(input.totalPrice, 0)));
+  const baseDate = normalizeSalesDate(input.baseDate || '') || toKstDate();
+  const tabKey = getSalesTabKeyForCategoryGroup(product.category_group || '');
+
+  const fallbackSnapshot = {
+    sales_tab_key: tabKey,
+    sales_scope_id: '',
+    sales_scope_name: '',
+    sales_scope_date: baseDate,
+    sales_exchange_rate_snapshot: SALES_DEFAULT_EXCHANGE_RATE,
+    sales_shipping_fee_krw_snapshot: SALES_DEFAULT_SHIPPING_FEE_KRW,
+    sales_cost_rmb_snapshot: 0,
+    sales_cost_krw_snapshot: 0,
+    sales_margin_krw_snapshot: totalPrice,
+    sales_real_margin_krw_snapshot: totalPrice,
+    sales_synced_at: new Date().toISOString()
+  };
+
+  if (!tabKey) {
+    return fallbackSnapshot;
+  }
+
+  const workbook = getSalesWorkbook();
+  const tab = workbook?.tabs?.[tabKey];
+  if (!tab || typeof tab !== 'object') {
+    return fallbackSnapshot;
+  }
+
+  const scope = pickSalesScopeForDate(tab, tabKey, baseDate);
+  const scopeDate = resolveSalesScopeDate(scope || {}) || baseDate;
+  const settings = getEffectiveSalesSettings(tab, scope || {}, workbook?.globals || {});
+  const rows = Array.isArray(scope?.rows) ? scope.rows : [];
+  const matched = findBestSalesRowForProduct(rows, product);
+  const matchedRow = matched.row;
+  const costRmb = parseNonNegativeNumber(matchedRow?.costRmb, 0);
+
+  const computed = buildSalesRowComputed(
+    {
+      costRmb,
+      saleKrw: quantity > 0 ? Math.round(totalPrice / quantity) : totalPrice,
+      quantity
+    },
+    settings
+  );
+
+  const marginKrw = totalPrice - Math.round(computed.totalCostKrw);
+  return {
+    sales_tab_key: tabKey,
+    sales_scope_id: String(scope?.id || ''),
+    sales_scope_name: String(scope?.name || ''),
+    sales_scope_date: scopeDate,
+    sales_exchange_rate_snapshot: Number(
+      parseNonNegativeNumber(settings.exchangeRate, SALES_DEFAULT_EXCHANGE_RATE).toFixed(2)
+    ),
+    sales_shipping_fee_krw_snapshot: Math.round(
+      parseNonNegativeNumber(settings.shippingFeeKrw, SALES_DEFAULT_SHIPPING_FEE_KRW)
+    ),
+    sales_cost_rmb_snapshot: Number(costRmb.toFixed(4)),
+    sales_cost_krw_snapshot: Math.round(computed.totalCostKrw),
+    sales_margin_krw_snapshot: Math.round(marginKrw),
+    sales_real_margin_krw_snapshot: Math.round(marginKrw),
+    sales_synced_at: new Date().toISOString()
   };
 }
 
@@ -4694,7 +4921,23 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
   }
 
   const product = db
-    .prepare('SELECT id, category_group, brand, model, sub_model, price, shipping_period FROM products WHERE id = ? AND is_active = 1 LIMIT 1')
+    .prepare(
+      `
+        SELECT
+          id,
+          category_group,
+          brand,
+          model,
+          sub_model,
+          reference,
+          factory_name,
+          price,
+          shipping_period
+        FROM products
+        WHERE id = ? AND is_active = 1
+        LIMIT 1
+      `
+    )
     .get(id);
 
   if (!product) {
@@ -4746,7 +4989,23 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   }
 
   const product = db
-    .prepare('SELECT id, category_group, brand, model, sub_model, price, shipping_period FROM products WHERE id = ? AND is_active = 1 LIMIT 1')
+    .prepare(
+      `
+        SELECT
+          id,
+          category_group,
+          brand,
+          model,
+          sub_model,
+          reference,
+          factory_name,
+          price,
+          shipping_period
+        FROM products
+        WHERE id = ? AND is_active = 1
+        LIMIT 1
+      `
+    )
     .get(id);
 
   if (!product) {
@@ -4847,6 +5106,12 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   }
 
   const totalPrice = Number(product.price) * quantity;
+  const salesSnapshot = buildOrderSalesSnapshot({
+    product,
+    quantity,
+    totalPrice,
+    baseDate: toKstDate()
+  });
   const createdOrder = db.prepare(
     `
       INSERT INTO orders (
@@ -4863,8 +5128,19 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
         point_rate_snapshot,
         point_level_id,
         point_level_name,
+        sales_tab_key,
+        sales_scope_id,
+        sales_scope_name,
+        sales_scope_date,
+        sales_exchange_rate_snapshot,
+        sales_shipping_fee_krw_snapshot,
+        sales_cost_rmb_snapshot,
+        sales_cost_krw_snapshot,
+        sales_margin_krw_snapshot,
+        sales_real_margin_krw_snapshot,
+        sales_synced_at,
         created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     orderNo,
@@ -4880,6 +5156,17 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     purchasePointRate,
     memberPointProfile.levelId || '',
     memberPointProfile.levelName || '',
+    salesSnapshot.sales_tab_key,
+    salesSnapshot.sales_scope_id,
+    salesSnapshot.sales_scope_name,
+    salesSnapshot.sales_scope_date,
+    salesSnapshot.sales_exchange_rate_snapshot,
+    salesSnapshot.sales_shipping_fee_krw_snapshot,
+    salesSnapshot.sales_cost_rmb_snapshot,
+    salesSnapshot.sales_cost_krw_snapshot,
+    salesSnapshot.sales_margin_krw_snapshot,
+    salesSnapshot.sales_real_margin_krw_snapshot,
+    salesSnapshot.sales_synced_at,
     req.user.id
   );
 
@@ -4996,7 +5283,24 @@ app.post('/order/create', (req, res) => {
     return res.redirect(`/shop/item/${productId || ''}`);
   }
 
-  const product = db.prepare('SELECT id, price FROM products WHERE id = ? AND is_active = 1 LIMIT 1').get(productId);
+  const product = db
+    .prepare(
+      `
+        SELECT
+          id,
+          category_group,
+          brand,
+          model,
+          sub_model,
+          reference,
+          factory_name,
+          price
+        FROM products
+        WHERE id = ? AND is_active = 1
+        LIMIT 1
+      `
+    )
+    .get(productId);
   if (!product) {
     setFlash(req, 'error', '유효하지 않은 상품입니다.');
     return res.redirect('/shop');
@@ -5008,6 +5312,12 @@ app.post('/order/create', (req, res) => {
   }
 
   const totalPrice = Number(product.price) * quantity;
+  const salesSnapshot = buildOrderSalesSnapshot({
+    product,
+    quantity,
+    totalPrice,
+    baseDate: toKstDate()
+  });
   const memberPointProfile = req.user ? getMemberPointProfile(req.user.id) : null;
   const pointRateSnapshot = memberPointProfile ? memberPointProfile.pointRate : 0;
   const pointLevelIdSnapshot = memberPointProfile?.levelId || '';
@@ -5029,8 +5339,19 @@ app.post('/order/create', (req, res) => {
         point_rate_snapshot,
         point_level_id,
         point_level_name,
+        sales_tab_key,
+        sales_scope_id,
+        sales_scope_name,
+        sales_scope_date,
+        sales_exchange_rate_snapshot,
+        sales_shipping_fee_krw_snapshot,
+        sales_cost_rmb_snapshot,
+        sales_cost_krw_snapshot,
+        sales_margin_krw_snapshot,
+        sales_real_margin_krw_snapshot,
+        sales_synced_at,
         created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     orderNo,
@@ -5046,6 +5367,17 @@ app.post('/order/create', (req, res) => {
     pointRateSnapshot,
     pointLevelIdSnapshot,
     pointLevelNameSnapshot,
+    salesSnapshot.sales_tab_key,
+    salesSnapshot.sales_scope_id,
+    salesSnapshot.sales_scope_name,
+    salesSnapshot.sales_scope_date,
+    salesSnapshot.sales_exchange_rate_snapshot,
+    salesSnapshot.sales_shipping_fee_krw_snapshot,
+    salesSnapshot.sales_cost_rmb_snapshot,
+    salesSnapshot.sales_cost_krw_snapshot,
+    salesSnapshot.sales_margin_krw_snapshot,
+    salesSnapshot.sales_real_margin_krw_snapshot,
+    salesSnapshot.sales_synced_at,
     req.user ? req.user.id : null
   );
 
@@ -7577,9 +7909,182 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
   };
 }
 
+function createSalesMetricBucket() {
+  return {
+    orderCount: 0,
+    salesKrw: 0,
+    costKrw: 0,
+    marginKrw: 0,
+    realMarginKrw: 0
+  };
+}
+
+function buildAdminSalesDailyData(lang = 'ko', options = {}) {
+  const groupConfigs = Array.isArray(options.groupConfigs) && options.groupConfigs.length > 0
+    ? options.groupConfigs
+    : getProductGroupConfigs();
+  const availableGroupKeys = groupConfigs.map((group) => group.key);
+  const groupFilter = normalizeAdminOrderGroupFilter(options.groupFilter || '', availableGroupKeys);
+  const dateFrom = normalizeDateInput(options.dateFrom || '');
+  const dateTo = normalizeDateInput(options.dateTo || '');
+
+  const whereParts = [
+    "UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED')"
+  ];
+  const params = [];
+
+  if (dateFrom) {
+    whereParts.push("date(datetime(o.created_at, '+9 hours')) >= date(?)");
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    whereParts.push("date(datetime(o.created_at, '+9 hours')) <= date(?)");
+    params.push(dateTo);
+  }
+  if (groupFilter !== 'all') {
+    whereParts.push('p.category_group = ?');
+    params.push(groupFilter);
+  }
+
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          date(datetime(o.created_at, '+9 hours')) AS sale_date,
+          p.category_group AS category_group,
+          COUNT(*) AS order_count,
+          COALESCE(SUM(o.total_price), 0) AS sales_total_krw,
+          COALESCE(SUM(COALESCE(o.sales_cost_krw_snapshot, 0)), 0) AS cost_total_krw,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN COALESCE(TRIM(o.sales_synced_at), '') = '' THEN
+                  o.total_price - COALESCE(o.sales_cost_krw_snapshot, 0)
+                ELSE
+                  COALESCE(
+                    o.sales_margin_krw_snapshot,
+                    o.total_price - COALESCE(o.sales_cost_krw_snapshot, 0)
+                  )
+              END
+            ),
+            0
+          ) AS margin_total_krw,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN COALESCE(TRIM(o.sales_synced_at), '') = '' THEN
+                  o.total_price - COALESCE(o.sales_cost_krw_snapshot, 0)
+                ELSE
+                  COALESCE(
+                    o.sales_real_margin_krw_snapshot,
+                    COALESCE(
+                      o.sales_margin_krw_snapshot,
+                      o.total_price - COALESCE(o.sales_cost_krw_snapshot, 0)
+                    )
+                  )
+              END
+            ),
+            0
+          ) AS real_margin_total_krw
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE ${whereParts.join(' AND ')}
+        GROUP BY sale_date, p.category_group
+        ORDER BY sale_date DESC, p.category_group ASC
+      `
+    )
+    .all(...params);
+
+  const observedGroupKeys = rows
+    .map((row) => normalizeProductGroupKey(row.category_group || ''))
+    .filter(Boolean)
+    .filter((groupName, idx, arr) => arr.indexOf(groupName) === idx);
+
+  let selectedGroupKeys = [];
+  if (groupFilter === 'all') {
+    selectedGroupKeys = [
+      ...availableGroupKeys,
+      ...observedGroupKeys.filter((groupName) => !availableGroupKeys.includes(groupName))
+    ];
+  } else {
+    selectedGroupKeys = [groupFilter];
+  }
+
+  const labelsFromConfig = getProductGroupLabels(groupConfigs, lang);
+  const groups = selectedGroupKeys.map((groupKey) => ({
+    key: groupKey,
+    label: labelsFromConfig[groupKey] || groupKey
+  }));
+
+  const dailyMap = new Map();
+  const rangeTotals = createSalesMetricBucket();
+
+  for (const row of rows) {
+    const saleDate = normalizeSalesDate(row.sale_date || '');
+    const groupKey = normalizeProductGroupKey(row.category_group || '');
+    if (!saleDate || !groupKey) {
+      continue;
+    }
+    if (!dailyMap.has(saleDate)) {
+      dailyMap.set(saleDate, {
+        date: saleDate,
+        metricsByGroup: {},
+        total: createSalesMetricBucket()
+      });
+    }
+
+    const dateBucket = dailyMap.get(saleDate);
+    const groupBucket = dateBucket.metricsByGroup[groupKey] || createSalesMetricBucket();
+    groupBucket.orderCount += Number(row.order_count || 0);
+    groupBucket.salesKrw += Number(row.sales_total_krw || 0);
+    groupBucket.costKrw += Number(row.cost_total_krw || 0);
+    groupBucket.marginKrw += Number(row.margin_total_krw || 0);
+    groupBucket.realMarginKrw += Number(row.real_margin_total_krw || 0);
+    dateBucket.metricsByGroup[groupKey] = groupBucket;
+
+    dateBucket.total.orderCount += Number(row.order_count || 0);
+    dateBucket.total.salesKrw += Number(row.sales_total_krw || 0);
+    dateBucket.total.costKrw += Number(row.cost_total_krw || 0);
+    dateBucket.total.marginKrw += Number(row.margin_total_krw || 0);
+    dateBucket.total.realMarginKrw += Number(row.real_margin_total_krw || 0);
+
+    rangeTotals.orderCount += Number(row.order_count || 0);
+    rangeTotals.salesKrw += Number(row.sales_total_krw || 0);
+    rangeTotals.costKrw += Number(row.cost_total_krw || 0);
+    rangeTotals.marginKrw += Number(row.margin_total_krw || 0);
+    rangeTotals.realMarginKrw += Number(row.real_margin_total_krw || 0);
+  }
+
+  const dailyRows = Array.from(dailyMap.values())
+    .map((item) => {
+      const metricsByGroup = {};
+      groups.forEach((group) => {
+        metricsByGroup[group.key] = item.metricsByGroup[group.key] || createSalesMetricBucket();
+      });
+      return {
+        date: item.date,
+        metricsByGroup,
+        total: item.total
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  return {
+    filters: {
+      groupFilter,
+      dateFrom,
+      dateTo
+    },
+    groups,
+    rows: dailyRows,
+    totals: rangeTotals
+  };
+}
+
 function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const securityOptions = options.securityOptions || {};
   const memberOptions = options.memberOptions || {};
+  const salesOptions = options.salesOptions || {};
   const includeDashboardStats = options.includeDashboardStats !== false;
   const editProductId = normalizeOptionalId(options.productEditId || 0);
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())), { includeHidden: true });
@@ -7614,6 +8119,9 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupKeys = productGroupConfigs.map((group) => group.key);
+  const salesGroupFilter = normalizeAdminOrderGroupFilter(salesOptions.groupFilter || '', productGroupKeys);
+  const salesDateFrom = normalizeDateInput(salesOptions.dateFrom || '');
+  const salesDateTo = normalizeDateInput(salesOptions.dateTo || '');
   const orderGroupFilter = normalizeAdminOrderGroupFilter(options.orderGroupFilter || '', productGroupKeys);
   const orderStatusFilter = normalizeAdminOrderStatusFilter(options.orderStatusFilter || '');
   const orderDateFrom = normalizeDateInput(options.orderDateFrom || '');
@@ -7771,6 +8279,12 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     .all();
   const securityPanelData = buildSecurityPanelData(lang, securityOptions);
   const memberManagePanelData = buildMemberManagePanelData(lang, memberOptions);
+  const salesDailyData = buildAdminSalesDailyData(lang, {
+    groupConfigs: productGroupConfigs,
+    groupFilter: salesGroupFilter,
+    dateFrom: salesDateFrom,
+    dateTo: salesDateTo
+  });
 
   return {
     settings,
@@ -7788,6 +8302,10 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     inquiries,
     securityPanelData,
     memberManagePanelData,
+    salesDailyData,
+    salesGroupFilter,
+    salesDateFrom,
+    salesDateTo,
     dashboardStats: includeDashboardStats ? getCachedAdminDashboardStats() : null,
     trackingCarriers: TRACKING_CARRIERS,
     formatPrice,
@@ -7815,6 +8333,15 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     },
     productGroupConfigs.map((group) => group.key)
   );
+  const salesFilters = parseSalesManageQuery(
+    {
+      salesSection: extraData.salesSection || req.query.section || '',
+      salesGroup: extraData.salesGroupFilter || req.query.salesGroup || '',
+      salesDateFrom: extraData.salesDateFrom || req.query.salesDateFrom || '',
+      salesDateTo: extraData.salesDateTo || req.query.salesDateTo || ''
+    },
+    productGroupConfigs.map((group) => group.key)
+  );
 
   const viewData = buildAdminDashboardViewData(
     res.locals.ctx.lang,
@@ -7826,7 +8353,12 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
       orderGroupFilter: orderFilters.orderGroupFilter,
       orderStatusFilter: orderFilters.orderStatusFilter,
       orderDateFrom: orderFilters.orderDateFrom,
-      orderDateTo: orderFilters.orderDateTo
+      orderDateTo: orderFilters.orderDateTo,
+      salesOptions: {
+        groupFilter: salesFilters.salesGroupFilter,
+        dateFrom: salesFilters.salesDateFrom,
+        dateTo: salesFilters.salesDateTo
+      }
     }
   );
   return res.render('admin-dashboard', {
@@ -7837,6 +8369,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     siteSection: normalizeSiteManageSection(extraData.siteSection || req.query.section || ''),
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
     productSection: normalizeProductManageSection(extraData.productSection || ''),
+    salesSection: normalizeSalesManageSection(extraData.salesSection || req.query.section || ''),
     pointSection: normalizePointManageSection(extraData.pointSection || req.query.pointSection || req.query.section || ''),
     noticeSection: normalizeContentManageSection(extraData.noticeSection || req.query.section || ''),
     newsSection: normalizeContentManageSection(extraData.newsSection || req.query.section || ''),
@@ -7847,6 +8380,9 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     orderStatusFilter: orderFilters.orderStatusFilter,
     orderDateFrom: orderFilters.orderDateFrom,
     orderDateTo: orderFilters.orderDateTo,
+    salesGroupFilter: salesFilters.salesGroupFilter,
+    salesDateFrom: salesFilters.salesDateFrom,
+    salesDateTo: salesFilters.salesDateTo,
     ...viewData
   });
 }
@@ -7860,6 +8396,7 @@ function handleSecurityDenied(req, res, securitySection = 'profile', securityOpt
     activeTab: 'security',
     securitySection: normalizeSecuritySection(securitySection),
     securityAccessDenied: true,
+    salesSection: 'editor',
     pointSection: normalizePointManageSection(req.query.pointSection || req.query.section || ''),
     ...buildAdminDashboardViewData(res.locals.ctx.lang, {
       securityOptions,
@@ -10036,7 +10573,10 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
           created_by_user_id,
           awarded_points,
           points_awarded_at,
-          point_rate_snapshot
+          point_rate_snapshot,
+          sales_margin_krw_snapshot,
+          sales_cost_krw_snapshot,
+          sales_synced_at
         FROM orders
         WHERE id = ?
         LIMIT 1
@@ -10096,6 +10636,27 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
         awardedPoints = pointsToAward;
       }
     }
+
+    const awardedPointsForMargin = awardedPoints > 0
+      ? awardedPoints
+      : parseNonNegativeInt(order.awarded_points, 0);
+    const hasSalesSnapshot = Boolean(String(order.sales_synced_at || '').trim());
+    const marginSnapshot = hasSalesSnapshot
+      ? Math.round(Number(order.sales_margin_krw_snapshot || 0))
+      : Math.round(
+          parseNonNegativeNumber(order.total_price, 0) -
+          parseNonNegativeNumber(order.sales_cost_krw_snapshot, 0)
+        );
+    const realMarginSnapshot = Math.round(marginSnapshot - awardedPointsForMargin);
+    db.prepare(
+      `
+        UPDATE orders
+        SET
+          sales_real_margin_krw_snapshot = ?,
+          sales_synced_at = datetime('now')
+        WHERE id = ?
+      `
+    ).run(realMarginSnapshot, id);
 
     return { updated: updated.changes, awardedPoints };
   })();

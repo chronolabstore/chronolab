@@ -602,6 +602,30 @@ function ensureOrdersPointColumns() {
   addColumnIfMissing('point_level_name', "point_level_name TEXT NOT NULL DEFAULT ''");
 }
 
+function ensureOrdersSalesSnapshotColumns() {
+  const columns = db.prepare('PRAGMA table_info(orders)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  const addColumnIfMissing = (name, ddl) => {
+    if (!columnNames.has(name)) {
+      db.prepare(`ALTER TABLE orders ADD COLUMN ${ddl}`).run();
+      columnNames.add(name);
+    }
+  };
+
+  addColumnIfMissing('sales_tab_key', "sales_tab_key TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sales_scope_id', "sales_scope_id TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sales_scope_name', "sales_scope_name TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sales_scope_date', "sales_scope_date TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sales_exchange_rate_snapshot', 'sales_exchange_rate_snapshot REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_shipping_fee_krw_snapshot', 'sales_shipping_fee_krw_snapshot INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_cost_rmb_snapshot', 'sales_cost_rmb_snapshot REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_cost_krw_snapshot', 'sales_cost_krw_snapshot INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_margin_krw_snapshot', 'sales_margin_krw_snapshot INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_real_margin_krw_snapshot', 'sales_real_margin_krw_snapshot INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sales_synced_at', 'sales_synced_at TEXT');
+}
+
 function ensureDailyVisitSplitColumns() {
   const columns = db.prepare('PRAGMA table_info(daily_visits)').all();
   const columnNames = new Set(columns.map((column) => column.name));
@@ -1288,6 +1312,17 @@ export function initDb() {
       delivered_at TEXT,
       awarded_points INTEGER NOT NULL DEFAULT 0,
       points_awarded_at TEXT,
+      sales_tab_key TEXT NOT NULL DEFAULT '',
+      sales_scope_id TEXT NOT NULL DEFAULT '',
+      sales_scope_name TEXT NOT NULL DEFAULT '',
+      sales_scope_date TEXT NOT NULL DEFAULT '',
+      sales_exchange_rate_snapshot REAL NOT NULL DEFAULT 0,
+      sales_shipping_fee_krw_snapshot INTEGER NOT NULL DEFAULT 0,
+      sales_cost_rmb_snapshot REAL NOT NULL DEFAULT 0,
+      sales_cost_krw_snapshot INTEGER NOT NULL DEFAULT 0,
+      sales_margin_krw_snapshot INTEGER NOT NULL DEFAULT 0,
+      sales_real_margin_krw_snapshot INTEGER NOT NULL DEFAULT 0,
+      sales_synced_at TEXT,
       created_by_user_id INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
@@ -1400,6 +1435,7 @@ export function initDb() {
   ensureOrdersCustomsColumn();
   ensureOrdersTrackingColumns();
   ensureOrdersPointColumns();
+  ensureOrdersSalesSnapshotColumns();
   ensureDailyVisitSplitColumns();
   ensureContentVisibilityColumns();
   ensureDailyFunnelEventsTable();

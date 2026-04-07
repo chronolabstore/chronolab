@@ -123,6 +123,13 @@
       { key: 'genparts', labelKo: '젠파츠 매출', labelEn: 'Gen-Parts Sales', scopeType: 'round' },
       { key: 'used', labelKo: '현지중고 매출', labelEn: 'Local Used Sales', scopeType: 'round' }
     ];
+  const salesManageTab = String((typeof salesSection === 'undefined' ? '' : salesSection) || '') === 'daily' ? 'daily' : 'editor';
+  const salesDaily = salesDailyData || {
+    filters: { groupFilter: 'all', dateFrom: '', dateTo: '' },
+    groups: [],
+    rows: [],
+    totals: { orderCount: 0, salesKrw: 0, costKrw: 0, marginKrw: 0, realMarginKrw: 0 }
+  };
   const salesSourceUrl = settings?.salesSheetUrl || salesSheetDefaultUrl || '';
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
   const uploadActiveGroupKey =
@@ -130,6 +137,10 @@
   const activeOrderDateFrom = String(orderDateFrom || '');
   const activeOrderDateTo = String(orderDateTo || '');
   const orderDateQuerySuffix = `${activeOrderDateFrom ? `&orderDateFrom=${encodeURIComponent(activeOrderDateFrom)}` : ''}${activeOrderDateTo ? `&orderDateTo=${encodeURIComponent(activeOrderDateTo)}` : ''}`;
+  const activeSalesGroupFilter = String(salesGroupFilter || salesDaily.filters?.groupFilter || 'all');
+  const activeSalesDateFrom = String(salesDateFrom || salesDaily.filters?.dateFrom || '');
+  const activeSalesDateTo = String(salesDateTo || salesDaily.filters?.dateTo || '');
+  const salesDateQuerySuffix = `${activeSalesGroupFilter && activeSalesGroupFilter !== 'all' ? `&salesGroup=${encodeURIComponent(activeSalesGroupFilter)}` : ''}${activeSalesDateFrom ? `&salesDateFrom=${encodeURIComponent(activeSalesDateFrom)}` : ''}${activeSalesDateTo ? `&salesDateTo=${encodeURIComponent(activeSalesDateTo)}` : ''}`;
 %>
 
 <section class="admin-grid single">
@@ -2672,6 +2683,15 @@
   <% } %>
 
   <% if (tab === 'sales') { %>
+  <article class="block-card sales-mode-card">
+    <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
+    <div class="security-subnav">
+      <a href="/admin/sales?section=editor<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'editor' ? 'active' : '' %>"><%= isEn ? 'Workbook Editor' : '매출 시트 편집' %></a>
+      <a href="/admin/sales?section=daily<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'daily' ? 'active' : '' %>"><%= isEn ? 'Daily Summary' : '날짜별 전체 매출' %></a>
+    </div>
+  </article>
+
+  <% if (salesManageTab === 'editor') { %>
   <article class="block-card sales-editor-card">
     <div class="sales-manage-head">
       <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
@@ -3722,6 +3742,113 @@
       void loadWorkbook({ importFromSheet: false });
     })();
   </script>
+  <% } else { %>
+  <article class="block-card sales-daily-card">
+    <h3><%= isEn ? 'Daily Total Sales' : '날짜별 전체 매출' %></h3>
+    <p class="muted-label">
+      <%= isEn ? 'Automatically recorded from shop orders. Columns show sales/cost/margin/real margin by shop category and overall total.' : '쇼핑몰 주문건 기준으로 자동 기록됩니다. 쇼핑몰별 매출/원가/마진/실제마진과 전체 합계를 날짜별로 확인할 수 있습니다.' %>
+    </p>
+
+    <form method="get" action="/admin/sales" class="form-grid compact sales-daily-filter-form">
+      <input type="hidden" name="section" value="daily" />
+      <label>
+        <span><%= isEn ? 'Shop Category' : '쇼핑몰 분류' %></span>
+        <select name="salesGroup">
+          <option value="all" <%= activeSalesGroupFilter === 'all' ? 'selected' : '' %>><%= isEn ? 'All' : '전체' %></option>
+          <% productGroupKeys.forEach((groupKey) => { %>
+            <option value="<%= groupKey %>" <%= activeSalesGroupFilter === groupKey ? 'selected' : '' %>><%= groupLabelByKey[groupKey] || groupKey %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>
+        <span><%= isEn ? 'From' : '시작일' %></span>
+        <input type="date" name="salesDateFrom" value="<%= activeSalesDateFrom %>" />
+      </label>
+      <label>
+        <span><%= isEn ? 'To' : '종료일' %></span>
+        <input type="date" name="salesDateTo" value="<%= activeSalesDateTo %>" />
+      </label>
+      <div class="admin-field-chip-row">
+        <button type="submit" class="chip dark"><%= isEn ? 'Search' : '조회' %></button>
+        <a href="/admin/sales?section=daily" class="chip"><%= isEn ? 'Reset' : '초기화' %></a>
+      </div>
+    </form>
+
+    <div class="sales-daily-summary-grid">
+      <article class="sales-summary-card">
+        <h4><%= isEn ? 'Order Count' : '주문건' %></h4>
+        <strong><%= salesDaily.totals.orderCount %></strong>
+      </article>
+      <article class="sales-summary-card">
+        <h4><%= isEn ? 'Total Sales' : '전체 매출' %></h4>
+        <strong><%= formatPrice(salesDaily.totals.salesKrw) %></strong>
+      </article>
+      <article class="sales-summary-card">
+        <h4><%= isEn ? 'Total Cost' : '전체 원가' %></h4>
+        <strong><%= formatPrice(salesDaily.totals.costKrw) %></strong>
+      </article>
+      <article class="sales-summary-card">
+        <h4><%= isEn ? 'Total Margin' : '전체 마진' %></h4>
+        <strong><%= formatPrice(salesDaily.totals.marginKrw) %></strong>
+      </article>
+      <article class="sales-summary-card">
+        <h4><%= isEn ? 'Total Real Margin' : '전체 실제마진' %></h4>
+        <strong><%= formatPrice(salesDaily.totals.realMarginKrw) %></strong>
+      </article>
+    </div>
+
+    <div class="table-wrap sales-daily-table-wrap">
+      <table class="sales-daily-table">
+        <thead>
+          <tr>
+            <th><%= isEn ? 'Date' : '날짜' %></th>
+            <% salesDaily.groups.forEach((group) => { %>
+              <th><%= group.label %></th>
+            <% }) %>
+            <th><%= isEn ? 'Total' : '전체' %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% salesDaily.rows.forEach((row) => { %>
+            <tr>
+              <td>
+                <strong><%= row.date %></strong>
+                <small class="muted-label"><%= isEn ? `Orders ${row.total.orderCount}` : `주문 ${row.total.orderCount}건` %></small>
+              </td>
+              <% salesDaily.groups.forEach((group) => { const metrics = row.metricsByGroup[group.key] || { orderCount: 0, salesKrw: 0, costKrw: 0, marginKrw: 0, realMarginKrw: 0 }; %>
+                <td>
+                  <div class="sales-daily-metric-cell">
+                    <small><%= isEn ? 'Orders' : '주문건' %> <strong><%= metrics.orderCount %></strong></small>
+                    <small><%= isEn ? 'Sales' : '매출' %> <strong><%= formatPrice(metrics.salesKrw) %></strong></small>
+                    <small><%= isEn ? 'Cost' : '원가' %> <strong><%= formatPrice(metrics.costKrw) %></strong></small>
+                    <small><%= isEn ? 'Margin' : '마진' %> <strong><%= formatPrice(metrics.marginKrw) %></strong></small>
+                    <small><%= isEn ? 'Real Margin' : '실제마진' %> <strong><%= formatPrice(metrics.realMarginKrw) %></strong></small>
+                  </div>
+                </td>
+              <% }) %>
+              <td>
+                <div class="sales-daily-metric-cell total">
+                  <small><%= isEn ? 'Orders' : '주문건' %> <strong><%= row.total.orderCount %></strong></small>
+                  <small><%= isEn ? 'Sales' : '매출' %> <strong><%= formatPrice(row.total.salesKrw) %></strong></small>
+                  <small><%= isEn ? 'Cost' : '원가' %> <strong><%= formatPrice(row.total.costKrw) %></strong></small>
+                  <small><%= isEn ? 'Margin' : '마진' %> <strong><%= formatPrice(row.total.marginKrw) %></strong></small>
+                  <small><%= isEn ? 'Real Margin' : '실제마진' %> <strong><%= formatPrice(row.total.realMarginKrw) %></strong></small>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (salesDaily.rows.length === 0) { %>
+            <tr>
+              <td colspan="<%= salesDaily.groups.length + 2 %>">
+                <span class="muted-label"><%= isEn ? 'No daily sales records found for this filter.' : '조건에 맞는 날짜별 매출 기록이 없습니다.' %></span>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </article>
+  <% } %>
   <% } %>
   <% if (tab === 'inquiries') { %>
   <article class="block-card">

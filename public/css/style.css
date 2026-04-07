@@ -2683,12 +2683,62 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   flex-wrap: wrap;
 }
 
+.sales-mode-card {
+  margin-bottom: 12px;
+}
+
 .sales-manage-head h3 {
   margin: 0;
 }
 
 .sales-tab-nav {
   margin-top: 8px;
+}
+
+.sales-daily-filter-form {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+
+.sales-daily-summary-grid {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.sales-daily-table-wrap {
+  margin-top: 10px;
+}
+
+.sales-daily-table {
+  min-width: 1080px;
+}
+
+.sales-daily-table th,
+.sales-daily-table td {
+  vertical-align: top;
+}
+
+.sales-daily-metric-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.sales-daily-metric-cell small {
+  color: var(--muted);
+}
+
+.sales-daily-metric-cell small strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.sales-daily-metric-cell.total {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chip);
+  padding: 8px;
 }
 
 .sales-global-settings {
