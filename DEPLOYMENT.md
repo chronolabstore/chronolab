@@ -139,14 +139,51 @@ cd /var/www/chrono-lab
 pm2 logs chrono-lab --lines 100
 ```
 
-## 8) Render 종료 체크리스트
+## 8) 원클릭 운영 스크립트 (권장)
+최초 1회:
+```bash
+cd /var/www/chrono-lab
+chmod +x ./scripts/server/*.sh
+./scripts/server/install-ops.sh chronolab.co.kr
+```
+
+수동 즉시 배포:
+```bash
+cd /var/www/chrono-lab
+./scripts/server/deploy-now.sh chronolab.co.kr
+```
+
+서비스 재시작 + 점검:
+```bash
+cd /var/www/chrono-lab
+./scripts/server/restart-now.sh chronolab.co.kr
+```
+
+현재 상태 확인:
+```bash
+cd /var/www/chrono-lab
+./scripts/server/show-status.sh chronolab.co.kr
+```
+
+정상 판정 기준:
+- `pm2` 상태가 `online`
+- `systemctl is-active nginx` 결과가 `active`
+- `http://127.0.0.1:3100/main -> 200`
+- `https://chronolab.co.kr/main -> 200`
+
+비정상 예시:
+- `pm2`가 `errored/stopped`
+- Nginx 상태가 `inactive/failed`
+- HTTP 코드가 `5xx` 또는 `000`
+
+## 9) Render 종료 체크리스트
 1. Render Dashboard -> 해당 서비스 선택
 2. `Settings` -> `Delete Service`
 3. (선택) Blueprint도 사용 안 하면 삭제
 4. DNS에 Render를 가리키는 레코드가 남아있지 않은지 최종 확인
 5. 최종 접속 확인: `https://chronolab.co.kr/main`
 
-## 9) 운영 명령 (자주 사용)
+## 10) 운영 명령 (자주 사용)
 ```bash
 cd /var/www/chrono-lab
 git pull origin main
