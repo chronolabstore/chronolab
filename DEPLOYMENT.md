@@ -1,57 +1,156 @@
-# Chrono Lab Deployment Guide
+# Chrono Lab Deployment Guide (Cafe24)
 
-## 1) HeptaLabs GitHub에 먼저 올리기
+## 1) 배포 구조
+- GitHub: `Heptalabs/chrono-lab`
+- App Server: Cafe24 OpenClaw VPS (Ubuntu)
+- Process: PM2 (`chrono-lab`)
+- Reverse Proxy: Nginx
+- Domain: `chronolab.co.kr`, `www.chronolab.co.kr`
+- SSL: Certbot (Let's Encrypt)
 
-### 1-1. GitHub에서 새 리포 생성
-- 예시 이름: `chrono-lab`
-- Visibility: `Public`
-- README/.gitignore는 생성하지 않음(로컬 파일 사용)
-
-### 1-2. 로컬에서 최초 푸시
+## 2) 서버 1회 초기 세팅
 ```bash
-cd chrono-lab
-git init
-git add .
-git commit -m "init: chrono lab shopping mall + admin"
-git branch -M main
-git remote add origin git@github.com:Heptalabs/chrono-lab.git
-git push -u origin main
+apt update
+apt install -y git curl nginx ufw ca-certificates gnupg certbot python3-certbot-nginx
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+npm install -g pm2
+
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
 ```
 
-## 2) 임시 도메인으로 먼저 확인 (권장: Render)
-
-### 2-1. Render 배포
-- Render에서 `New +` -> `Blueprint` 선택
-- GitHub 리포 `Heptalabs/chrono-lab` 연결
-- `render.yaml` 자동 인식 후 배포
-- 임시 URL 예시: `https://chrono-lab.onrender.com`
-
-### 2-2. 확인 경로
-- `/main`
-- `/notice`
-- `/news`
-- `/shop`
-- `/qc`
-- `/admin/login`
-
-## 3) 나중에 다른 GitHub 계정으로 이전
-
-### 방법 A (권장): GitHub Repository Transfer
-- 기존 리포 Settings -> Transfer ownership
-- 장점: 이슈/PR/히스토리/URL 리디렉션 유지
-
-### 방법 B: 미러 푸시
+## 3) 코드 배포
 ```bash
-cd chrono-lab
-./scripts/mirror-to-new-account.sh git@github.com:NEW_OWNER/chrono-lab.git
+mkdir -p /var/www
+cd /var/www
+git clone https://github.com/Heptalabs/chrono-lab.git || true
+cd /var/www/chrono-lab
+git fetch origin
+git checkout main
+git pull origin main
+npm install --omit=dev
 ```
 
-## 4) 도메인 최종 연결
-- 임시 도메인 검수 완료 후, 배포 플랫폼에서 Custom Domain 추가
-- DNS (CNAME/A) 연결 후 SSL 자동 발급 확인
+`.env` 생성:
+```bash
+cat > /var/www/chrono-lab/.env <<'ENV'
+NODE_ENV=production
+PORT=3100
+SESSION_SECRET=CHANGE_ME_LONG_RANDOM_SECRET
+DB_PATH=./data/chronolab.db
+SMTP_HOST=
+SMTP_PORT=
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+ENV
 
-## 5) 운영 전 필수
-- 어드민 초기 비밀번호 변경
-- `SESSION_SECRET` 강한 랜덤값 사용
-- `NODE_ENV=production` 유지
-- 실제 계좌 정보/사업자 정보 반영
+sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chrono-lab/.env
+mkdir -p /var/www/chrono-lab/data /var/www/chrono-lab/uploads
+```
+
+PM2 실행:
+```bash
+cd /var/www/chrono-lab
+pm2 start server.js --name chrono-lab
+pm2 save
+pm2 startup
+```
+
+## 4) Nginx + 도메인 + HTTPS
+Nginx 설정 파일:
+```nginx
+server {
+    listen 80;
+    server_name chronolab.co.kr www.chronolab.co.kr;
+    return 301 https://chronolab.co.kr$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name www.chronolab.co.kr;
+    return 301 https://chronolab.co.kr$request_uri;
+
+    ssl_certificate /etc/letsencrypt/live/chronolab.co.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chronolab.co.kr/privkey.pem;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name chronolab.co.kr;
+
+    ssl_certificate /etc/letsencrypt/live/chronolab.co.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chronolab.co.kr/privkey.pem;
+
+    client_max_body_size 30M;
+
+    location = / {
+        return 302 /main;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+적용:
+```bash
+ln -sf /etc/nginx/sites-available/chronolab.conf /etc/nginx/sites-enabled/chronolab.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl reload nginx
+certbot --nginx -d chronolab.co.kr -d www.chronolab.co.kr --agree-tos -m you@example.com --redirect
+certbot renew --dry-run
+```
+
+## 5) 자동배포(푸시 후 최대 1분 반영)
+```bash
+cd /var/www/chrono-lab
+./scripts/server/install-cron-autodeploy.sh
+```
+
+## 6) 일일 백업(03:40)
+```bash
+cd /var/www/chrono-lab
+./scripts/server/install-cron-backup.sh
+```
+
+백업 수동 실행:
+```bash
+/usr/local/bin/chronolab-backup-nightly.sh
+```
+
+## 7) 운영 점검
+```bash
+cd /var/www/chrono-lab
+./scripts/server/healthcheck.sh chronolab.co.kr
+pm2 logs chrono-lab --lines 100
+```
+
+## 8) Render 종료 체크리스트
+1. Render Dashboard -> 해당 서비스 선택
+2. `Settings` -> `Delete Service`
+3. (선택) Blueprint도 사용 안 하면 삭제
+4. DNS에 Render를 가리키는 레코드가 남아있지 않은지 최종 확인
+5. 최종 접속 확인: `https://chronolab.co.kr/main`
+
+## 9) 운영 명령 (자주 사용)
+```bash
+cd /var/www/chrono-lab
+git pull origin main
+npm install --omit=dev
+pm2 restart chrono-lab --update-env
+pm2 save
+```

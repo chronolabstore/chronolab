@@ -47,7 +47,12 @@ npm run dev
 
 ## 배포 메모
 이 프로젝트는 서버가 필요한 구조(Express + SQLite)이므로 GitHub Pages 단독 배포는 불가합니다.
-권장: Render(임시 도메인 빠른 확인) 또는 Railway.
+권장: Cafe24 VPS + Nginx + PM2.
+
+운영 스크립트:
+- `scripts/server/install-cron-autodeploy.sh` (1분 주기 자동배포)
+- `scripts/server/install-cron-backup.sh` (매일 03:40 백업)
+- `scripts/server/healthcheck.sh` (운영 상태 점검)
 
 배포 상세 절차:
 - `DEPLOYMENT.md`
