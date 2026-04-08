@@ -2073,6 +2073,9 @@
           const imageInput = form.querySelector('input[name="images"]');
           const previewWrap = form.querySelector('[data-image-watermark-preview]');
           const previewGrid = form.querySelector('[data-image-watermark-preview-grid]');
+          const watermarkImageUrl = '<%= ctx.settings.watermarkLogoPath || '' %>';
+          let watermarkImage = null;
+          let watermarkImagePromise = null;
 
           const clearWatermarkPreview = () => {
             if (!previewGrid) return;
@@ -2082,7 +2085,31 @@
             }
           };
 
-          const drawWatermark = (ctx, width, height) => {
+          const loadWatermarkImage = () => {
+            if (!watermarkImageUrl) {
+              return Promise.resolve(null);
+            }
+            if (watermarkImage) {
+              return Promise.resolve(watermarkImage);
+            }
+            if (watermarkImagePromise) {
+              return watermarkImagePromise;
+            }
+            watermarkImagePromise = new Promise((resolve) => {
+              const image = new Image();
+              image.onload = () => {
+                watermarkImage = image;
+                resolve(image);
+              };
+              image.onerror = () => {
+                resolve(null);
+              };
+              image.src = watermarkImageUrl;
+            });
+            return watermarkImagePromise;
+          };
+
+          const drawWatermarkText = (ctx, width, height) => {
             const text = 'Chrono Lab';
             const fontSize = Math.max(10, Math.round(width * 0.045));
             ctx.save();
@@ -2106,12 +2133,34 @@
             ctx.restore();
           };
 
+          const drawWatermarkImage = (ctx, width, height, image) => {
+            if (!image || !image.width || !image.height) {
+              drawWatermarkText(ctx, width, height);
+              return;
+            }
+
+            const targetWidth = Math.max(96, Math.round(width * 0.24));
+            const ratio = image.width / image.height;
+            const targetHeight = Math.max(12, Math.round(targetWidth / Math.max(0.01, ratio)));
+            const rows = [height * 0.25, height * 0.5, height * 0.75];
+            const xStep = Math.max(targetWidth + 32, Math.round(targetWidth * 1.28));
+
+            ctx.save();
+            ctx.globalAlpha = 0.2;
+            rows.forEach((y) => {
+              for (let x = -targetWidth; x < width + targetWidth; x += xStep) {
+                ctx.drawImage(image, Math.round(x), Math.round(y - targetHeight / 2), targetWidth, targetHeight);
+              }
+            });
+            ctx.restore();
+          };
+
           const appendWatermarkPreview = (file) => {
             if (!previewGrid) return;
             const blobUrl = URL.createObjectURL(file);
             const image = new Image();
 
-            image.onload = () => {
+            image.onload = async () => {
               const maxWidth = 480;
               const maxHeight = 360;
               const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
@@ -2129,7 +2178,12 @@
               const ctx = canvas.getContext('2d');
               if (ctx) {
                 ctx.drawImage(image, 0, 0, width, height);
-                drawWatermark(ctx, width, height);
+                const watermarkGraphic = await loadWatermarkImage();
+                if (watermarkGraphic) {
+                  drawWatermarkImage(ctx, width, height, watermarkGraphic);
+                } else {
+                  drawWatermarkText(ctx, width, height);
+                }
               }
 
               const name = document.createElement('span');

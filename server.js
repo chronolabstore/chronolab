@@ -1,5 +1,5 @@
 import path from 'path';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import express from 'express';
@@ -30,6 +30,18 @@ initDb();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const BRANDING_DIR = path.join(__dirname, 'public', 'media', 'branding');
+const BRANDING_ASSET_FILES = Object.freeze({
+  dayHeaderSymbol: 'day-header-symbol.png',
+  dayHeaderLogo: 'day-header-logo.png',
+  dayFooterLogo: 'day-footer-logo.png',
+  nightHeaderSymbol: 'night-header-symbol.png',
+  nightHeaderLogo: 'night-header-logo.png',
+  nightFooterLogo: 'night-footer-logo.png'
+});
+const BRANDING_WATERMARK_FILE = 'watermark-white.png';
+const BRANDING_WATERMARK_LOCAL_PATH = path.join(BRANDING_DIR, BRANDING_WATERMARK_FILE);
+const BRANDING_WATERMARK_URL = `/assets/media/branding/${BRANDING_WATERMARK_FILE}`;
 
 const app = express();
 const PORT = Number(process.env.PORT || 3100);
@@ -974,6 +986,22 @@ function escapeSvgText(raw = '') {
     .replaceAll("'", '&#39;');
 }
 
+function getBrandingAssetUrl(assetKey = '') {
+  const fileName = BRANDING_ASSET_FILES[assetKey];
+  if (!fileName) {
+    return '';
+  }
+  const localPath = path.join(BRANDING_DIR, fileName);
+  if (!existsSync(localPath)) {
+    return '';
+  }
+  return `/assets/media/branding/${fileName}`;
+}
+
+function getBrandingWatermarkUrl() {
+  return existsSync(BRANDING_WATERMARK_LOCAL_PATH) ? BRANDING_WATERMARK_URL : '';
+}
+
 function buildChronoLabWatermarkSvg(width, height) {
   const safeWidth = Math.max(120, Math.floor(Number(width || 0)));
   const safeHeight = Math.max(120, Math.floor(Number(height || 0)));
@@ -1010,6 +1038,61 @@ function buildChronoLabWatermarkSvg(width, height) {
   `;
 }
 
+async function buildChronoLabWatermarkOverlay(width, height) {
+  const safeWidth = Math.max(120, Math.floor(Number(width || 0)));
+  const safeHeight = Math.max(120, Math.floor(Number(height || 0)));
+  if (!existsSync(BRANDING_WATERMARK_LOCAL_PATH)) {
+    return Buffer.from(buildChronoLabWatermarkSvg(safeWidth, safeHeight));
+  }
+
+  try {
+    const targetWidth = Math.max(120, Math.round(safeWidth * 0.22));
+    const watermarkBuffer = await sharp(BRANDING_WATERMARK_LOCAL_PATH)
+      .ensureAlpha()
+      .resize({
+        width: targetWidth,
+        fit: 'inside',
+        withoutEnlargement: false
+      })
+      .png()
+      .toBuffer();
+    const watermarkMeta = await sharp(watermarkBuffer).metadata();
+    const watermarkWidth = Math.max(1, Math.floor(Number(watermarkMeta.width || targetWidth)));
+    const watermarkHeight = Math.max(1, Math.floor(Number(watermarkMeta.height || Math.round(targetWidth * 0.22))));
+    const xStep = Math.max(Math.round(watermarkWidth * 1.28), watermarkWidth + 36);
+    const yRows = [0.25, 0.5, 0.75].map((ratio) => Math.round(safeHeight * ratio));
+    const composites = [];
+
+    yRows.forEach((rowY) => {
+      for (let x = -watermarkWidth; x < safeWidth + watermarkWidth; x += xStep) {
+        composites.push({
+          input: watermarkBuffer,
+          left: Math.round(x),
+          top: Math.round(rowY - watermarkHeight / 2),
+          blend: 'over',
+          opacity: 0.2
+        });
+      }
+    });
+
+    return await sharp({
+      create: {
+        width: safeWidth,
+        height: safeHeight,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .composite(composites)
+      .png()
+      .toBuffer();
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[chrono-lab:watermark:image]', error);
+    return Buffer.from(buildChronoLabWatermarkSvg(safeWidth, safeHeight));
+  }
+}
+
 async function applyChronoLabWatermarkToFile(filePath) {
   if (!filePath) {
     return;
@@ -1029,8 +1112,8 @@ async function applyChronoLabWatermarkToFile(filePath) {
       return;
     }
 
-    const watermarkSvg = buildChronoLabWatermarkSvg(width, height);
-    let pipeline = image.composite([{ input: Buffer.from(watermarkSvg), top: 0, left: 0 }]);
+    const watermarkOverlay = await buildChronoLabWatermarkOverlay(width, height);
+    let pipeline = image.composite([{ input: watermarkOverlay, top: 0, left: 0 }]);
 
     if (format === 'jpeg' || format === 'jpg') {
       pipeline = pipeline.jpeg({ quality: 92, mozjpeg: true });
@@ -1958,20 +2041,38 @@ function getThemeColorConfig(themeMode = 'day') {
 
 function getThemeAssetConfig(themeMode = 'day') {
   const key = themeMode === 'night' ? 'night' : 'day';
+  const readAssetPath = (settingKey, fallback = '') => {
+    const saved = String(getSetting(settingKey, '') || '').trim();
+    if (saved) {
+      return saved;
+    }
+    return String(fallback || '').trim();
+  };
+
+  const defaultDayHeaderLogoPath = getBrandingAssetUrl('dayHeaderLogo');
+  const defaultDayHeaderSymbolPath = getBrandingAssetUrl('dayHeaderSymbol');
+  const defaultDayFooterLogoPath = getBrandingAssetUrl('dayFooterLogo');
+  const defaultNightHeaderLogoPath = getBrandingAssetUrl('nightHeaderLogo') || defaultDayHeaderLogoPath;
+  const defaultNightHeaderSymbolPath = getBrandingAssetUrl('nightHeaderSymbol') || defaultDayHeaderSymbolPath;
+  const defaultNightFooterLogoPath = getBrandingAssetUrl('nightFooterLogo') || defaultDayFooterLogoPath;
+
   const legacyHeaderLogoPath = String(getSetting('headerLogoPath', '') || '').trim();
   const legacyHeaderSymbolPath = String(getSetting('headerSymbolPath', '') || '').trim();
   const legacyFooterLogoPath = String(getSetting('footerLogoPath', '') || '').trim();
   const legacyBackgroundType = String(getSetting('backgroundType', 'color') || 'color').trim();
   const legacyBackgroundValue = String(getSetting('backgroundValue', '') || '').trim();
-  const dayHeaderLogoPath = String(
-    getSetting('dayHeaderLogoPath', legacyHeaderLogoPath) || ''
-  ).trim();
-  const dayHeaderSymbolPath = String(
-    getSetting('dayHeaderSymbolPath', legacyHeaderSymbolPath) || ''
-  ).trim();
-  const dayFooterLogoPath = String(
-    getSetting('dayFooterLogoPath', legacyFooterLogoPath) || ''
-  ).trim();
+  const dayHeaderLogoPath = readAssetPath('dayHeaderLogoPath', legacyHeaderLogoPath || defaultDayHeaderLogoPath);
+  const dayHeaderSymbolPath = readAssetPath(
+    'dayHeaderSymbolPath',
+    legacyHeaderSymbolPath || defaultDayHeaderSymbolPath
+  );
+  const dayFooterLogoPath = readAssetPath('dayFooterLogoPath', legacyFooterLogoPath || defaultDayFooterLogoPath);
+  const nightHeaderLogoPath = readAssetPath('nightHeaderLogoPath', defaultNightHeaderLogoPath || dayHeaderLogoPath);
+  const nightHeaderSymbolPath = readAssetPath(
+    'nightHeaderSymbolPath',
+    defaultNightHeaderSymbolPath || dayHeaderSymbolPath
+  );
+  const nightFooterLogoPath = readAssetPath('nightFooterLogoPath', defaultNightFooterLogoPath || dayFooterLogoPath);
   const dayBackgroundType = String(
     getSetting('dayBackgroundType', legacyBackgroundType === 'image' ? 'image' : 'color') || 'color'
   ).trim();
@@ -1985,26 +2086,20 @@ function getThemeAssetConfig(themeMode = 'day') {
   ).trim();
 
   const normalizeType = (rawType = 'color') => (String(rawType).trim() === 'image' ? 'image' : 'color');
-  const backgroundType = normalizeType(
-    getSetting(`${key}BackgroundType`, key === 'day' ? dayBackgroundType : dayBackgroundType)
-  );
+  const nightBackgroundType = String(getSetting('nightBackgroundType', 'color') || 'color').trim();
+  const nightBackgroundImagePath = String(getSetting('nightBackgroundImagePath', '') || '').trim();
+  const backgroundType = normalizeType(getSetting(`${key}BackgroundType`, key === 'day' ? dayBackgroundType : nightBackgroundType));
   const backgroundImagePath = String(
     getSetting(
       `${key}BackgroundImagePath`,
-      key === 'day' ? dayBackgroundImagePath : dayBackgroundImagePath
+      key === 'day' ? dayBackgroundImagePath : nightBackgroundImagePath
     ) || ''
   ).trim();
 
   return {
-    headerLogoPath: String(
-      getSetting(`${key}HeaderLogoPath`, key === 'day' ? dayHeaderLogoPath : dayHeaderLogoPath) || ''
-    ).trim(),
-    headerSymbolPath: String(
-      getSetting(`${key}HeaderSymbolPath`, key === 'day' ? dayHeaderSymbolPath : dayHeaderSymbolPath) || ''
-    ).trim(),
-    footerLogoPath: String(
-      getSetting(`${key}FooterLogoPath`, key === 'day' ? dayFooterLogoPath : dayFooterLogoPath) || ''
-    ).trim(),
+    headerLogoPath: key === 'day' ? dayHeaderLogoPath : nightHeaderLogoPath,
+    headerSymbolPath: key === 'day' ? dayHeaderSymbolPath : nightHeaderSymbolPath,
+    footerLogoPath: key === 'day' ? dayFooterLogoPath : nightFooterLogoPath,
     backgroundType,
     backgroundImagePath: backgroundType === 'image' ? backgroundImagePath : ''
   };
@@ -4395,6 +4490,7 @@ app.use((req, res, next) => {
       nightThemeColors,
       dayThemeAssets,
       nightThemeAssets,
+      watermarkLogoPath: getBrandingWatermarkUrl(),
       bankAccountInfo: getSetting('bankAccountInfo', ''),
       signupBonusPoints: getSignupBonusPointsSetting(),
       purchasePointRate: getLegacyPurchasePointRateSetting(),
@@ -8107,6 +8203,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     nightThemeColors,
     dayThemeAssets,
     nightThemeAssets,
+    watermarkLogoPath: getBrandingWatermarkUrl(),
     bankAccountInfo: getSetting('bankAccountInfo', ''),
     signupBonusPoints: getSignupBonusPointsSetting(),
     purchasePointRate: getLegacyPurchasePointRateSetting(),
