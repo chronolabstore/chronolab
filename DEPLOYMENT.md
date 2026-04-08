@@ -146,6 +146,7 @@ cd /var/www/chrono-lab
 chmod +x ./scripts/server/*.sh
 ./scripts/server/install-ops.sh chronolab.co.kr
 ```
+`install-ops.sh`는 자동배포 cron + 백업 cron + 로그 로테이션(`logrotate`)까지 함께 설정합니다.
 
 수동 즉시 배포:
 ```bash
