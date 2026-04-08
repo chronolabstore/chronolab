@@ -2808,6 +2808,19 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   flex-wrap: wrap;
 }
 
+.sales-scope-inline-separator {
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.sales-scope-action-row > #salesRowActionHost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .sales-date-action-group {
   margin-left: auto;
   display: inline-flex;

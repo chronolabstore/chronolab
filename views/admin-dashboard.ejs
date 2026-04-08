@@ -2729,7 +2729,7 @@
 
     <div class="sales-scope-toolbar">
       <div id="salesScopeControls" class="sales-scope-controls"></div>
-      <div class="admin-field-chip-row">
+      <div class="admin-field-chip-row" id="salesRowActionHost">
         <button type="button" class="chip" id="salesAddRowBtn"><%= isEn ? 'Add Row' : '행 추가' %></button>
         <button type="button" class="chip dark" id="salesSaveBtn"><%= isEn ? 'Save Changes' : '변경 저장' %></button>
       </div>
@@ -2772,6 +2772,8 @@
       const applyGlobalBtn = document.getElementById('salesApplyGlobalBtn');
       const saveBtn = document.getElementById('salesSaveBtn');
       const addRowBtn = document.getElementById('salesAddRowBtn');
+      const rowActionHost = document.getElementById('salesRowActionHost');
+      const scopeToolbar = document.querySelector('.sales-scope-toolbar');
       const scopeControls = document.getElementById('salesScopeControls');
       const exchangeRateInput = document.getElementById('salesExchangeRateInput');
       const shippingFeeInput = document.getElementById('salesShippingFeeInput');
@@ -2781,7 +2783,7 @@
       const metaText = document.getElementById('salesMetaText');
       const errorText = document.getElementById('salesErrorText');
 
-      if (!mainTabButtons.length || !scopeControls || !exchangeRateInput || !shippingFeeInput || !scopeDateInput || !summaryGrid || !tableBody || !metaText || !errorText) {
+      if (!mainTabButtons.length || !scopeControls || !rowActionHost || !scopeToolbar || !exchangeRateInput || !shippingFeeInput || !scopeDateInput || !summaryGrid || !tableBody || !metaText || !errorText) {
         return;
       }
 
@@ -2888,6 +2890,37 @@
       };
 
       const getActiveScope = () => getScopes().find((scope) => scope.id === activeScopeId) || getScopes()[0] || null;
+
+      const ensureTodayScopeForDateTab = () => {
+        if (getScopeMode(activeTabKey) !== 'date') return false;
+        const tab = getTabData();
+        if (!tab) return false;
+        if (!Array.isArray(tab.rounds)) tab.rounds = [];
+        const today = todayDateString();
+        const existing = tab.rounds.find(
+          (scope) => normalizeDate(scope?.settings?.baseDate || scope?.name || scope?.date || '') === today
+        );
+        if (existing) {
+          activeScopeId = existing.id;
+          return false;
+        }
+
+        const tabSettings = ensureTabSettings(tab) || normalizeSettings(workbook?.globals || {}, { exchangeRate: 229, shippingFeeKrw: 23000 });
+        const nextScope = {
+          id: `date-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: today,
+          date: today,
+          settings: {
+            ...normalizeSettings({}, tabSettings),
+            baseDate: today
+          },
+          rows: []
+        };
+        tab.rounds.unshift(nextScope);
+        activeScopeId = nextScope.id;
+        dirty = true;
+        return true;
+      };
 
       const ensureScopeSettings = (scope, mode = getScopeMode(activeTabKey)) => {
         if (!scope) return null;
@@ -3119,6 +3152,9 @@
 
       const renderScopeControls = () => {
         scopeControls.innerHTML = '';
+        if (rowActionHost.parentElement !== scopeToolbar) {
+          scopeToolbar.appendChild(rowActionHost);
+        }
 
         const tabDef = getTabDef();
         const tab = getTabData();
@@ -3231,7 +3267,11 @@
             renderMeta();
           });
 
-          action.append(nameInput, addBtn, renameBtn, deleteBtn);
+          const rowSeparator = document.createElement('span');
+          rowSeparator.className = 'sales-scope-inline-separator';
+          rowSeparator.textContent = '|';
+
+          action.append(nameInput, addBtn, renameBtn, deleteBtn, rowSeparator, rowActionHost);
           scopeControls.appendChild(action);
           return;
         }
@@ -3491,7 +3531,11 @@
           renderMeta();
         });
 
-        action.append(roundLabel, nameInput, roundDateInput, addBtn, renameBtn, saveDateBtn, deleteBtn);
+        const rowSeparator = document.createElement('span');
+        rowSeparator.className = 'sales-scope-inline-separator';
+        rowSeparator.textContent = '|';
+
+        action.append(roundLabel, nameInput, roundDateInput, addBtn, renameBtn, saveDateBtn, deleteBtn, rowSeparator, rowActionHost);
         scopeControls.appendChild(action);
       };
 
@@ -3501,11 +3545,15 @@
           button.classList.toggle('active', button.getAttribute('data-sales-main-tab') === tabKey);
         });
         ensureActiveScope();
+        const createdTodayScope = ensureTodayScopeForDateTab();
         renderGlobalFields();
         renderScopeControls();
         renderTableRows();
         renderSummary();
         renderMeta();
+        if (createdTodayScope) {
+          void saveWorkbook();
+        }
       };
 
       const saveWorkbook = async () => {
