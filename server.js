@@ -1046,7 +1046,7 @@ async function buildChronoLabWatermarkOverlay(width, height) {
   }
 
   try {
-    const targetWidth = Math.max(120, Math.round(safeWidth * 0.22));
+    const targetWidth = Math.max(60, Math.round(safeWidth * 0.11));
     const watermarkBuffer = await sharp(BRANDING_WATERMARK_LOCAL_PATH)
       .ensureAlpha()
       .resize({
@@ -1059,7 +1059,7 @@ async function buildChronoLabWatermarkOverlay(width, height) {
     const watermarkMeta = await sharp(watermarkBuffer).metadata();
     const watermarkWidth = Math.max(1, Math.floor(Number(watermarkMeta.width || targetWidth)));
     const watermarkHeight = Math.max(1, Math.floor(Number(watermarkMeta.height || Math.round(targetWidth * 0.22))));
-    const xStep = Math.max(Math.round(watermarkWidth * 1.28), watermarkWidth + 36);
+    const xStep = Math.max(Math.round(watermarkWidth * 1.04), watermarkWidth + 8);
     const yRows = [0.25, 0.5, 0.75].map((ratio) => Math.round(safeHeight * ratio));
     const composites = [];
 

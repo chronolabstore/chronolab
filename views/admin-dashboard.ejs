@@ -2139,11 +2139,11 @@
               return;
             }
 
-            const targetWidth = Math.max(96, Math.round(width * 0.24));
+            const targetWidth = Math.max(48, Math.round(width * 0.12));
             const ratio = image.width / image.height;
             const targetHeight = Math.max(12, Math.round(targetWidth / Math.max(0.01, ratio)));
             const rows = [height * 0.25, height * 0.5, height * 0.75];
-            const xStep = Math.max(targetWidth + 32, Math.round(targetWidth * 1.28));
+            const xStep = Math.max(targetWidth + 6, Math.round(targetWidth * 1.04));
 
             ctx.save();
             ctx.globalAlpha = 0.2;
