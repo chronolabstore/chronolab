@@ -1068,9 +1068,28 @@ body.theme-night .hero-quick-grid a:hover {
 
 .detail-thumb-row {
   width: 100%;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: stretch;
   gap: 9px;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.detail-thumb-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.detail-thumb-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.detail-thumb-row::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
 }
 
 .detail-thumb {
@@ -1080,6 +1099,9 @@ body.theme-night .hero-quick-grid a:hover {
   padding: 0;
   background: var(--chip);
   cursor: pointer;
+  flex: 0 0 92px;
+  width: 92px;
+  min-width: 92px;
   aspect-ratio: 4 / 3;
 }
 
@@ -3824,8 +3846,14 @@ body.theme-night .inline-file-preview-image {
   }
 
   .detail-thumb-row {
-    grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
     gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .detail-thumb {
+    flex-basis: 76px;
+    width: 76px;
+    min-width: 76px;
   }
 
   .admin-account-actions {
