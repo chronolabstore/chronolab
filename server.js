@@ -137,6 +137,16 @@ const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
+const PRODUCT_BADGE_DEFAULT_COLOR_THEME = 'slate';
+const PRODUCT_BADGE_COLOR_THEMES = Object.freeze([
+  { key: 'slate', labelKo: '기본', labelEn: 'Default' },
+  { key: 'red', labelKo: '레드', labelEn: 'Red' },
+  { key: 'blue', labelKo: '블루', labelEn: 'Blue' },
+  { key: 'green', labelKo: '그린', labelEn: 'Green' },
+  { key: 'amber', labelKo: '앰버', labelEn: 'Amber' },
+  { key: 'purple', labelKo: '퍼플', labelEn: 'Purple' }
+]);
+const PRODUCT_BADGE_COLOR_THEME_KEY_SET = new Set(PRODUCT_BADGE_COLOR_THEMES.map((item) => item.key));
 const MEMBER_LEVEL_OPERATORS = Object.freeze({
   LT: 'lt',
   LTE: 'lte',
@@ -3952,6 +3962,28 @@ function normalizeProductBadgeCode(rawValue = '', fallback = 'badge') {
   return 'badge';
 }
 
+function normalizeProductBadgeColorTheme(rawValue = '', fallback = PRODUCT_BADGE_DEFAULT_COLOR_THEME) {
+  const candidate = String(rawValue || '').trim().toLowerCase();
+  if (PRODUCT_BADGE_COLOR_THEME_KEY_SET.has(candidate)) {
+    return candidate;
+  }
+
+  const fallbackCandidate = String(fallback || '').trim().toLowerCase();
+  if (PRODUCT_BADGE_COLOR_THEME_KEY_SET.has(fallbackCandidate)) {
+    return fallbackCandidate;
+  }
+
+  return PRODUCT_BADGE_DEFAULT_COLOR_THEME;
+}
+
+function getProductBadgeColorThemeOptions() {
+  return PRODUCT_BADGE_COLOR_THEMES.map((item) => ({
+    key: item.key,
+    labelKo: item.labelKo,
+    labelEn: item.labelEn
+  }));
+}
+
 function buildProductBadgeCodeFromLabels(labelKo = '', labelEn = '', fallback = 'badge') {
   const labelEnCode = normalizeProductBadgeCode(labelEn, '');
   if (PRODUCT_BADGE_CODE_REGEX.test(labelEnCode)) {
@@ -3999,7 +4031,7 @@ function getProductBadgeDefinitions() {
   return db
     .prepare(
       `
-        SELECT id, code, label_ko, label_en, sort_order
+        SELECT id, code, label_ko, label_en, color_theme, sort_order
         FROM product_badge_defs
         ORDER BY sort_order ASC, id ASC
       `
@@ -4010,6 +4042,7 @@ function getProductBadgeDefinitions() {
       code: normalizeProductBadgeCode(row.code, 'badge'),
       label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
       label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      color_theme: normalizeProductBadgeColorTheme(row.color_theme, PRODUCT_BADGE_DEFAULT_COLOR_THEME),
       sort_order: parseNonNegativeInt(row.sort_order, 0)
     }));
 }
@@ -4048,6 +4081,7 @@ function getProductBadgeMapByProductIds(productIds = []) {
           d.code,
           d.label_ko,
           d.label_en,
+          d.color_theme,
           d.sort_order
         FROM product_badges pb
         JOIN product_badge_defs d ON d.id = pb.badge_def_id
@@ -4065,6 +4099,7 @@ function getProductBadgeMapByProductIds(productIds = []) {
       code: normalizeProductBadgeCode(row.code, 'badge'),
       label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
       label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      color_theme: normalizeProductBadgeColorTheme(row.color_theme, PRODUCT_BADGE_DEFAULT_COLOR_THEME),
       sort_order: parseNonNegativeInt(row.sort_order, 0)
     });
     badgeMap.set(productId, current);
@@ -8770,6 +8805,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
   const productBadgeDefinitions = getProductBadgeDefinitions();
+  const productBadgeColorThemes = getProductBadgeColorThemeOptions();
   const products = attachProductBadges(
     db
       .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
@@ -8937,6 +8973,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     products,
     editingProduct,
     productBadgeDefinitions,
+    productBadgeColorThemes,
     orders: ordersWithTimeline,
     orderGroupFilter,
     orderStatusFilter,
@@ -10991,6 +11028,7 @@ app.post('/admin/product-badge/create', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=badges');
   const labelKo = normalizeProductBadgeLabel(req.body.labelKo || '');
   const labelEn = normalizeProductBadgeLabel(req.body.labelEn || '');
+  const colorTheme = normalizeProductBadgeColorTheme(req.body.colorTheme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME);
 
   if (!labelKo || !labelEn) {
     setFlash(req, 'error', '배지명(KR/EN)을 모두 입력해 주세요.');
@@ -11010,10 +11048,10 @@ app.post('/admin/product-badge/create', requireAdmin, (req, res) => {
 
   db.prepare(
     `
-      INSERT INTO product_badge_defs (code, label_ko, label_en, sort_order, updated_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
+      INSERT INTO product_badge_defs (code, label_ko, label_en, color_theme, sort_order, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
     `
-  ).run(code, labelKo, labelEn, sortOrder);
+  ).run(code, labelKo, labelEn, colorTheme, sortOrder);
 
   setFlash(req, 'success', '상품 배지가 추가되었습니다.');
   return res.redirect(backPath);
@@ -11028,7 +11066,7 @@ app.post('/admin/product-badge/:id/update', requireAdmin, (req, res) => {
   }
 
   const existing = db
-    .prepare('SELECT id, code, sort_order FROM product_badge_defs WHERE id = ? LIMIT 1')
+    .prepare('SELECT id, code, color_theme, sort_order FROM product_badge_defs WHERE id = ? LIMIT 1')
     .get(id);
   if (!existing) {
     setFlash(req, 'error', '배지를 찾을 수 없습니다.');
@@ -11043,6 +11081,10 @@ app.post('/admin/product-badge/:id/update', requireAdmin, (req, res) => {
   }
 
   const sortOrder = parseNonNegativeInt(req.body.sortOrder, parseNonNegativeInt(existing.sort_order, 0));
+  const colorTheme = normalizeProductBadgeColorTheme(
+    req.body.colorTheme || '',
+    existing.color_theme || PRODUCT_BADGE_DEFAULT_COLOR_THEME
+  );
   const requestedCode = normalizeProductBadgeCode(
     req.body.code || existing.code || '',
     buildProductBadgeCodeFromLabels(labelKo, labelEn, existing.code || 'badge')
@@ -11052,10 +11094,10 @@ app.post('/admin/product-badge/:id/update', requireAdmin, (req, res) => {
   db.prepare(
     `
       UPDATE product_badge_defs
-      SET code = ?, label_ko = ?, label_en = ?, sort_order = ?, updated_at = datetime('now')
+      SET code = ?, label_ko = ?, label_en = ?, color_theme = ?, sort_order = ?, updated_at = datetime('now')
       WHERE id = ?
     `
-  ).run(code, labelKo, labelEn, sortOrder, id);
+  ).run(code, labelKo, labelEn, colorTheme, sortOrder, id);
 
   setFlash(req, 'success', '상품 배지가 수정되었습니다.');
   return res.redirect(backPath);

@@ -132,6 +132,29 @@
   };
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
   const productBadgeList = Array.isArray(productBadgeDefinitions) ? productBadgeDefinitions : [];
+  const productBadgeColorThemeList =
+    Array.isArray(productBadgeColorThemes) && productBadgeColorThemes.length > 0
+      ? productBadgeColorThemes
+      : [
+          { key: 'slate', labelKo: '기본', labelEn: 'Default' },
+          { key: 'red', labelKo: '레드', labelEn: 'Red' },
+          { key: 'blue', labelKo: '블루', labelEn: 'Blue' },
+          { key: 'green', labelKo: '그린', labelEn: 'Green' },
+          { key: 'amber', labelKo: '앰버', labelEn: 'Amber' },
+          { key: 'purple', labelKo: '퍼플', labelEn: 'Purple' }
+        ];
+  const productBadgeThemeKeySet = new Set(productBadgeColorThemeList.map((item) => String(item.key || '').trim().toLowerCase()).filter(Boolean));
+  const normalizeBadgeThemeKey = (value) => {
+    const candidate = String(value || '').trim().toLowerCase();
+    if (productBadgeThemeKeySet.has(candidate)) return candidate;
+    return 'slate';
+  };
+  const badgeThemeLabel = (themeKey) => {
+    const normalized = normalizeBadgeThemeKey(themeKey);
+    const matched = productBadgeColorThemeList.find((item) => String(item.key || '').trim().toLowerCase() === normalized);
+    if (!matched) return isEn ? 'Default' : '기본';
+    return isEn ? (matched.labelEn || matched.labelKo || matched.key) : (matched.labelKo || matched.labelEn || matched.key);
+  };
   const editingBadgeIds = Array.isArray(editingItem?.product_badges)
     ? editingItem.product_badges
         .map((badge) => Number.parseInt(String(badge?.id ?? ''), 10))
@@ -2073,9 +2096,10 @@
             <h4><%= isEn ? 'Product Badges' : '상품 배지' %></h4>
             <div class="admin-field-chip-row">
               <% productBadgeList.forEach((badge) => { %>
+                <% const badgeThemeClass = `product-badge-theme-${normalizeBadgeThemeKey(badge.color_theme)}`; %>
                 <label class="check-chip product-badge-check-chip">
                   <input type="checkbox" name="badgeIds" value="<%= badge.id %>" <%= editingBadgeIdSet.has(Number(badge.id)) ? 'checked' : '' %> />
-                  <span><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                  <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
                 </label>
               <% }) %>
             </div>
@@ -2578,7 +2602,8 @@
                   <% if ((item.product_badges || []).length > 0) { %>
                     <div class="product-badge-row admin-product-badge-row">
                       <% (item.product_badges || []).forEach((badge) => { %>
-                        <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                        <% const badgeThemeClass = `product-badge-theme-${normalizeBadgeThemeKey(badge.color_theme)}`; %>
+                        <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
                       <% }) %>
                     </div>
                   <% } %>
@@ -2657,6 +2682,14 @@
               <%= isEn ? 'Sort Order' : '정렬 순서' %>
               <input type="number" name="sortOrder" min="0" step="1" value="<%= productBadgeList.length + 1 %>" />
             </label>
+            <label>
+              <%= isEn ? 'Color Theme' : '컬러 테마' %>
+              <select name="colorTheme">
+                <% productBadgeColorThemeList.forEach((theme) => { %>
+                  <option value="<%= theme.key %>" <%= String(theme.key) === 'slate' ? 'selected' : '' %>><%= isEn ? (theme.labelEn || theme.labelKo || theme.key) : (theme.labelKo || theme.labelEn || theme.key) %></option>
+                <% }) %>
+              </select>
+            </label>
             <button type="submit" class="cta-main"><%= isEn ? 'Add Badge' : '배지 추가' %></button>
           </form>
           <p class="muted-label"><%= isEn ? 'Added badges can be selected when uploading or editing products.' : '추가한 배지는 상품 업로드/수정 시 체크해서 표시할 수 있습니다.' %></p>
@@ -2669,10 +2702,11 @@
           <% } %>
           <div class="admin-list">
             <% productBadgeList.forEach((badge) => { %>
+              <% const badgeThemeClass = `product-badge-theme-${normalizeBadgeThemeKey(badge.color_theme)}`; %>
               <details class="admin-list-item product-badge-admin-item">
                 <summary>
-                  <strong><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></strong>
-                  <small><%= isEn ? `Code ${badge.code}` : `코드 ${badge.code}` %> · <%= isEn ? `Order ${badge.sort_order}` : `정렬 ${badge.sort_order}` %></small>
+                  <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                  <small><%= isEn ? `Code ${badge.code}` : `코드 ${badge.code}` %> · <%= isEn ? `Order ${badge.sort_order}` : `정렬 ${badge.sort_order}` %> · <%= isEn ? `Theme ${badgeThemeLabel(badge.color_theme)}` : `테마 ${badgeThemeLabel(badge.color_theme)}` %></small>
                 </summary>
                 <form method="post" action="/admin/product-badge/<%= badge.id %>/update" class="form-grid compact">
                   <input type="hidden" name="code" value="<%= badge.code %>" />
@@ -2687,6 +2721,14 @@
                   <label>
                     <%= isEn ? 'Sort Order' : '정렬 순서' %>
                     <input type="number" name="sortOrder" min="0" step="1" value="<%= badge.sort_order %>" />
+                  </label>
+                  <label>
+                    <%= isEn ? 'Color Theme' : '컬러 테마' %>
+                    <select name="colorTheme">
+                      <% productBadgeColorThemeList.forEach((theme) => { %>
+                        <option value="<%= theme.key %>" <%= normalizeBadgeThemeKey(badge.color_theme) === String(theme.key || '').trim().toLowerCase() ? 'selected' : '' %>><%= isEn ? (theme.labelEn || theme.labelKo || theme.key) : (theme.labelKo || theme.labelEn || theme.key) %></option>
+                      <% }) %>
+                    </select>
                   </label>
                   <div class="admin-field-chip-row">
                     <button type="submit" class="chip dark"><%= isEn ? 'Save' : '저장' %></button>

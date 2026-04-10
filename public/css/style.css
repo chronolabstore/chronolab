@@ -240,9 +240,9 @@ body.theme-night .detail-card-dark .cta-main:hover {
 }
 
 body.theme-night .detail-badge-row .product-badge-chip {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(179, 199, 230, 0.5);
-  color: #eaf1ff;
+  --product-badge-bg: rgba(255, 255, 255, 0.12);
+  --product-badge-border: rgba(179, 199, 230, 0.5);
+  --product-badge-text: #eaf1ff;
 }
 
 body.theme-night .detail-action-row .detail-buy-btn {
@@ -979,19 +979,58 @@ body.theme-night .hero-quick-grid a:hover {
 }
 
 .product-badge-chip {
+  --product-badge-bg: var(--chip);
+  --product-badge-border: var(--line);
+  --product-badge-text: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 22px;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--chip);
-  color: var(--text);
+  border: 1px solid var(--product-badge-border);
+  background: var(--product-badge-bg);
+  color: var(--product-badge-text);
   font-size: 0.68rem;
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: 0.01em;
+}
+
+.product-badge-chip.product-badge-theme-slate {
+  --product-badge-bg: var(--chip);
+  --product-badge-border: var(--line);
+  --product-badge-text: var(--text);
+}
+
+.product-badge-chip.product-badge-theme-red {
+  --product-badge-bg: rgba(239, 68, 68, 0.14);
+  --product-badge-border: rgba(220, 38, 38, 0.42);
+  --product-badge-text: #991b1b;
+}
+
+.product-badge-chip.product-badge-theme-blue {
+  --product-badge-bg: rgba(59, 130, 246, 0.14);
+  --product-badge-border: rgba(37, 99, 235, 0.42);
+  --product-badge-text: #1e40af;
+}
+
+.product-badge-chip.product-badge-theme-green {
+  --product-badge-bg: rgba(16, 185, 129, 0.14);
+  --product-badge-border: rgba(5, 150, 105, 0.42);
+  --product-badge-text: #065f46;
+}
+
+.product-badge-chip.product-badge-theme-amber {
+  --product-badge-bg: rgba(245, 158, 11, 0.18);
+  --product-badge-border: rgba(217, 119, 6, 0.42);
+  --product-badge-text: #92400e;
+}
+
+.product-badge-chip.product-badge-theme-purple {
+  --product-badge-bg: rgba(129, 140, 248, 0.18);
+  --product-badge-border: rgba(99, 102, 241, 0.42);
+  --product-badge-text: #4338ca;
 }
 
 .detail-badge-row {
@@ -999,9 +1038,69 @@ body.theme-night .hero-quick-grid a:hover {
 }
 
 .detail-badge-row .product-badge-chip {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.36);
-  color: var(--card-dark-text);
+  --product-badge-bg: rgba(255, 255, 255, 0.14);
+  --product-badge-border: rgba(255, 255, 255, 0.36);
+  --product-badge-text: var(--card-dark-text);
+}
+
+.detail-badge-row .product-badge-chip.product-badge-theme-red {
+  --product-badge-bg: rgba(239, 68, 68, 0.28);
+  --product-badge-border: rgba(248, 113, 113, 0.7);
+  --product-badge-text: #fee2e2;
+}
+
+.detail-badge-row .product-badge-chip.product-badge-theme-blue {
+  --product-badge-bg: rgba(59, 130, 246, 0.28);
+  --product-badge-border: rgba(96, 165, 250, 0.7);
+  --product-badge-text: #dbeafe;
+}
+
+.detail-badge-row .product-badge-chip.product-badge-theme-green {
+  --product-badge-bg: rgba(16, 185, 129, 0.28);
+  --product-badge-border: rgba(52, 211, 153, 0.7);
+  --product-badge-text: #d1fae5;
+}
+
+.detail-badge-row .product-badge-chip.product-badge-theme-amber {
+  --product-badge-bg: rgba(245, 158, 11, 0.28);
+  --product-badge-border: rgba(251, 191, 36, 0.72);
+  --product-badge-text: #fef3c7;
+}
+
+.detail-badge-row .product-badge-chip.product-badge-theme-purple {
+  --product-badge-bg: rgba(129, 140, 248, 0.3);
+  --product-badge-border: rgba(165, 180, 252, 0.74);
+  --product-badge-text: #ede9fe;
+}
+
+body.theme-night .product-badge-chip.product-badge-theme-red {
+  --product-badge-bg: rgba(239, 68, 68, 0.22);
+  --product-badge-border: rgba(248, 113, 113, 0.62);
+  --product-badge-text: #fecaca;
+}
+
+body.theme-night .product-badge-chip.product-badge-theme-blue {
+  --product-badge-bg: rgba(59, 130, 246, 0.22);
+  --product-badge-border: rgba(96, 165, 250, 0.62);
+  --product-badge-text: #dbeafe;
+}
+
+body.theme-night .product-badge-chip.product-badge-theme-green {
+  --product-badge-bg: rgba(16, 185, 129, 0.22);
+  --product-badge-border: rgba(52, 211, 153, 0.62);
+  --product-badge-text: #d1fae5;
+}
+
+body.theme-night .product-badge-chip.product-badge-theme-amber {
+  --product-badge-bg: rgba(245, 158, 11, 0.24);
+  --product-badge-border: rgba(251, 191, 36, 0.62);
+  --product-badge-text: #fef3c7;
+}
+
+body.theme-night .product-badge-chip.product-badge-theme-purple {
+  --product-badge-bg: rgba(129, 140, 248, 0.24);
+  --product-badge-border: rgba(165, 180, 252, 0.62);
+  --product-badge-text: #e0e7ff;
 }
 
 .admin-product-badge-row {
