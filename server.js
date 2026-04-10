@@ -127,6 +127,9 @@ const PRODUCT_GROUP_MODE = Object.freeze({
   SIMPLE: 'simple'
 });
 const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
+const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
+const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
+const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
 const MEMBER_LEVEL_OPERATORS = Object.freeze({
   LT: 'lt',
   LTE: 'lte',
@@ -269,7 +272,7 @@ const uploadStorage = multer.diskStorage({
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, service: 'chrono-lab', timestamp: new Date().toISOString() });
+  res.status(200).json({ ok: true, service: 'chronolab', timestamp: new Date().toISOString() });
 });
 
 const upload = multer({
@@ -296,7 +299,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'chrono-lab-local-secret',
+    secret: process.env.SESSION_SECRET || 'chronolab-local-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -1088,7 +1091,7 @@ async function buildChronoLabWatermarkOverlay(width, height) {
       .toBuffer();
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:watermark:image]', error);
+    console.error('[chronolab:watermark:image]', error);
     return Buffer.from(buildChronoLabWatermarkSvg(safeWidth, safeHeight));
   }
 }
@@ -1129,7 +1132,7 @@ async function applyChronoLabWatermarkToFile(filePath) {
     await fs.writeFile(filePath, outputBuffer);
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:watermark]', error);
+    console.error('[chronolab:watermark]', error);
   }
 }
 
@@ -1433,7 +1436,7 @@ async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}
   const transporter = getMailTransporter();
   if (!transporter) {
     // eslint-disable-next-line no-console
-    console.warn(`[chrono-lab:mail] SMTP not configured. email=${email}, code=${verificationCode}`);
+    console.warn(`[chronolab:mail] SMTP not configured. email=${email}, code=${verificationCode}`);
     return { ok: false, reason: 'smtp_not_configured' };
   }
 
@@ -1457,7 +1460,7 @@ async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}
     return { ok: true };
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:mail] send failed', error);
+    console.error('[chronolab:mail] send failed', error);
     return { ok: false, reason: 'smtp_send_failed' };
   }
 }
@@ -1688,6 +1691,9 @@ function normalizeProductManageSection(rawSection = '') {
   const section = String(rawSection || '').trim().toLowerCase();
   if (section === 'list') {
     return 'list';
+  }
+  if (section === 'badges' || section === 'badge' || section === 'labels') {
+    return 'badges';
   }
   return 'upload';
 }
@@ -3610,6 +3616,206 @@ function parseNonNegativeInt(rawValue, fallback = 0) {
   return parsed;
 }
 
+function normalizeProductBadgeLabel(rawValue = '', fallback = '') {
+  const normalized = String(rawValue || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, PRODUCT_BADGE_LABEL_MAX_LENGTH);
+  if (normalized) {
+    return normalized;
+  }
+  return String(fallback || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, PRODUCT_BADGE_LABEL_MAX_LENGTH);
+}
+
+function normalizeProductBadgeCode(rawValue = '', fallback = 'badge') {
+  const normalize = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, PRODUCT_BADGE_CODE_MAX_LENGTH);
+
+  const fromRaw = normalize(rawValue);
+  if (PRODUCT_BADGE_CODE_REGEX.test(fromRaw)) {
+    return fromRaw;
+  }
+
+  const fromFallback = normalize(fallback);
+  if (PRODUCT_BADGE_CODE_REGEX.test(fromFallback)) {
+    return fromFallback;
+  }
+
+  return 'badge';
+}
+
+function buildProductBadgeCodeFromLabels(labelKo = '', labelEn = '', fallback = 'badge') {
+  const labelEnCode = normalizeProductBadgeCode(labelEn, '');
+  if (PRODUCT_BADGE_CODE_REGEX.test(labelEnCode)) {
+    return labelEnCode;
+  }
+
+  const labelKoCode = normalizeProductBadgeCode(labelKo, '');
+  if (PRODUCT_BADGE_CODE_REGEX.test(labelKoCode)) {
+    return labelKoCode;
+  }
+
+  return normalizeProductBadgeCode(fallback, 'badge');
+}
+
+function makeUniqueProductBadgeCode(baseCode = '', excludeId = 0) {
+  const safeExcludeId = Number(excludeId || 0);
+  const base = normalizeProductBadgeCode(baseCode, 'badge');
+
+  const hasCodeConflict = (candidateCode) => {
+    if (safeExcludeId > 0) {
+      return Boolean(
+        db.prepare('SELECT id FROM product_badge_defs WHERE code = ? AND id != ? LIMIT 1').get(candidateCode, safeExcludeId)
+      );
+    }
+    return Boolean(db.prepare('SELECT id FROM product_badge_defs WHERE code = ? LIMIT 1').get(candidateCode));
+  };
+
+  if (!hasCodeConflict(base)) {
+    return base;
+  }
+
+  for (let suffix = 2; suffix < 10000; suffix += 1) {
+    const suffixText = `-${suffix}`;
+    const headLength = Math.max(2, PRODUCT_BADGE_CODE_MAX_LENGTH - suffixText.length);
+    const candidate = `${base.slice(0, headLength)}${suffixText}`;
+    if (!hasCodeConflict(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${base.slice(0, 30)}-${Date.now().toString(36).slice(-6)}`;
+}
+
+function getProductBadgeDefinitions() {
+  return db
+    .prepare(
+      `
+        SELECT id, code, label_ko, label_en, sort_order
+        FROM product_badge_defs
+        ORDER BY sort_order ASC, id ASC
+      `
+    )
+    .all()
+    .map((row) => ({
+      id: Number(row.id),
+      code: normalizeProductBadgeCode(row.code, 'badge'),
+      label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
+      label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      sort_order: parseNonNegativeInt(row.sort_order, 0)
+    }));
+}
+
+function normalizeRequestedBadgeIds(rawValue, allowedIdSet = null) {
+  const candidates = Array.isArray(rawValue) ? rawValue : [rawValue];
+  const unique = [...new Set(candidates
+    .map((item) => Number.parseInt(String(item ?? ''), 10))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+
+  if (allowedIdSet instanceof Set) {
+    return unique.filter((id) => allowedIdSet.has(id));
+  }
+  return unique;
+}
+
+function getProductBadgeMapByProductIds(productIds = []) {
+  const uniqueIds = [...new Set(
+    (Array.isArray(productIds) ? productIds : [productIds])
+      .map((id) => Number.parseInt(String(id ?? ''), 10))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )];
+  const badgeMap = new Map();
+
+  if (uniqueIds.length === 0) {
+    return badgeMap;
+  }
+
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          pb.product_id,
+          d.id AS badge_id,
+          d.code,
+          d.label_ko,
+          d.label_en,
+          d.sort_order
+        FROM product_badges pb
+        JOIN product_badge_defs d ON d.id = pb.badge_def_id
+        WHERE pb.product_id IN (${placeholders})
+        ORDER BY d.sort_order ASC, d.id ASC
+      `
+    )
+    .all(...uniqueIds);
+
+  rows.forEach((row) => {
+    const productId = Number(row.product_id);
+    const current = badgeMap.get(productId) || [];
+    current.push({
+      id: Number(row.badge_id),
+      code: normalizeProductBadgeCode(row.code, 'badge'),
+      label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
+      label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      sort_order: parseNonNegativeInt(row.sort_order, 0)
+    });
+    badgeMap.set(productId, current);
+  });
+
+  return badgeMap;
+}
+
+function attachProductBadges(products = []) {
+  const list = Array.isArray(products) ? products : [];
+  if (list.length === 0) {
+    return [];
+  }
+
+  const badgeMap = getProductBadgeMapByProductIds(list.map((item) => item?.id));
+  return list.map((item) => {
+    const productId = Number(item?.id || 0);
+    return {
+      ...item,
+      product_badges: badgeMap.get(productId) || []
+    };
+  });
+}
+
+function replaceProductBadgeLinks(productId, badgeIds = []) {
+  const targetProductId = Number(productId || 0);
+  if (!Number.isInteger(targetProductId) || targetProductId <= 0) {
+    return;
+  }
+
+  const uniqueBadgeIds = [...new Set(
+    (Array.isArray(badgeIds) ? badgeIds : [])
+      .map((id) => Number.parseInt(String(id ?? ''), 10))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )];
+
+  const tx = db.transaction((resolvedProductId, resolvedBadgeIds) => {
+    db.prepare('DELETE FROM product_badges WHERE product_id = ?').run(resolvedProductId);
+    if (resolvedBadgeIds.length === 0) {
+      return;
+    }
+    const insert = db.prepare('INSERT INTO product_badges (product_id, badge_def_id) VALUES (?, ?)');
+    resolvedBadgeIds.forEach((badgeId) => {
+      insert.run(resolvedProductId, badgeId);
+    });
+  });
+
+  tx(targetProductId, uniqueBadgeIds);
+}
+
 function parsePointRate(rawValue, fallback = 0) {
   const parsed = Number.parseFloat(String(rawValue ?? '').replace(/,/g, '').trim());
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -4647,7 +4853,9 @@ app.get('/main', (req, res) => {
 
     return {
       groupName: groupConfig.key,
-      products: rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+      products: attachProductBadges(
+        rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+      )
     };
   });
 
@@ -4814,7 +5022,9 @@ app.get('/shop', (req, res) => {
       `
     )
     .all(...params);
-  const products = productRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
+  const products = attachProductBadges(
+    productRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+  );
 
   res.render('shop', {
     title: 'Shop',
@@ -4994,13 +5204,21 @@ app.get('/shop/item/:id', (req, res) => {
       .all(product.category_group, product.id);
   }
 
-  const similar = similarRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
-  const productDisplay = buildProductDisplayData(product, productGroupConfig);
+  const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
+  const productWithBadges = {
+    ...product,
+    product_badges: badgeMap.get(Number(product.id)) || []
+  };
+  const similar = similarRows.map((row) => ({
+    ...decorateProductForView(row, productGroupMap.get(row.category_group)),
+    product_badges: badgeMap.get(Number(row.id)) || []
+  }));
+  const productDisplay = buildProductDisplayData(productWithBadges, productGroupConfig);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
 
   res.render('product-detail', {
     title: 'Product',
-    product,
+    product: productWithBadges,
     productDisplay,
     productGroupConfig,
     isFactoryLikeProduct: isFactoryLikeGroup(productGroupConfig),
@@ -8225,10 +8443,13 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const orderDateTo = normalizeDateInput(options.orderDateTo || '');
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
-  const products = db
-    .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
-    .all()
-    .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)));
+  const productBadgeDefinitions = getProductBadgeDefinitions();
+  const products = attachProductBadges(
+    db
+      .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
+      .all()
+      .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)))
+  );
 
   let editingProduct = null;
   if (editProductId > 0) {
@@ -8260,6 +8481,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 
       editingProduct = {
         ...decorateProductForView(editRow, editGroupConfig),
+        product_badges: getProductBadgeMapByProductIds([editRow.id]).get(Number(editRow.id)) || [],
         groupConfig: editGroupConfig,
         fieldValues: getProductFieldValues(editRow, editGroupConfig),
         imageList
@@ -8388,6 +8610,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     publicMenus,
     products,
     editingProduct,
+    productBadgeDefinitions,
     orders: ordersWithTimeline,
     orderGroupFilter,
     orderStatusFilter,
@@ -10126,6 +10349,9 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const categoryGroup = selectedGroup.key;
+  const selectableBadgeDefs = getProductBadgeDefinitions();
+  const selectableBadgeIdSet = new Set(selectableBadgeDefs.map((item) => Number(item.id)));
+  const selectedBadgeIds = normalizeRequestedBadgeIds(req.body.badgeIds, selectableBadgeIdSet);
   const submission = buildAdminProductSubmission(req.body, selectedGroup);
   if (submission.error) {
     setFlash(req, 'error', submission.error);
@@ -10211,6 +10437,8 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     });
   }
 
+  replaceProductBadgeLinks(productId, selectedBadgeIds);
+
   setPopupFlash(req, 'success', '상품이 등록되었습니다.');
   res.redirect(backPath);
 }));
@@ -10243,6 +10471,9 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     factoryOptions: [],
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
+  const selectableBadgeDefs = getProductBadgeDefinitions();
+  const selectableBadgeIdSet = new Set(selectableBadgeDefs.map((item) => Number(item.id)));
+  const selectedBadgeIds = normalizeRequestedBadgeIds(req.body.badgeIds, selectableBadgeIdSet);
 
   const submission = buildAdminProductSubmission(req.body, selectedGroup);
   if (submission.error) {
@@ -10350,6 +10581,8 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     });
   }
 
+  replaceProductBadgeLinks(id, selectedBadgeIds);
+
   setFlash(req, 'success', '상품 정보가 수정되었습니다.');
   return res.redirect('/admin/products?section=list');
 }));
@@ -10397,6 +10630,99 @@ app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
   db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(nextState, id);
   setFlash(req, 'success', '상품 노출 상태를 변경했습니다.');
   res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/create', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const labelKo = normalizeProductBadgeLabel(req.body.labelKo || '');
+  const labelEn = normalizeProductBadgeLabel(req.body.labelEn || '');
+
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '배지명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const maxSortOrderRow = db
+    .prepare('SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order FROM product_badge_defs')
+    .get();
+  const fallbackSortOrder = parseNonNegativeInt(maxSortOrderRow?.max_sort_order, 0) + 1;
+  const sortOrder = parseNonNegativeInt(req.body.sortOrder, fallbackSortOrder);
+  const requestedCode = normalizeProductBadgeCode(
+    req.body.code || '',
+    buildProductBadgeCodeFromLabels(labelKo, labelEn, 'badge')
+  );
+  const code = makeUniqueProductBadgeCode(requestedCode);
+
+  db.prepare(
+    `
+      INSERT INTO product_badge_defs (code, label_ko, label_en, sort_order, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    `
+  ).run(code, labelKo, labelEn, sortOrder);
+
+  setFlash(req, 'success', '상품 배지가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/:id/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 배지입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db
+    .prepare('SELECT id, code, sort_order FROM product_badge_defs WHERE id = ? LIMIT 1')
+    .get(id);
+  if (!existing) {
+    setFlash(req, 'error', '배지를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const labelKo = normalizeProductBadgeLabel(req.body.labelKo || '');
+  const labelEn = normalizeProductBadgeLabel(req.body.labelEn || '');
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '배지명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const sortOrder = parseNonNegativeInt(req.body.sortOrder, parseNonNegativeInt(existing.sort_order, 0));
+  const requestedCode = normalizeProductBadgeCode(
+    req.body.code || existing.code || '',
+    buildProductBadgeCodeFromLabels(labelKo, labelEn, existing.code || 'badge')
+  );
+  const code = makeUniqueProductBadgeCode(requestedCode, id);
+
+  db.prepare(
+    `
+      UPDATE product_badge_defs
+      SET code = ?, label_ko = ?, label_en = ?, sort_order = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `
+  ).run(code, labelKo, labelEn, sortOrder, id);
+
+  setFlash(req, 'success', '상품 배지가 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 배지입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db.prepare('SELECT id FROM product_badge_defs WHERE id = ? LIMIT 1').get(id);
+  if (!existing) {
+    setFlash(req, 'error', '배지를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM product_badge_defs WHERE id = ?').run(id);
+  setFlash(req, 'success', '상품 배지가 삭제되었습니다.');
+  return res.redirect(backPath);
 });
 
 app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res) => {
@@ -11108,7 +11434,7 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   // eslint-disable-next-line no-console
-  console.error('[chrono-lab:error]', error);
+  console.error('[chronolab:error]', error);
 
   const message = error?.message?.includes('지원되지 않는 파일 형식')
     ? error.message

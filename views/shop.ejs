@@ -103,6 +103,13 @@
         <div class="product-meta">
           <small><%= resolvedGroupLabelMap[item.category_group] || item.category_group || '-' %></small>
           <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+          <% if ((item.product_badges || []).length > 0) { %>
+            <div class="product-badge-row">
+              <% (item.product_badges || []).forEach((badge) => { %>
+                <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+              <% }) %>
+            </div>
+          <% } %>
           <span><%= item.display_subtitle || '' %></span>
           <small><%= item.display_meta || (item.case_material || '-') + ' / ' + (item.movement || '-') %></small>
           <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>

@@ -66,6 +66,13 @@
       <% } %>
     </h3>
     <p class="muted-label"><%= productGroupLabel || product.category_group %></p>
+    <% if ((product.product_badges || []).length > 0) { %>
+      <div class="product-badge-row detail-badge-row">
+        <% (product.product_badges || []).forEach((badge) => { %>
+          <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+        <% }) %>
+      </div>
+    <% } %>
 
     <% if (isFactoryLikeProduct) { %>
       <div class="spec-grid">

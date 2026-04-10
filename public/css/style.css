@@ -239,6 +239,12 @@ body.theme-night .detail-card-dark .cta-main:hover {
   border-color: #6f87af;
 }
 
+body.theme-night .detail-badge-row .product-badge-chip {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(179, 199, 230, 0.5);
+  color: #eaf1ff;
+}
+
 body.theme-night .detail-action-row .detail-buy-btn {
   background: #eef3ff;
   border-color: #b6c6e4;
@@ -924,6 +930,42 @@ body.theme-night .hero-quick-grid a:hover {
 .product-meta small {
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+.product-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--chip);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.detail-badge-row {
+  margin: -4px 0 10px;
+}
+
+.detail-badge-row .product-badge-chip {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.36);
+  color: var(--card-dark-text);
+}
+
+.admin-product-badge-row {
+  margin-top: 6px;
 }
 
 .news-card-grid {
@@ -2248,6 +2290,14 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 .check-chip input {
   width: auto;
   margin: 0;
+}
+
+.product-badge-check-chip {
+  background: var(--chip);
+}
+
+.product-badge-admin-item .admin-field-chip-row {
+  margin-top: 8px;
 }
 
 .member-level-rule-item {

@@ -193,7 +193,8 @@ const defaultSettings = {
   contactInfo: '고객센터: 010-0000-0000 / 카카오톡: @chronolab',
   businessInfo: '상호: Chrono Lab | 대표: Chrono Team | 사업자번호: 000-00-00000',
   languageDefault: 'ko',
-  productGroupConfigs: JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS)
+  productGroupConfigs: JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS),
+  productBadgeSeedV1: '0'
 };
 
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -370,6 +371,59 @@ function ensureProductsExtraFieldsColumn() {
   if (!hasExtraFields) {
     db.prepare("ALTER TABLE products ADD COLUMN extra_fields_json TEXT NOT NULL DEFAULT '{}'").run();
   }
+}
+
+function ensureProductBadgeTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_badge_defs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      label_ko TEXT NOT NULL,
+      label_en TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS product_badges (
+      product_id INTEGER NOT NULL,
+      badge_def_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (product_id, badge_def_id),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (badge_def_id) REFERENCES product_badge_defs(id) ON DELETE CASCADE
+    );
+  `);
+
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_product_badges_product_id ON product_badges (product_id)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_product_badges_badge_def_id ON product_badges (badge_def_id)').run();
+}
+
+function seedDefaultProductBadgesOnce() {
+  const seedFlag = String(getSetting('productBadgeSeedV1', '0') || '0');
+  if (seedFlag === '1') {
+    return;
+  }
+
+  const countRow = db.prepare('SELECT COUNT(*) AS count FROM product_badge_defs').get();
+  if (Number(countRow?.count || 0) === 0) {
+    const defaults = [
+      { code: 'domestic-stock', labelKo: '국내재고', labelEn: 'Domestic Stock' },
+      { code: 'same-day-dispatch', labelKo: '당일발송', labelEn: 'Same-Day Dispatch' },
+      { code: 'made-to-order', labelKo: '주문제작', labelEn: 'Made to Order' }
+    ];
+    const insert = db.prepare(
+      `
+        INSERT INTO product_badge_defs (code, label_ko, label_en, sort_order, updated_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+      `
+    );
+    defaults.forEach((item, index) => {
+      insert.run(item.code, item.labelKo, item.labelEn, index + 1);
+    });
+  }
+
+  setSetting('productBadgeSeedV1', '1');
 }
 
 function ensureUserAdminProfileColumns() {
@@ -1431,6 +1485,7 @@ export function initDb() {
 
   ensureProductsCategoryColumn();
   ensureProductsExtraFieldsColumn();
+  ensureProductBadgeTables();
   ensureUserAdminProfileColumns();
   ensureUserMemberProfileColumns();
   ensureUserMemberUidColumn();
@@ -1451,6 +1506,7 @@ export function initDb() {
     upsertDefaultSetting(key, value);
   }
   ensureSignupBonusBaseline();
+  seedDefaultProductBadgesOnce();
 
   migrateLegacyThemeAssetSettings();
 
