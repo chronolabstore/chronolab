@@ -27,14 +27,23 @@ function parseEnvFlag(value, fallback = false) {
   return Boolean(fallback);
 }
 
+const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
+const renderExternalUrl = String(process.env.RENDER_EXTERNAL_URL || '').trim().toLowerCase();
+const renderServiceName = String(process.env.RENDER_SERVICE_NAME || '').trim().toLowerCase();
+const renderGitBranch = String(process.env.RENDER_GIT_BRANCH || '').trim().toLowerCase();
+const isRenderStaging =
+  renderExternalUrl.includes('chronolab-staging.onrender.com') ||
+  renderServiceName.includes('staging') ||
+  renderGitBranch === 'staging';
+const defaultBootstrapEnabled = nodeEnv !== 'production' || isRenderStaging;
 const shouldBootstrapSeedData = parseEnvFlag(
   process.env.ENABLE_BOOTSTRAP_SEED,
-  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+  defaultBootstrapEnabled
 );
 
 const shouldRunStartupDataMaintenance = parseEnvFlag(
   process.env.ENABLE_STARTUP_DATA_MAINTENANCE,
-  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+  defaultBootstrapEnabled
 );
 
 export const db = new Database(dbPath);
