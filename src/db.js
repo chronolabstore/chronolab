@@ -30,9 +30,11 @@ function parseEnvFlag(value, fallback = false) {
 const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
 const renderExternalUrl = String(process.env.RENDER_EXTERNAL_URL || '').trim().toLowerCase();
 const renderServiceName = String(process.env.RENDER_SERVICE_NAME || '').trim().toLowerCase();
+const renderGitBranch = String(process.env.RENDER_GIT_BRANCH || '').trim().toLowerCase();
 const isRenderStaging =
   renderExternalUrl.includes('chronolab-staging.onrender.com') ||
-  renderServiceName.includes('staging');
+  renderServiceName.includes('staging') ||
+  renderGitBranch === 'staging';
 const defaultBootstrapEnabled = nodeEnv !== 'production' || isRenderStaging;
 
 const shouldBootstrapSeedData = parseEnvFlag(
