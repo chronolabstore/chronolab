@@ -259,6 +259,8 @@ const ALLOWED_UPLOAD_MIME = new Set([
   'image/gif',
   'image/avif'
 ]);
+const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
+const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
 
 let mailTransporter = null;
 
@@ -1098,7 +1100,7 @@ async function buildChronoLabWatermarkOverlay(width, height) {
 
 async function applyChronoLabWatermarkToFile(filePath) {
   if (!filePath) {
-    return;
+    return { ok: false, reason: 'empty-path' };
   }
 
   try {
@@ -1109,10 +1111,10 @@ async function applyChronoLabWatermarkToFile(filePath) {
     const format = String(metadata.format || '').toLowerCase();
 
     if (width <= 0 || height <= 0) {
-      return;
+      return { ok: false, reason: 'invalid-size' };
     }
-    if (!['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(format)) {
-      return;
+    if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+      return { ok: false, reason: 'unsupported-format', format };
     }
 
     const watermarkOverlay = await buildChronoLabWatermarkOverlay(width, height);
@@ -1130,9 +1132,11 @@ async function applyChronoLabWatermarkToFile(filePath) {
 
     const outputBuffer = await pipeline.toBuffer();
     await fs.writeFile(filePath, outputBuffer);
+    return { ok: true, format };
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('[chronolab:watermark]', error);
+    return { ok: false, reason: 'watermark-error' };
   }
 }
 
@@ -1159,6 +1163,101 @@ function resolveLocalPathFromImageUrl(imageUrl = '') {
   return '';
 }
 
+function isRemoteImageUrl(imageUrl = '') {
+  return /^https?:\/\//i.test(String(imageUrl || '').trim());
+}
+
+function buildUploadFilenameForFormat(format = '') {
+  const safeFormat = String(format || '').toLowerCase();
+  const ext = safeFormat === 'jpeg' || safeFormat === 'jpg'
+    ? 'jpg'
+    : safeFormat === 'png'
+      ? 'png'
+      : safeFormat === 'webp'
+        ? 'webp'
+        : safeFormat === 'avif'
+          ? 'avif'
+          : 'jpg';
+  return `wm-legacy-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+}
+
+function replaceProductImageUrlEverywhere(fromImageUrl = '', toImageUrl = '') {
+  const from = String(fromImageUrl || '').trim();
+  const to = String(toImageUrl || '').trim();
+  if (!from || !to || from === to) {
+    return 0;
+  }
+
+  const tx = db.transaction((source, target) => {
+    const updatedProducts = db
+      .prepare('UPDATE products SET image_path = ? WHERE image_path = ?')
+      .run(target, source);
+    const updatedImages = db
+      .prepare('UPDATE product_images SET image_path = ? WHERE image_path = ?')
+      .run(target, source);
+    return Number(updatedProducts.changes || 0) + Number(updatedImages.changes || 0);
+  });
+
+  return tx(from, to);
+}
+
+async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
+  const src = String(imageUrl || '').trim();
+  if (!isRemoteImageUrl(src) || typeof fetch !== 'function') {
+    return { ok: false, reason: 'unsupported-url' };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(src, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { accept: 'image/*,*/*;q=0.8' },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return { ok: false, reason: `http-${response.status}` };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length <= 0) {
+      return { ok: false, reason: 'empty-body' };
+    }
+
+    const metadata = await sharp(buffer).metadata();
+    const format = String(metadata.format || '').toLowerCase();
+    if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+      return { ok: false, reason: 'unsupported-format', format };
+    }
+
+    const uploadDir = path.join(__dirname, 'uploads');
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    const filename = buildUploadFilenameForFormat(format);
+    const localPath = path.join(uploadDir, filename);
+    await fs.writeFile(localPath, buffer);
+
+    const result = await applyChronoLabWatermarkToFile(localPath);
+    if (!result.ok) {
+      await fs.unlink(localPath).catch(() => {});
+      return { ok: false, reason: result.reason || 'watermark-failed' };
+    }
+
+    return {
+      ok: true,
+      imagePath: `/uploads/${filename}`,
+      format
+    };
+  } catch {
+    return { ok: false, reason: 'download-error' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function applyChronoLabWatermarkToAllProductImages() {
   const rows = db
     .prepare(
@@ -1176,32 +1275,57 @@ async function applyChronoLabWatermarkToAllProductImages() {
 
   const uniqueUrls = [...new Set(rows.map((row) => String(row.image_path || '').trim()).filter(Boolean))];
   let processedCount = 0;
+  let convertedRemoteCount = 0;
   let skippedCount = 0;
+  let failedCount = 0;
 
   for (const imageUrl of uniqueUrls) {
     const localPath = resolveLocalPathFromImageUrl(imageUrl);
-    if (!localPath) {
-      skippedCount += 1;
+    if (localPath) {
+      try {
+        await fs.access(localPath);
+      } catch {
+        skippedCount += 1;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      const result = await applyChronoLabWatermarkToFile(localPath);
+      if (result.ok) {
+        processedCount += 1;
+      } else if (result.reason === 'unsupported-format') {
+        skippedCount += 1;
+      } else {
+        failedCount += 1;
+      }
       // eslint-disable-next-line no-continue
       continue;
     }
 
-    try {
-      await fs.access(localPath);
-    } catch {
-      skippedCount += 1;
+    if (isRemoteImageUrl(imageUrl)) {
+      const downloaded = await downloadRemoteImageAsWatermarkedUpload(imageUrl);
+      if (downloaded.ok) {
+        replaceProductImageUrlEverywhere(imageUrl, downloaded.imagePath);
+        processedCount += 1;
+        convertedRemoteCount += 1;
+      } else if (downloaded.reason === 'unsupported-format') {
+        skippedCount += 1;
+      } else {
+        failedCount += 1;
+      }
       // eslint-disable-next-line no-continue
       continue;
     }
 
-    await applyChronoLabWatermarkToFile(localPath);
-    processedCount += 1;
+    skippedCount += 1;
   }
 
   return {
     totalCount: uniqueUrls.length,
     processedCount,
-    skippedCount
+    convertedRemoteCount,
+    skippedCount,
+    failedCount
   };
 }
 
@@ -10612,7 +10736,7 @@ app.post('/admin/product/watermark/apply-all', requireAdmin, asyncRoute(async (r
   setFlash(
     req,
     'success',
-    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리, ${result.skippedCount}개 스킵`
+    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리(원격 ${result.convertedRemoteCount}개 변환), ${result.skippedCount}개 스킵, ${result.failedCount}개 실패`
   );
   return res.redirect(backPath);
 }));
