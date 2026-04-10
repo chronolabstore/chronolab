@@ -2104,7 +2104,8 @@
           const MAX_IMAGE_FILE_BYTES = 100 * 1024 * 1024;
           const MAX_IMAGE_FILE_MB = Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024));
           const imageOverLimitMessage = '<%= isEn ? 'Some files exceed 100MB per image. Please reduce file size and try again.' : '이미지 1개당 최대 100MB까지 업로드할 수 있습니다. 용량을 줄여 다시 시도해 주세요.' %>';
-          const dragHandleLabel = '<%= isEn ? 'Drag to reorder image' : '드래그하여 이미지 순서 변경' %>';
+          const removeImageLabel = '<%= isEn ? 'Remove image' : '이미지 선택 취소' %>';
+          const browserUnsupportedFileEditMessage = '<%= isEn ? 'Your browser does not support file reordering/removal for this input. Please reselect images.' : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.' %>';
           let watermarkImage = null;
           let watermarkImagePromise = null;
           let selectedImageFiles = [];
@@ -2112,6 +2113,8 @@
           let draggingPointerId = null;
           let dragStartX = 0;
           let dragStartY = 0;
+          let dragMoved = false;
+          let lastDragFinishedAt = 0;
 
           const clearWatermarkPreview = () => {
             if (!previewGrid) return;
@@ -2135,6 +2138,20 @@
             } catch (error) {
               return false;
             }
+          };
+
+          const syncInputFilesOrReset = (files = []) => {
+            const replaced = replaceInputFiles(files);
+            if (replaced) {
+              return true;
+            }
+            if (imageInput) {
+              imageInput.value = '';
+            }
+            selectedImageFiles = [];
+            renderWatermarkPreview();
+            window.alert(browserUnsupportedFileEditMessage);
+            return false;
           };
 
           const updatePreviewOrderLabels = () => {
@@ -2164,7 +2181,7 @@
               .filter((entry) => entry && entry.file);
             updatePreviewOrderLabels();
 
-            replaceInputFiles(selectedImageFiles.map((entry) => entry.file));
+            syncInputFilesOrReset(selectedImageFiles.map((entry) => entry.file));
           };
 
           const loadWatermarkImage = () => {
@@ -2253,12 +2270,13 @@
             order.setAttribute('data-watermark-preview-order', '1');
             order.textContent = '1';
 
-            const dragHandle = document.createElement('button');
-            dragHandle.type = 'button';
-            dragHandle.className = 'watermark-preview-drag-handle';
-            dragHandle.setAttribute('data-preview-drag-handle', '1');
-            dragHandle.setAttribute('aria-label', dragHandleLabel);
-            dragHandle.textContent = '::';
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'watermark-preview-remove-btn';
+            removeBtn.setAttribute('data-preview-remove', '1');
+            removeBtn.setAttribute('data-preview-remove-id', fileEntry.id);
+            removeBtn.setAttribute('aria-label', removeImageLabel);
+            removeBtn.textContent = '×';
 
             const canvas = document.createElement('canvas');
             canvas.className = 'watermark-preview-canvas';
@@ -2270,7 +2288,7 @@
             name.textContent = file.name || 'image';
 
             item.appendChild(order);
-            item.appendChild(dragHandle);
+            item.appendChild(removeBtn);
             item.appendChild(canvas);
             item.appendChild(name);
             previewGrid.appendChild(item);
@@ -2319,21 +2337,22 @@
 
           const startPreviewDrag = (event) => {
             if (!previewGrid || !event || !event.target) return;
-            const handle = event.target.closest('[data-preview-drag-handle]');
-            if (!handle) return;
-            const item = handle.closest('.watermark-preview-item');
+            if (event.target.closest('[data-preview-remove]')) return;
+            if (event.pointerType === 'mouse' && Number(event.button) !== 0) return;
+            const item = event.target.closest('.watermark-preview-item');
             if (!item || item.parentElement !== previewGrid) return;
 
             draggingPreviewItem = item;
             draggingPointerId = event.pointerId;
             dragStartX = event.clientX;
             dragStartY = event.clientY;
+            dragMoved = false;
             item.classList.add('is-dragging');
             item.style.transform = 'translate(0px, 0px)';
             item.style.pointerEvents = 'none';
-            if (handle.setPointerCapture) {
+            if (item.setPointerCapture) {
               try {
-                handle.setPointerCapture(event.pointerId);
+                item.setPointerCapture(event.pointerId);
               } catch (error) {
                 // ignore pointer capture failures
               }
@@ -2347,6 +2366,12 @@
 
             const dx = event.clientX - dragStartX;
             const dy = event.clientY - dragStartY;
+            if (!dragMoved) {
+              if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+                return;
+              }
+              dragMoved = true;
+            }
             draggingPreviewItem.style.transform = `translate(${dx}px, ${dy}px)`;
 
             const hoverNode = document.elementFromPoint(event.clientX, event.clientY);
@@ -2384,9 +2409,40 @@
             draggingPreviewItem.classList.remove('is-dragging');
             draggingPreviewItem.style.transform = '';
             draggingPreviewItem.style.pointerEvents = '';
+            if (dragMoved) {
+              lastDragFinishedAt = Date.now();
+            }
             draggingPreviewItem = null;
             draggingPointerId = null;
+            dragMoved = false;
             syncSelectedFilesFromPreviewDom();
+          };
+
+          const removePreviewFileById = (fileId) => {
+            const targetId = String(fileId || '').trim();
+            if (!targetId) return;
+            selectedImageFiles = selectedImageFiles.filter((entry) => entry && entry.id !== targetId);
+            if (!syncInputFilesOrReset(selectedImageFiles.map((entry) => entry.file))) {
+              return;
+            }
+            renderWatermarkPreview();
+          };
+
+          const handlePreviewGridClick = (event) => {
+            if (!previewGrid || !event || !event.target) return;
+
+            const removeBtn = event.target.closest('[data-preview-remove]');
+            if (removeBtn) {
+              event.preventDefault();
+              event.stopPropagation();
+              removePreviewFileById(removeBtn.getAttribute('data-preview-remove-id') || '');
+              return;
+            }
+
+            if (Date.now() - lastDragFinishedAt < 300) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
           };
 
           const refreshWatermarkPreview = () => {
@@ -2475,6 +2531,7 @@
             previewGrid.addEventListener('pointermove', movePreviewDrag);
             previewGrid.addEventListener('pointerup', finishPreviewDrag);
             previewGrid.addEventListener('pointercancel', finishPreviewDrag);
+            previewGrid.addEventListener('click', handlePreviewGridClick, true);
             window.addEventListener('pointerup', finishPreviewDrag);
             window.addEventListener('pointercancel', finishPreviewDrag);
           }
