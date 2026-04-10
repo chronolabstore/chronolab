@@ -345,8 +345,8 @@ img {
 }
 
 .brand-symbol {
-  width: 42px;
-  height: 42px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
   object-position: center;
   display: block;
@@ -354,8 +354,8 @@ img {
 }
 
 .brand-symbol-fallback {
-  width: 42px;
-  height: 42px;
+  width: 30px;
+  height: 30px;
   border-radius: 10px;
   flex: 0 0 auto;
 }
@@ -1919,9 +1919,9 @@ body.theme-night .watermark-preview-canvas {
 }
 
 .footer-logo {
-  width: clamp(148px, 75%, 230px);
+  width: clamp(112px, 58%, 158px);
   height: auto;
-  max-height: 178px;
+  max-height: 112px;
   object-fit: contain;
   object-position: left center;
   display: block;
@@ -1934,15 +1934,17 @@ body.theme-night .watermark-preview-canvas {
 .footer-brand-card {
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  min-height: 0;
 }
 
 .footer-brand-card h4 {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .footer-brand-visual {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  min-height: 72px;
+  margin-bottom: 6px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
