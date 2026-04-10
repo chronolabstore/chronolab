@@ -2,6 +2,8 @@ import path from 'path';
 import { promises as fs, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -47,6 +49,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
+const execFileAsync = promisify(execFile);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-z0-9]{4,20}$/;
@@ -265,6 +268,7 @@ const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
 const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
 const WATERMARK_REMOTE_FETCH_MAX_DELAY_MS = 8000;
 const WATERMARK_REMOTE_FETCH_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+const WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES = 45 * 1024 * 1024;
 
 let mailTransporter = null;
 
@@ -1250,103 +1254,166 @@ function replaceProductImageUrlEverywhere(fromImageUrl = '', toImageUrl = '') {
   return tx(from, to);
 }
 
-async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
+async function saveWatermarkedBufferAsUpload(buffer = Buffer.alloc(0)) {
+  const sourceBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  if (sourceBuffer.length <= 0) {
+    return { ok: false, reason: 'empty-body' };
+  }
+
+  const metadata = await sharp(sourceBuffer).metadata();
+  const format = String(metadata.format || '').toLowerCase();
+  if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+    return { ok: false, reason: 'unsupported-format', format };
+  }
+
+  const uploadDir = path.join(__dirname, 'uploads');
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  const filename = buildUploadFilenameForFormat(format);
+  const localPath = path.join(uploadDir, filename);
+  await fs.writeFile(localPath, sourceBuffer);
+
+  const result = await applyChronoLabWatermarkToFile(localPath);
+  if (!result.ok) {
+    await fs.unlink(localPath).catch(() => {});
+    return { ok: false, reason: result.reason || 'watermark-failed' };
+  }
+
+  return {
+    ok: true,
+    imagePath: `/uploads/${filename}`,
+    format
+  };
+}
+
+async function downloadRemoteImageBufferWithCurl(imageUrl = '') {
   const src = normalizeRemoteImageUrl(imageUrl);
-  if (!src || typeof fetch !== 'function') {
+  if (!src) {
     return { ok: false, reason: 'unsupported-url' };
   }
 
+  const timeoutSeconds = Math.max(5, Math.ceil(WATERMARK_REMOTE_FETCH_TIMEOUT_MS / 1000));
+  let refererHeader = '';
+  try {
+    const parsed = new URL(src);
+    refererHeader = `Referer: ${parsed.origin}/`;
+  } catch {
+    refererHeader = '';
+  }
+
+  const args = [
+    '-fsSL',
+    '--max-time',
+    String(timeoutSeconds),
+    '--connect-timeout',
+    '8',
+    '--retry',
+    '2',
+    '--retry-all-errors',
+    '-A',
+    WATERMARK_REMOTE_FETCH_USER_AGENT,
+    '-H',
+    'Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    '-H',
+    'Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+  ];
+  if (refererHeader) {
+    args.push('-H', refererHeader);
+  }
+  args.push(src);
+
+  try {
+    const { stdout } = await execFileAsync('curl', args, {
+      encoding: 'buffer',
+      maxBuffer: WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES
+    });
+    const buffer = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || []);
+    if (buffer.length <= 0) {
+      return { ok: false, reason: 'empty-body' };
+    }
+    return { ok: true, buffer };
+  } catch {
+    return { ok: false, reason: 'curl-download-error' };
+  }
+}
+
+async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
+  const src = normalizeRemoteImageUrl(imageUrl);
+  if (!src) {
+    return { ok: false, reason: 'unsupported-url' };
+  }
+
+  const canUseFetch = typeof fetch === 'function';
   let reason = 'download-error';
 
-  for (let attempt = 1; attempt <= WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
+  if (canUseFetch) {
+    for (let attempt = 1; attempt <= WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
 
-    try {
-      const parsedUrl = new URL(src);
-      const response = await fetch(src, {
-        method: 'GET',
-        redirect: 'follow',
-        headers: {
-          accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-          'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-          'cache-control': 'no-cache',
-          pragma: 'no-cache',
-          referer: `${parsedUrl.origin}/`,
-          'user-agent': WATERMARK_REMOTE_FETCH_USER_AGENT
-        },
-        signal: controller.signal
-      });
+      try {
+        const parsedUrl = new URL(src);
+        const response = await fetch(src, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'cache-control': 'no-cache',
+            pragma: 'no-cache',
+            referer: `${parsedUrl.origin}/`,
+            'user-agent': WATERMARK_REMOTE_FETCH_USER_AGENT
+          },
+          signal: controller.signal
+        });
 
-      if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
-        reason = `http-${response.status}`;
+        if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+          reason = `http-${response.status}`;
+          if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
+            const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+            const fallbackDelayMs = Math.min(
+              WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
+              WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
+            );
+            await waitForMs(Math.max(retryAfterMs, fallbackDelayMs));
+            continue;
+          }
+          break;
+        }
+
+        if (!response.ok) {
+          return { ok: false, reason: `http-${response.status}` };
+        }
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType && !contentType.includes('image/')) {
+          return { ok: false, reason: 'non-image-content-type' };
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        return await saveWatermarkedBufferAsUpload(buffer);
+      } catch (error) {
+        reason = error?.name === 'AbortError' ? 'download-timeout' : 'download-error';
         if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
-          const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
           const fallbackDelayMs = Math.min(
             WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
             WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
           );
-          await waitForMs(Math.max(retryAfterMs, fallbackDelayMs));
+          await waitForMs(fallbackDelayMs);
           continue;
         }
-        return { ok: false, reason };
+        break;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      if (!response.ok) {
-        return { ok: false, reason: `http-${response.status}` };
-      }
-
-      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
-      if (contentType && !contentType.includes('image/')) {
-        return { ok: false, reason: 'non-image-content-type' };
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.length <= 0) {
-        return { ok: false, reason: 'empty-body' };
-      }
-
-      const metadata = await sharp(buffer).metadata();
-      const format = String(metadata.format || '').toLowerCase();
-      if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
-        return { ok: false, reason: 'unsupported-format', format };
-      }
-
-      const uploadDir = path.join(__dirname, 'uploads');
-      await fs.mkdir(uploadDir, { recursive: true });
-
-      const filename = buildUploadFilenameForFormat(format);
-      const localPath = path.join(uploadDir, filename);
-      await fs.writeFile(localPath, buffer);
-
-      const result = await applyChronoLabWatermarkToFile(localPath);
-      if (!result.ok) {
-        await fs.unlink(localPath).catch(() => {});
-        return { ok: false, reason: result.reason || 'watermark-failed' };
-      }
-
-      return {
-        ok: true,
-        imagePath: `/uploads/${filename}`,
-        format
-      };
-    } catch (error) {
-      reason = error?.name === 'AbortError' ? 'download-timeout' : 'download-error';
-      if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
-        const fallbackDelayMs = Math.min(
-          WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
-          WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
-        );
-        await waitForMs(fallbackDelayMs);
-        continue;
-      }
-      return { ok: false, reason };
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
-  return { ok: false, reason };
+  const curlDownloaded = await downloadRemoteImageBufferWithCurl(src);
+  if (!curlDownloaded.ok) {
+    return { ok: false, reason: curlDownloaded.reason || reason };
+  }
+  return await saveWatermarkedBufferAsUpload(curlDownloaded.buffer);
 }
 
 async function applyChronoLabWatermarkToAllProductImages() {
