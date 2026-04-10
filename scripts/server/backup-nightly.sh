@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/var/www/chronolab}"
+DEFAULT_APP_DIR="/var/www/chronolab"
+LEGACY_APP_DIR="/var/www/chrono-lab"
+if [ -n "${APP_DIR:-}" ]; then
+  APP_DIR="${APP_DIR}"
+elif [ -d "$DEFAULT_APP_DIR" ]; then
+  APP_DIR="$DEFAULT_APP_DIR"
+elif [ -d "$LEGACY_APP_DIR" ]; then
+  APP_DIR="$LEGACY_APP_DIR"
+else
+  APP_DIR="$DEFAULT_APP_DIR"
+fi
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/chronolab}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
