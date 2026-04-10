@@ -1801,35 +1801,56 @@ textarea {
   position: absolute;
   top: 6px;
   left: 6px;
-  min-width: 20px;
-  padding: 2px 6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--chip);
   color: var(--text);
   font-size: 0.68rem;
   font-weight: 700;
-  text-align: center;
-  line-height: 1.3;
+  line-height: 1;
+  display: grid;
+  place-items: center;
 }
 
 .watermark-preview-remove-btn {
   position: absolute;
-  top: 4px;
+  top: 6px;
   right: 6px;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--chip);
-  color: #b91c1c;
-  font-size: 1rem;
-  line-height: 1;
-  font-weight: 700;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
   display: grid;
   place-items: center;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+.watermark-preview-remove-btn::before,
+.watermark-preview-remove-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 11px;
+  height: 2px;
+  border-radius: 999px;
+  background: #b91c1c;
+}
+
+.watermark-preview-remove-btn::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.watermark-preview-remove-btn::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .watermark-preview-remove-btn:hover {
