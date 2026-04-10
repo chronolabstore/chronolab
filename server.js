@@ -266,6 +266,8 @@ const ALLOWED_UPLOAD_MIME = new Set([
   'image/gif',
   'image/avif'
 ]);
+const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_UPLOAD_FILE_SIZE_MB = Math.round(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024));
 const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
 const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
 const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
@@ -291,7 +293,7 @@ app.get('/health', (req, res) => {
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_FILE_SIZE_BYTES },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_UPLOAD_MIME.has(file.mimetype)) {
       cb(new Error('지원되지 않는 파일 형식입니다. JPG/PNG/WEBP/GIF/AVIF만 업로드할 수 있습니다.'));
@@ -11761,12 +11763,22 @@ app.use((error, req, res, next) => {
   // eslint-disable-next-line no-console
   console.error('[chronolab:error]', error);
 
-  const message = error?.message?.includes('지원되지 않는 파일 형식')
+  const isUnsupportedType = Boolean(error?.message?.includes('지원되지 않는 파일 형식'));
+  const isFileTooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+  const message = isUnsupportedType
     ? error.message
-    : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+    : isFileTooLarge
+      ? `업로드 파일은 최대 ${MAX_UPLOAD_FILE_SIZE_MB}MB까지 가능합니다. 파일 크기를 줄여 다시 시도해 주세요.`
+      : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 
   if (req.path === '/health' || req.accepts('json') === 'json') {
-    return res.status(500).json({ ok: false, error: 'internal_server_error' });
+    if (isFileTooLarge) {
+      return res.status(413).json({ ok: false, error: 'file_too_large', message, maxMb: MAX_UPLOAD_FILE_SIZE_MB });
+    }
+    if (isUnsupportedType) {
+      return res.status(400).json({ ok: false, error: 'unsupported_file_type', message });
+    }
+    return res.status(500).json({ ok: false, error: 'internal_server_error', message });
   }
 
   if (req.method === 'POST') {
