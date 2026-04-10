@@ -86,6 +86,7 @@ upsert_env NODE_ENV production
 upsert_env DB_PATH "$target_db_path"
 upsert_env UPLOAD_DIR "$target_upload_dir"
 upsert_env ENABLE_BOOTSTRAP_SEED 0
+upsert_env ENABLE_STARTUP_DATA_MAINTENANCE 0
 
 if [ -z "$(read_env_value SESSION_SECRET)" ]; then
   upsert_env SESSION_SECRET "$(openssl rand -hex 32)"

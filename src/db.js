@@ -8,6 +8,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'chronolab.db');
 
+function parseEnvFlag(value, fallback = false) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) {
+    return Boolean(fallback);
+  }
+  if (['1', 'true', 'yes', 'on'].includes(raw)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(raw)) {
+    return false;
+  }
+  return Boolean(fallback);
+}
+
+const shouldBootstrapSeedData = parseEnvFlag(
+  process.env.ENABLE_BOOTSTRAP_SEED,
+  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+);
+
+const shouldRunStartupDataMaintenance = parseEnvFlag(
+  process.env.ENABLE_STARTUP_DATA_MAINTENANCE,
+  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
+);
+
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -205,6 +229,9 @@ function upsertMetric(key, value = 0) {
 }
 
 function ensureSignupBonusBaseline() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
   const row = db
     .prepare('SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1')
     .get('signupBonusPoints');
@@ -216,6 +243,9 @@ function ensureSignupBonusBaseline() {
 }
 
 function migrateLegacyThemeAssetSettings() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
   const legacyHeaderLogoPath = String(getSetting('headerLogoPath', '') || '').trim();
   const legacyHeaderSymbolPath = String(getSetting('headerSymbolPath', '') || '').trim();
   const legacyFooterLogoPath = String(getSetting('footerLogoPath', '') || '').trim();
@@ -401,15 +431,17 @@ function ensureUserMemberProfileColumns() {
   addColumnIfMissing('default_address_detail', "default_address_detail TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('nickname', "nickname TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('profile_image_path', "profile_image_path TEXT NOT NULL DEFAULT ''");
-  db.prepare("UPDATE users SET nickname = username WHERE COALESCE(TRIM(nickname), '') = ''").run();
-  db.prepare(
-    `
-      UPDATE users
-      SET default_address_base = default_address
-      WHERE COALESCE(TRIM(default_address_base), '') = ''
-        AND COALESCE(TRIM(default_address), '') != ''
-    `
-  ).run();
+  if (shouldRunStartupDataMaintenance) {
+    db.prepare("UPDATE users SET nickname = username WHERE COALESCE(TRIM(nickname), '') = ''").run();
+    db.prepare(
+      `
+        UPDATE users
+        SET default_address_base = default_address
+        WHERE COALESCE(TRIM(default_address_base), '') = ''
+          AND COALESCE(TRIM(default_address), '') != ''
+      `
+    ).run();
+  }
 }
 
 function parseMemberUidSequence(rawUid = '') {
@@ -439,6 +471,10 @@ function ensureUserMemberUidColumn() {
   }
 
   db.prepare('CREATE INDEX IF NOT EXISTS idx_users_member_uid ON users (member_uid)').run();
+
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
 
   const usedRows = db
     .prepare(
@@ -524,7 +560,9 @@ function ensureAddressBookTable() {
     }
     if (!columnNames.has('updated_at')) {
       db.prepare("ALTER TABLE address_book ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''").run();
-      db.prepare("UPDATE address_book SET updated_at = datetime('now') WHERE COALESCE(TRIM(updated_at), '') = ''").run();
+      if (shouldRunStartupDataMaintenance) {
+        db.prepare("UPDATE address_book SET updated_at = datetime('now') WHERE COALESCE(TRIM(updated_at), '') = ''").run();
+      }
     }
   }
 }
@@ -773,6 +811,9 @@ function ensureAdminSecurityTables() {
 }
 
 function normalizeOrderStatuses() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
   db.prepare(
     `
       UPDATE orders
@@ -814,6 +855,9 @@ function ensureAdminUser() {
 }
 
 function normalizeAdminRoles() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
   db.prepare("UPDATE users SET admin_role = '' WHERE is_admin = 0 AND admin_role != ''").run();
 
   const admins = db
@@ -1449,46 +1493,52 @@ export function initDb() {
 
   migrateLegacyThemeAssetSettings();
 
-  const menuRow = db
-    .prepare('SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1')
-    .get('menus');
-  const normalizedMenus = normalizeMenus(menuRow?.setting_value || JSON.stringify(defaultMenus));
-  setSetting('menus', JSON.stringify(normalizedMenus));
+  if (shouldRunStartupDataMaintenance) {
+    const menuRow = db
+      .prepare('SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1')
+      .get('menus');
+    const normalizedMenus = normalizeMenus(menuRow?.setting_value || JSON.stringify(defaultMenus));
+    setSetting('menus', JSON.stringify(normalizedMenus));
+  }
 
   upsertMetric('totalVisits', 0);
 
   ensureAdminUser();
   normalizeAdminRoles();
-  const demoUserId = ensureDemoMemberUser();
-  ensureUserMemberUidColumn();
+  if (shouldBootstrapSeedData) {
+    const demoUserId = ensureDemoMemberUser();
+    ensureUserMemberUidColumn();
 
-  seedProducts();
-  seedNotices();
-  seedNews();
-  seedOrdersAndQc(demoUserId);
-  seedReviews(demoUserId);
-  seedInquiries(demoUserId);
-  backfillDailyFunnelEventsFromOrders();
+    seedProducts();
+    seedNotices();
+    seedNews();
+    seedOrdersAndQc(demoUserId);
+    seedReviews(demoUserId);
+    seedInquiries(demoUserId);
+    backfillDailyFunnelEventsFromOrders();
+  }
 
   ensureOrderStatusLogTable();
-  db.prepare(
-    `
-      INSERT INTO order_status_logs (order_id, order_no, from_status, to_status, event_note, created_at)
-      SELECT
-        o.id,
-        o.order_no,
-        NULL,
-        o.status,
-        'bootstrap',
-        o.created_at
-      FROM orders o
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM order_status_logs l
-        WHERE l.order_id = o.id
-      )
-    `
-  ).run();
+  if (shouldRunStartupDataMaintenance) {
+    db.prepare(
+      `
+        INSERT INTO order_status_logs (order_id, order_no, from_status, to_status, event_note, created_at)
+        SELECT
+          o.id,
+          o.order_no,
+          NULL,
+          o.status,
+          'bootstrap',
+          o.created_at
+        FROM orders o
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM order_status_logs l
+          WHERE l.order_id = o.id
+        )
+      `
+    ).run();
+  }
 }
 
 export function getSetting(key, fallback = '') {
