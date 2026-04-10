@@ -1919,9 +1919,9 @@ body.theme-night .watermark-preview-canvas {
 }
 
 .footer-logo {
-  width: clamp(92px, 50%, 132px);
+  width: clamp(84px, 46%, 120px);
   height: auto;
-  max-height: 90px;
+  max-height: 80px;
   object-fit: contain;
   object-position: left center;
   display: block;
@@ -1938,20 +1938,20 @@ body.theme-night .watermark-preview-canvas {
 }
 
 .footer-brand-card h4 {
-  margin-bottom: 8px;
+  margin-bottom: 11px;
 }
 
 .footer-brand-visual {
   flex: 0 0 auto;
-  min-height: 62px;
-  margin-bottom: 6px;
+  min-height: 58px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
 }
 
 .footer-brand-card .footer-small {
-  margin: 0;
+  margin: 2px 0 0;
 }
 
 .footer-links {
