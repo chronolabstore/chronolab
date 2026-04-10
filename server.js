@@ -1,5 +1,5 @@
 import path from 'path';
-import { promises as fs, existsSync } from 'fs';
+import { promises as fs, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
@@ -32,6 +32,10 @@ initDb();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'));
+if (!existsSync(UPLOAD_DIR)) {
+  mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 const BRANDING_DIR = path.join(__dirname, 'public', 'media', 'branding');
 const BRANDING_ASSET_FILES = Object.freeze({
   dayHeaderSymbol: 'day-header-symbol.png',
@@ -273,7 +277,7 @@ const WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES = 45 * 1024 * 1024;
 let mailTransporter = null;
 
 const uploadStorage = multer.diskStorage({
-  destination: path.join(__dirname, 'uploads'),
+  destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     const safeExt = ext && ext.length <= 10 ? ext : '.jpg';
@@ -303,7 +307,7 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 app.use('/assets', express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
@@ -1163,7 +1167,7 @@ function resolveLocalPathFromImageUrl(imageUrl = '') {
     return '';
   }
   if (src.startsWith('/uploads/')) {
-    return path.join(__dirname, 'uploads', src.slice('/uploads/'.length));
+    return path.join(UPLOAD_DIR, src.slice('/uploads/'.length));
   }
   if (src.startsWith('/assets/')) {
     return path.join(__dirname, 'public', src.slice('/assets/'.length));
@@ -1266,7 +1270,7 @@ async function saveWatermarkedBufferAsUpload(buffer = Buffer.alloc(0)) {
     return { ok: false, reason: 'unsupported-format', format };
   }
 
-  const uploadDir = path.join(__dirname, 'uploads');
+  const uploadDir = UPLOAD_DIR;
   await fs.mkdir(uploadDir, { recursive: true });
 
   const filename = buildUploadFilenameForFormat(format);
