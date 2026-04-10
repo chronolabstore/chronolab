@@ -37,30 +37,6 @@ const shouldRunStartupDataMaintenance = parseEnvFlag(
   String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
 );
 
-function parseEnvFlag(value, fallback = false) {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (!raw) {
-    return Boolean(fallback);
-  }
-  if (['1', 'true', 'yes', 'on'].includes(raw)) {
-    return true;
-  }
-  if (['0', 'false', 'no', 'off'].includes(raw)) {
-    return false;
-  }
-  return Boolean(fallback);
-}
-
-const shouldBootstrapSeedData = parseEnvFlag(
-  process.env.ENABLE_BOOTSTRAP_SEED,
-  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
-);
-
-const shouldRunStartupDataMaintenance = parseEnvFlag(
-  process.env.ENABLE_STARTUP_DATA_MAINTENANCE,
-  String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production'
-);
-
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
