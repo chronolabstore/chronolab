@@ -1,9 +1,9 @@
 # Chrono Lab Deployment Guide (Cafe24)
 
 ## 1) 배포 구조
-- GitHub: `Heptalabs/chrono-lab`
+- GitHub: `Heptalabs/chronolab`
 - App Server: Cafe24 OpenClaw VPS (Ubuntu)
-- Process: PM2 (`chrono-lab`)
+- Process: PM2 (`chronolab`)
 - Reverse Proxy: Nginx
 - Domain: `chronolab.co.kr`, `www.chronolab.co.kr`
 - SSL: Certbot (Let's Encrypt)
@@ -26,8 +26,8 @@ ufw --force enable
 ```bash
 mkdir -p /var/www
 cd /var/www
-git clone https://github.com/Heptalabs/chrono-lab.git || true
-cd /var/www/chrono-lab
+git clone https://github.com/Heptalabs/chronolab.git || true
+cd /var/www/chronolab
 git fetch origin
 git checkout main
 git pull origin main
@@ -36,11 +36,13 @@ npm install --omit=dev
 
 `.env` 생성:
 ```bash
-cat > /var/www/chrono-lab/.env <<'ENV'
+cat > /var/www/chronolab/.env <<'ENV'
 NODE_ENV=production
 PORT=3100
 SESSION_SECRET=CHANGE_ME_LONG_RANDOM_SECRET
-DB_PATH=./data/chronolab.db
+DB_PATH=/var/lib/chronolab/chronolab.db
+UPLOAD_DIR=/var/lib/chronolab/uploads
+ENABLE_BOOTSTRAP_SEED=0
 SMTP_HOST=
 SMTP_PORT=
 SMTP_SECURE=false
@@ -49,16 +51,22 @@ SMTP_PASS=
 SMTP_FROM=
 ENV
 
-sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chrono-lab/.env
-mkdir -p /var/www/chrono-lab/data /var/www/chrono-lab/uploads
+sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chronolab/.env
+mkdir -p /var/lib/chronolab/uploads
 ```
 
 PM2 실행:
 ```bash
-cd /var/www/chrono-lab
-pm2 start server.js --name chrono-lab
+cd /var/www/chronolab
+pm2 start server.js --name chronolab --node-args="--env-file=/var/www/chronolab/.env"
 pm2 save
 pm2 startup
+```
+
+기존 데이터/업로드를 영구 경로로 자동 이전 + 환경값 고정:
+```bash
+cd /var/www/chronolab
+./scripts/server/configure-persistent-storage.sh
 ```
 
 ## 4) Nginx + 도메인 + HTTPS
@@ -117,13 +125,13 @@ certbot renew --dry-run
 
 ## 5) 자동배포(푸시 후 최대 1분 반영)
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/install-cron-autodeploy.sh
 ```
 
 ## 6) 일일 백업(03:40)
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/install-cron-backup.sh
 ```
 
@@ -134,19 +142,20 @@ cd /var/www/chrono-lab
 
 ## 7) 운영 점검
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/healthcheck.sh chronolab.co.kr
-pm2 logs chrono-lab --lines 100
+pm2 logs chronolab --lines 100
 ```
 
 ## 8) 원클릭 운영 스크립트 (권장)
 최초 1회:
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 chmod +x ./scripts/server/*.sh
 ./scripts/server/install-ops.sh chronolab.co.kr --with-security
 ```
 `install-ops.sh`는 자동배포 cron + 백업 cron + 로그 로테이션(`logrotate`) + SSH 고정(22/key-only) + fail2ban까지 함께 설정합니다.
+또한 DB/업로드 경로를 `/var/lib/chronolab`으로 고정하고 PM2를 `.env` 기준으로 재기동합니다.
 
 보안 설정을 건너뛰고 운영 스크립트만 적용하려면:
 ```bash
@@ -155,19 +164,19 @@ chmod +x ./scripts/server/*.sh
 
 수동 즉시 배포:
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/deploy-now.sh chronolab.co.kr
 ```
 
 서비스 재시작 + 점검:
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/restart-now.sh chronolab.co.kr
 ```
 
 현재 상태 확인:
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 ./scripts/server/show-status.sh chronolab.co.kr
 ```
 
@@ -203,9 +212,9 @@ cd /var/www/chrono-lab
 
 ## 10) 운영 명령 (자주 사용)
 ```bash
-cd /var/www/chrono-lab
+cd /var/www/chronolab
 git pull origin main
 npm install --omit=dev
-pm2 restart chrono-lab --update-env
+pm2 restart chronolab --update-env
 pm2 save
 ```

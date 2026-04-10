@@ -35,7 +35,7 @@
 
 ## 실행 방법
 ```bash
-cd chrono-lab
+cd chronolab
 npm install
 npm run dev
 ```
@@ -50,6 +50,7 @@ npm run dev
 권장: Cafe24 VPS + Nginx + PM2.
 
 운영 스크립트:
+- `scripts/server/configure-persistent-storage.sh` (DB/업로드 영구 경로 고정 + PM2 `.env` 재기동)
 - `scripts/server/install-cron-autodeploy.sh` (1분 주기 자동배포)
 - `scripts/server/install-cron-backup.sh` (매일 03:40 백업)
 - `scripts/server/healthcheck.sh` (운영 상태 점검)
