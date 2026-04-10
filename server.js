@@ -5357,15 +5357,22 @@ app.get('/cart', requireAuth, (req, res) => {
 
 app.post('/shop/item/:id/cart', requireAuth, (req, res) => {
   const id = Number(req.params.id);
+  const isEn = res.locals.ctx.lang === 'en';
   if (!Number.isInteger(id) || id <= 0) {
     setFlash(req, 'error', '잘못된 상품입니다.');
     return res.redirect('/shop');
   }
 
-  const product = db.prepare('SELECT id FROM products WHERE id = ? AND is_active = 1 LIMIT 1').get(id);
+  const product = db
+    .prepare('SELECT id, is_sold_out FROM products WHERE id = ? AND is_active = 1 LIMIT 1')
+    .get(id);
   if (!product) {
     setFlash(req, 'error', '상품을 찾을 수 없습니다.');
     return res.redirect('/shop');
+  }
+  if (Number(product.is_sold_out || 0) === 1) {
+    setFlash(req, 'error', isEn ? 'This item is sold out and cannot be added to cart.' : '판매완료 상품은 장바구니에 담을 수 없습니다.');
+    return res.redirect(`/shop/item/${id}`);
   }
 
   const requestedQty = parsePositiveInt(req.body.quantity, 1);
@@ -5531,8 +5538,9 @@ app.get('/shop/item/:id', (req, res) => {
 
 app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const id = Number(req.params.id);
+  const isEn = res.locals.ctx.lang === 'en';
   if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).render('simple-error', { title: 'Error', message: '잘못된 상품입니다.' });
+    return res.status(400).render('simple-error', { title: 'Error', message: isEn ? 'Invalid product.' : '잘못된 상품입니다.' });
   }
 
   const product = db
@@ -5547,7 +5555,8 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
           reference,
           factory_name,
           price,
-          shipping_period
+          shipping_period,
+          is_sold_out
         FROM products
         WHERE id = ? AND is_active = 1
         LIMIT 1
@@ -5556,7 +5565,14 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     .get(id);
 
   if (!product) {
-    return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
+    return res.status(404).render('simple-error', { title: 'Not Found', message: isEn ? 'Product not found.' : '상품을 찾을 수 없습니다.' });
+  }
+
+  if (Number(product.is_sold_out || 0) === 1) {
+    return res.status(409).render('simple-error', {
+      title: isEn ? 'Sold Out' : '판매완료',
+      message: isEn ? 'This item is sold out and cannot be purchased.' : '판매완료 상품은 구매할 수 없습니다.'
+    });
   }
 
   const productGroupConfigs = getProductGroupConfigs();
@@ -5599,8 +5615,9 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
 
 app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const id = Number(req.params.id);
+  const isEn = res.locals.ctx.lang === 'en';
   if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).render('simple-error', { title: 'Error', message: '잘못된 상품입니다.' });
+    return res.status(400).render('simple-error', { title: 'Error', message: isEn ? 'Invalid product.' : '잘못된 상품입니다.' });
   }
 
   const product = db
@@ -5615,7 +5632,8 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
           reference,
           factory_name,
           price,
-          shipping_period
+          shipping_period,
+          is_sold_out
         FROM products
         WHERE id = ? AND is_active = 1
         LIMIT 1
@@ -5624,7 +5642,14 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     .get(id);
 
   if (!product) {
-    return res.status(404).render('simple-error', { title: 'Not Found', message: '상품을 찾을 수 없습니다.' });
+    return res.status(404).render('simple-error', { title: 'Not Found', message: isEn ? 'Product not found.' : '상품을 찾을 수 없습니다.' });
+  }
+
+  if (Number(product.is_sold_out || 0) === 1) {
+    return res.status(409).render('simple-error', {
+      title: isEn ? 'Sold Out' : '판매완료',
+      message: isEn ? 'This item is sold out and cannot be purchased.' : '판매완료 상품은 구매할 수 없습니다.'
+    });
   }
 
   const productGroupConfigs = getProductGroupConfigs();
