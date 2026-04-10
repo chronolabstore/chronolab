@@ -269,6 +269,7 @@ const ALLOWED_UPLOAD_MIME = new Set([
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_FILE_SIZE_MB = Math.round(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024));
 const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
+const WATERMARK_IMAGE_ALPHA = 0.18;
 const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
 const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
 const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
@@ -1073,6 +1074,9 @@ async function buildChronoLabWatermarkOverlay(width, height) {
         fit: 'inside',
         withoutEnlargement: false
       })
+      // sharp composite opacity is not consistently honored across versions.
+      // Apply alpha directly to the watermark image so rendered output is always semi-transparent.
+      .linear([1, 1, 1, WATERMARK_IMAGE_ALPHA], [0, 0, 0, 0])
       .png()
       .toBuffer();
     const watermarkMeta = await sharp(watermarkBuffer).metadata();
@@ -1088,8 +1092,7 @@ async function buildChronoLabWatermarkOverlay(width, height) {
           input: watermarkBuffer,
           left: Math.round(x),
           top: Math.round(rowY - watermarkHeight / 2),
-          blend: 'over',
-          opacity: 0.2
+          blend: 'over'
         });
       }
     });
