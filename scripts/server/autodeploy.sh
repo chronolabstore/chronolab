@@ -4,7 +4,17 @@ set -euo pipefail
 exec 9>/var/lock/chronolab-autodeploy.lock
 flock -n 9 || exit 0
 
-APP_DIR="${APP_DIR:-/var/www/chronolab}"
+DEFAULT_APP_DIR="/var/www/chronolab"
+LEGACY_APP_DIR="/var/www/chrono-lab"
+if [ -n "${APP_DIR:-}" ]; then
+  APP_DIR="${APP_DIR}"
+elif [ -d "$DEFAULT_APP_DIR" ]; then
+  APP_DIR="$DEFAULT_APP_DIR"
+elif [ -d "$LEGACY_APP_DIR" ]; then
+  APP_DIR="$LEGACY_APP_DIR"
+else
+  APP_DIR="$DEFAULT_APP_DIR"
+fi
 BRANCH="${BRANCH:-main}"
 PM2_APP="${PM2_APP:-chronolab}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
