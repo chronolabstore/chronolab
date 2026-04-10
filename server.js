@@ -1,7 +1,9 @@
 import path from 'path';
-import { promises as fs, existsSync } from 'fs';
+import { promises as fs, existsSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -30,6 +32,10 @@ initDb();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'));
+if (!existsSync(UPLOAD_DIR)) {
+  mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 const BRANDING_DIR = path.join(__dirname, 'public', 'media', 'branding');
 const BRANDING_ASSET_FILES = Object.freeze({
   dayHeaderSymbol: 'day-header-symbol.png',
@@ -47,6 +53,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
+const execFileAsync = promisify(execFile);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-z0-9]{4,20}$/;
@@ -127,6 +134,9 @@ const PRODUCT_GROUP_MODE = Object.freeze({
   SIMPLE: 'simple'
 });
 const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
+const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
+const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
+const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
 const MEMBER_LEVEL_OPERATORS = Object.freeze({
   LT: 'lt',
   LTE: 'lte',
@@ -256,11 +266,18 @@ const ALLOWED_UPLOAD_MIME = new Set([
   'image/gif',
   'image/avif'
 ]);
+const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
+const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
+const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
+const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
+const WATERMARK_REMOTE_FETCH_MAX_DELAY_MS = 8000;
+const WATERMARK_REMOTE_FETCH_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+const WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES = 45 * 1024 * 1024;
 
 let mailTransporter = null;
 
 const uploadStorage = multer.diskStorage({
-  destination: path.join(__dirname, 'uploads'),
+  destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     const safeExt = ext && ext.length <= 10 ? ext : '.jpg';
@@ -269,7 +286,7 @@ const uploadStorage = multer.diskStorage({
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ ok: true, service: 'chrono-lab', timestamp: new Date().toISOString() });
+  res.status(200).json({ ok: true, service: 'chronolab', timestamp: new Date().toISOString() });
 });
 
 const upload = multer({
@@ -290,13 +307,13 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 app.use('/assets', express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'chrono-lab-local-secret',
+    secret: process.env.SESSION_SECRET || 'chronolab-local-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -1088,14 +1105,14 @@ async function buildChronoLabWatermarkOverlay(width, height) {
       .toBuffer();
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:watermark:image]', error);
+    console.error('[chronolab:watermark:image]', error);
     return Buffer.from(buildChronoLabWatermarkSvg(safeWidth, safeHeight));
   }
 }
 
 async function applyChronoLabWatermarkToFile(filePath) {
   if (!filePath) {
-    return;
+    return { ok: false, reason: 'empty-path' };
   }
 
   try {
@@ -1106,10 +1123,10 @@ async function applyChronoLabWatermarkToFile(filePath) {
     const format = String(metadata.format || '').toLowerCase();
 
     if (width <= 0 || height <= 0) {
-      return;
+      return { ok: false, reason: 'invalid-size' };
     }
-    if (!['jpeg', 'jpg', 'png', 'webp', 'avif'].includes(format)) {
-      return;
+    if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+      return { ok: false, reason: 'unsupported-format', format };
     }
 
     const watermarkOverlay = await buildChronoLabWatermarkOverlay(width, height);
@@ -1127,9 +1144,11 @@ async function applyChronoLabWatermarkToFile(filePath) {
 
     const outputBuffer = await pipeline.toBuffer();
     await fs.writeFile(filePath, outputBuffer);
+    return { ok: true, format };
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:watermark]', error);
+    console.error('[chronolab:watermark]', error);
+    return { ok: false, reason: 'watermark-error' };
   }
 }
 
@@ -1148,12 +1167,257 @@ function resolveLocalPathFromImageUrl(imageUrl = '') {
     return '';
   }
   if (src.startsWith('/uploads/')) {
-    return path.join(__dirname, 'uploads', src.slice('/uploads/'.length));
+    return path.join(UPLOAD_DIR, src.slice('/uploads/'.length));
   }
   if (src.startsWith('/assets/')) {
     return path.join(__dirname, 'public', src.slice('/assets/'.length));
   }
   return '';
+}
+
+function waitForMs(ms = 0) {
+  const delayMs = Number(ms);
+  if (!Number.isFinite(delayMs) || delayMs <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimeout(resolve, Math.floor(delayMs)));
+}
+
+function normalizeRemoteImageUrl(imageUrl = '') {
+  const raw = String(imageUrl || '').trim();
+  if (!raw) {
+    return '';
+  }
+  const source = raw.startsWith('//') ? `https:${raw}` : raw;
+  try {
+    const parsed = new URL(source);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function parseRetryAfterMs(retryAfter = '') {
+  const value = String(retryAfter || '').trim();
+  if (!value) {
+    return 0;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(Math.floor(seconds * 1000), WATERMARK_REMOTE_FETCH_MAX_DELAY_MS);
+  }
+  const scheduledAt = Date.parse(value);
+  if (!Number.isFinite(scheduledAt)) {
+    return 0;
+  }
+  const diffMs = scheduledAt - Date.now();
+  if (diffMs <= 0) {
+    return 0;
+  }
+  return Math.min(Math.floor(diffMs), WATERMARK_REMOTE_FETCH_MAX_DELAY_MS);
+}
+
+function isRemoteImageUrl(imageUrl = '') {
+  return Boolean(normalizeRemoteImageUrl(imageUrl));
+}
+
+function buildUploadFilenameForFormat(format = '') {
+  const safeFormat = String(format || '').toLowerCase();
+  const ext = safeFormat === 'jpeg' || safeFormat === 'jpg'
+    ? 'jpg'
+    : safeFormat === 'png'
+      ? 'png'
+      : safeFormat === 'webp'
+        ? 'webp'
+        : safeFormat === 'avif'
+          ? 'avif'
+          : 'jpg';
+  return `wm-legacy-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+}
+
+function replaceProductImageUrlEverywhere(fromImageUrl = '', toImageUrl = '') {
+  const from = String(fromImageUrl || '').trim();
+  const to = String(toImageUrl || '').trim();
+  if (!from || !to || from === to) {
+    return 0;
+  }
+
+  const tx = db.transaction((source, target) => {
+    const updatedProducts = db
+      .prepare('UPDATE products SET image_path = ? WHERE image_path = ?')
+      .run(target, source);
+    const updatedImages = db
+      .prepare('UPDATE product_images SET image_path = ? WHERE image_path = ?')
+      .run(target, source);
+    return Number(updatedProducts.changes || 0) + Number(updatedImages.changes || 0);
+  });
+
+  return tx(from, to);
+}
+
+async function saveWatermarkedBufferAsUpload(buffer = Buffer.alloc(0)) {
+  const sourceBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  if (sourceBuffer.length <= 0) {
+    return { ok: false, reason: 'empty-body' };
+  }
+
+  const metadata = await sharp(sourceBuffer).metadata();
+  const format = String(metadata.format || '').toLowerCase();
+  if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+    return { ok: false, reason: 'unsupported-format', format };
+  }
+
+  const uploadDir = UPLOAD_DIR;
+  await fs.mkdir(uploadDir, { recursive: true });
+
+  const filename = buildUploadFilenameForFormat(format);
+  const localPath = path.join(uploadDir, filename);
+  await fs.writeFile(localPath, sourceBuffer);
+
+  const result = await applyChronoLabWatermarkToFile(localPath);
+  if (!result.ok) {
+    await fs.unlink(localPath).catch(() => {});
+    return { ok: false, reason: result.reason || 'watermark-failed' };
+  }
+
+  return {
+    ok: true,
+    imagePath: `/uploads/${filename}`,
+    format
+  };
+}
+
+async function downloadRemoteImageBufferWithCurl(imageUrl = '') {
+  const src = normalizeRemoteImageUrl(imageUrl);
+  if (!src) {
+    return { ok: false, reason: 'unsupported-url' };
+  }
+
+  const timeoutSeconds = Math.max(5, Math.ceil(WATERMARK_REMOTE_FETCH_TIMEOUT_MS / 1000));
+  let refererHeader = '';
+  try {
+    const parsed = new URL(src);
+    refererHeader = `Referer: ${parsed.origin}/`;
+  } catch {
+    refererHeader = '';
+  }
+
+  const args = [
+    '-fsSL',
+    '--max-time',
+    String(timeoutSeconds),
+    '--connect-timeout',
+    '8',
+    '--retry',
+    '2',
+    '--retry-all-errors',
+    '-A',
+    WATERMARK_REMOTE_FETCH_USER_AGENT,
+    '-H',
+    'Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    '-H',
+    'Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+  ];
+  if (refererHeader) {
+    args.push('-H', refererHeader);
+  }
+  args.push(src);
+
+  try {
+    const { stdout } = await execFileAsync('curl', args, {
+      encoding: 'buffer',
+      maxBuffer: WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES
+    });
+    const buffer = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || []);
+    if (buffer.length <= 0) {
+      return { ok: false, reason: 'empty-body' };
+    }
+    return { ok: true, buffer };
+  } catch {
+    return { ok: false, reason: 'curl-download-error' };
+  }
+}
+
+async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
+  const src = normalizeRemoteImageUrl(imageUrl);
+  if (!src) {
+    return { ok: false, reason: 'unsupported-url' };
+  }
+
+  const canUseFetch = typeof fetch === 'function';
+  let reason = 'download-error';
+
+  if (canUseFetch) {
+    for (let attempt = 1; attempt <= WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
+
+      try {
+        const parsedUrl = new URL(src);
+        const response = await fetch(src, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+            'cache-control': 'no-cache',
+            pragma: 'no-cache',
+            referer: `${parsedUrl.origin}/`,
+            'user-agent': WATERMARK_REMOTE_FETCH_USER_AGENT
+          },
+          signal: controller.signal
+        });
+
+        if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+          reason = `http-${response.status}`;
+          if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
+            const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+            const fallbackDelayMs = Math.min(
+              WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
+              WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
+            );
+            await waitForMs(Math.max(retryAfterMs, fallbackDelayMs));
+            continue;
+          }
+          break;
+        }
+
+        if (!response.ok) {
+          return { ok: false, reason: `http-${response.status}` };
+        }
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        if (contentType && !contentType.includes('image/')) {
+          return { ok: false, reason: 'non-image-content-type' };
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        return await saveWatermarkedBufferAsUpload(buffer);
+      } catch (error) {
+        reason = error?.name === 'AbortError' ? 'download-timeout' : 'download-error';
+        if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
+          const fallbackDelayMs = Math.min(
+            WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
+            WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
+          );
+          await waitForMs(fallbackDelayMs);
+          continue;
+        }
+        break;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  }
+
+  const curlDownloaded = await downloadRemoteImageBufferWithCurl(src);
+  if (!curlDownloaded.ok) {
+    return { ok: false, reason: curlDownloaded.reason || reason };
+  }
+  return await saveWatermarkedBufferAsUpload(curlDownloaded.buffer);
 }
 
 async function applyChronoLabWatermarkToAllProductImages() {
@@ -1173,32 +1437,65 @@ async function applyChronoLabWatermarkToAllProductImages() {
 
   const uniqueUrls = [...new Set(rows.map((row) => String(row.image_path || '').trim()).filter(Boolean))];
   let processedCount = 0;
+  let convertedRemoteCount = 0;
   let skippedCount = 0;
+  let failedCount = 0;
+  const failedReasonCounts = {};
+  const addFailedReason = (reason = '') => {
+    const key = String(reason || 'unknown').trim() || 'unknown';
+    failedReasonCounts[key] = Number(failedReasonCounts[key] || 0) + 1;
+  };
 
   for (const imageUrl of uniqueUrls) {
     const localPath = resolveLocalPathFromImageUrl(imageUrl);
-    if (!localPath) {
-      skippedCount += 1;
+    if (localPath) {
+      try {
+        await fs.access(localPath);
+      } catch {
+        skippedCount += 1;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      const result = await applyChronoLabWatermarkToFile(localPath);
+      if (result.ok) {
+        processedCount += 1;
+      } else if (result.reason === 'unsupported-format') {
+        skippedCount += 1;
+      } else {
+        failedCount += 1;
+        addFailedReason(result.reason);
+      }
       // eslint-disable-next-line no-continue
       continue;
     }
 
-    try {
-      await fs.access(localPath);
-    } catch {
-      skippedCount += 1;
+    if (isRemoteImageUrl(imageUrl)) {
+      const downloaded = await downloadRemoteImageAsWatermarkedUpload(imageUrl);
+      if (downloaded.ok) {
+        replaceProductImageUrlEverywhere(imageUrl, downloaded.imagePath);
+        processedCount += 1;
+        convertedRemoteCount += 1;
+      } else if (downloaded.reason === 'unsupported-format') {
+        skippedCount += 1;
+      } else {
+        failedCount += 1;
+        addFailedReason(downloaded.reason);
+      }
       // eslint-disable-next-line no-continue
       continue;
     }
 
-    await applyChronoLabWatermarkToFile(localPath);
-    processedCount += 1;
+    skippedCount += 1;
   }
 
   return {
     totalCount: uniqueUrls.length,
     processedCount,
-    skippedCount
+    convertedRemoteCount,
+    skippedCount,
+    failedCount,
+    failedReasonCounts
   };
 }
 
@@ -1433,7 +1730,7 @@ async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}
   const transporter = getMailTransporter();
   if (!transporter) {
     // eslint-disable-next-line no-console
-    console.warn(`[chrono-lab:mail] SMTP not configured. email=${email}, code=${verificationCode}`);
+    console.warn(`[chronolab:mail] SMTP not configured. email=${email}, code=${verificationCode}`);
     return { ok: false, reason: 'smtp_not_configured' };
   }
 
@@ -1457,7 +1754,7 @@ async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}
     return { ok: true };
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('[chrono-lab:mail] send failed', error);
+    console.error('[chronolab:mail] send failed', error);
     return { ok: false, reason: 'smtp_send_failed' };
   }
 }
@@ -1688,6 +1985,9 @@ function normalizeProductManageSection(rawSection = '') {
   const section = String(rawSection || '').trim().toLowerCase();
   if (section === 'list') {
     return 'list';
+  }
+  if (section === 'badges' || section === 'badge' || section === 'labels') {
+    return 'badges';
   }
   return 'upload';
 }
@@ -3610,6 +3910,206 @@ function parseNonNegativeInt(rawValue, fallback = 0) {
   return parsed;
 }
 
+function normalizeProductBadgeLabel(rawValue = '', fallback = '') {
+  const normalized = String(rawValue || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, PRODUCT_BADGE_LABEL_MAX_LENGTH);
+  if (normalized) {
+    return normalized;
+  }
+  return String(fallback || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, PRODUCT_BADGE_LABEL_MAX_LENGTH);
+}
+
+function normalizeProductBadgeCode(rawValue = '', fallback = 'badge') {
+  const normalize = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, PRODUCT_BADGE_CODE_MAX_LENGTH);
+
+  const fromRaw = normalize(rawValue);
+  if (PRODUCT_BADGE_CODE_REGEX.test(fromRaw)) {
+    return fromRaw;
+  }
+
+  const fromFallback = normalize(fallback);
+  if (PRODUCT_BADGE_CODE_REGEX.test(fromFallback)) {
+    return fromFallback;
+  }
+
+  return 'badge';
+}
+
+function buildProductBadgeCodeFromLabels(labelKo = '', labelEn = '', fallback = 'badge') {
+  const labelEnCode = normalizeProductBadgeCode(labelEn, '');
+  if (PRODUCT_BADGE_CODE_REGEX.test(labelEnCode)) {
+    return labelEnCode;
+  }
+
+  const labelKoCode = normalizeProductBadgeCode(labelKo, '');
+  if (PRODUCT_BADGE_CODE_REGEX.test(labelKoCode)) {
+    return labelKoCode;
+  }
+
+  return normalizeProductBadgeCode(fallback, 'badge');
+}
+
+function makeUniqueProductBadgeCode(baseCode = '', excludeId = 0) {
+  const safeExcludeId = Number(excludeId || 0);
+  const base = normalizeProductBadgeCode(baseCode, 'badge');
+
+  const hasCodeConflict = (candidateCode) => {
+    if (safeExcludeId > 0) {
+      return Boolean(
+        db.prepare('SELECT id FROM product_badge_defs WHERE code = ? AND id != ? LIMIT 1').get(candidateCode, safeExcludeId)
+      );
+    }
+    return Boolean(db.prepare('SELECT id FROM product_badge_defs WHERE code = ? LIMIT 1').get(candidateCode));
+  };
+
+  if (!hasCodeConflict(base)) {
+    return base;
+  }
+
+  for (let suffix = 2; suffix < 10000; suffix += 1) {
+    const suffixText = `-${suffix}`;
+    const headLength = Math.max(2, PRODUCT_BADGE_CODE_MAX_LENGTH - suffixText.length);
+    const candidate = `${base.slice(0, headLength)}${suffixText}`;
+    if (!hasCodeConflict(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${base.slice(0, 30)}-${Date.now().toString(36).slice(-6)}`;
+}
+
+function getProductBadgeDefinitions() {
+  return db
+    .prepare(
+      `
+        SELECT id, code, label_ko, label_en, sort_order
+        FROM product_badge_defs
+        ORDER BY sort_order ASC, id ASC
+      `
+    )
+    .all()
+    .map((row) => ({
+      id: Number(row.id),
+      code: normalizeProductBadgeCode(row.code, 'badge'),
+      label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
+      label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      sort_order: parseNonNegativeInt(row.sort_order, 0)
+    }));
+}
+
+function normalizeRequestedBadgeIds(rawValue, allowedIdSet = null) {
+  const candidates = Array.isArray(rawValue) ? rawValue : [rawValue];
+  const unique = [...new Set(candidates
+    .map((item) => Number.parseInt(String(item ?? ''), 10))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+
+  if (allowedIdSet instanceof Set) {
+    return unique.filter((id) => allowedIdSet.has(id));
+  }
+  return unique;
+}
+
+function getProductBadgeMapByProductIds(productIds = []) {
+  const uniqueIds = [...new Set(
+    (Array.isArray(productIds) ? productIds : [productIds])
+      .map((id) => Number.parseInt(String(id ?? ''), 10))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )];
+  const badgeMap = new Map();
+
+  if (uniqueIds.length === 0) {
+    return badgeMap;
+  }
+
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          pb.product_id,
+          d.id AS badge_id,
+          d.code,
+          d.label_ko,
+          d.label_en,
+          d.sort_order
+        FROM product_badges pb
+        JOIN product_badge_defs d ON d.id = pb.badge_def_id
+        WHERE pb.product_id IN (${placeholders})
+        ORDER BY d.sort_order ASC, d.id ASC
+      `
+    )
+    .all(...uniqueIds);
+
+  rows.forEach((row) => {
+    const productId = Number(row.product_id);
+    const current = badgeMap.get(productId) || [];
+    current.push({
+      id: Number(row.badge_id),
+      code: normalizeProductBadgeCode(row.code, 'badge'),
+      label_ko: normalizeProductBadgeLabel(row.label_ko, row.label_en || ''),
+      label_en: normalizeProductBadgeLabel(row.label_en, row.label_ko || ''),
+      sort_order: parseNonNegativeInt(row.sort_order, 0)
+    });
+    badgeMap.set(productId, current);
+  });
+
+  return badgeMap;
+}
+
+function attachProductBadges(products = []) {
+  const list = Array.isArray(products) ? products : [];
+  if (list.length === 0) {
+    return [];
+  }
+
+  const badgeMap = getProductBadgeMapByProductIds(list.map((item) => item?.id));
+  return list.map((item) => {
+    const productId = Number(item?.id || 0);
+    return {
+      ...item,
+      product_badges: badgeMap.get(productId) || []
+    };
+  });
+}
+
+function replaceProductBadgeLinks(productId, badgeIds = []) {
+  const targetProductId = Number(productId || 0);
+  if (!Number.isInteger(targetProductId) || targetProductId <= 0) {
+    return;
+  }
+
+  const uniqueBadgeIds = [...new Set(
+    (Array.isArray(badgeIds) ? badgeIds : [])
+      .map((id) => Number.parseInt(String(id ?? ''), 10))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )];
+
+  const tx = db.transaction((resolvedProductId, resolvedBadgeIds) => {
+    db.prepare('DELETE FROM product_badges WHERE product_id = ?').run(resolvedProductId);
+    if (resolvedBadgeIds.length === 0) {
+      return;
+    }
+    const insert = db.prepare('INSERT INTO product_badges (product_id, badge_def_id) VALUES (?, ?)');
+    resolvedBadgeIds.forEach((badgeId) => {
+      insert.run(resolvedProductId, badgeId);
+    });
+  });
+
+  tx(targetProductId, uniqueBadgeIds);
+}
+
 function parsePointRate(rawValue, fallback = 0) {
   const parsed = Number.parseFloat(String(rawValue ?? '').replace(/,/g, '').trim());
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -4636,7 +5136,8 @@ app.get('/main', (req, res) => {
             case_material,
             movement,
             features,
-            extra_fields_json
+            extra_fields_json,
+            is_sold_out
           FROM products
           WHERE is_active = 1 AND category_group = ?
           ORDER BY id DESC
@@ -4647,7 +5148,9 @@ app.get('/main', (req, res) => {
 
     return {
       groupName: groupConfig.key,
-      products: rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+      products: attachProductBadges(
+        rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+      )
     };
   });
 
@@ -4807,14 +5310,17 @@ app.get('/shop', (req, res) => {
           case_material,
           movement,
           features,
-          extra_fields_json
+          extra_fields_json,
+          is_sold_out
         FROM products
         WHERE ${where.join(' AND ')}
         ORDER BY id DESC
       `
     )
     .all(...params);
-  const products = productRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
+  const products = attachProductBadges(
+    productRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+  );
 
   res.render('shop', {
     title: 'Shop',
@@ -4972,7 +5478,7 @@ app.get('/shop/item/:id', (req, res) => {
     similarRows = db
       .prepare(
         `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
           FROM products
           WHERE is_active = 1 AND brand = ? AND id != ?
           ORDER BY id DESC
@@ -4984,7 +5490,7 @@ app.get('/shop/item/:id', (req, res) => {
     similarRows = db
       .prepare(
         `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
           FROM products
           WHERE is_active = 1 AND category_group = ? AND id != ?
           ORDER BY id DESC
@@ -4994,13 +5500,21 @@ app.get('/shop/item/:id', (req, res) => {
       .all(product.category_group, product.id);
   }
 
-  const similar = similarRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)));
-  const productDisplay = buildProductDisplayData(product, productGroupConfig);
+  const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
+  const productWithBadges = {
+    ...product,
+    product_badges: badgeMap.get(Number(product.id)) || []
+  };
+  const similar = similarRows.map((row) => ({
+    ...decorateProductForView(row, productGroupMap.get(row.category_group)),
+    product_badges: badgeMap.get(Number(row.id)) || []
+  }));
+  const productDisplay = buildProductDisplayData(productWithBadges, productGroupConfig);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
 
   res.render('product-detail', {
     title: 'Product',
-    product,
+    product: productWithBadges,
     productDisplay,
     productGroupConfig,
     isFactoryLikeProduct: isFactoryLikeGroup(productGroupConfig),
@@ -8225,10 +8739,13 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const orderDateTo = normalizeDateInput(options.orderDateTo || '');
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
-  const products = db
-    .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
-    .all()
-    .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)));
+  const productBadgeDefinitions = getProductBadgeDefinitions();
+  const products = attachProductBadges(
+    db
+      .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
+      .all()
+      .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)))
+  );
 
   let editingProduct = null;
   if (editProductId > 0) {
@@ -8260,6 +8777,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 
       editingProduct = {
         ...decorateProductForView(editRow, editGroupConfig),
+        product_badges: getProductBadgeMapByProductIds([editRow.id]).get(Number(editRow.id)) || [],
         groupConfig: editGroupConfig,
         fieldValues: getProductFieldValues(editRow, editGroupConfig),
         imageList
@@ -8388,6 +8906,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     publicMenus,
     products,
     editingProduct,
+    productBadgeDefinitions,
     orders: ordersWithTimeline,
     orderGroupFilter,
     orderStatusFilter,
@@ -10126,6 +10645,9 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const categoryGroup = selectedGroup.key;
+  const selectableBadgeDefs = getProductBadgeDefinitions();
+  const selectableBadgeIdSet = new Set(selectableBadgeDefs.map((item) => Number(item.id)));
+  const selectedBadgeIds = normalizeRequestedBadgeIds(req.body.badgeIds, selectableBadgeIdSet);
   const submission = buildAdminProductSubmission(req.body, selectedGroup);
   if (submission.error) {
     setFlash(req, 'error', submission.error);
@@ -10211,6 +10733,8 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     });
   }
 
+  replaceProductBadgeLinks(productId, selectedBadgeIds);
+
   setPopupFlash(req, 'success', '상품이 등록되었습니다.');
   res.redirect(backPath);
 }));
@@ -10243,6 +10767,9 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     factoryOptions: [],
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
+  const selectableBadgeDefs = getProductBadgeDefinitions();
+  const selectableBadgeIdSet = new Set(selectableBadgeDefs.map((item) => Number(item.id)));
+  const selectedBadgeIds = normalizeRequestedBadgeIds(req.body.badgeIds, selectableBadgeIdSet);
 
   const submission = buildAdminProductSubmission(req.body, selectedGroup);
   if (submission.error) {
@@ -10350,6 +10877,8 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     });
   }
 
+  replaceProductBadgeLinks(id, selectedBadgeIds);
+
   setFlash(req, 'success', '상품 정보가 수정되었습니다.');
   return res.redirect('/admin/products?section=list');
 }));
@@ -10376,10 +10905,15 @@ app.post('/admin/product/:id/delete', requireAdmin, (req, res) => {
 app.post('/admin/product/watermark/apply-all', requireAdmin, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=list');
   const result = await applyChronoLabWatermarkToAllProductImages();
+  const failedReasonSummary = Object.entries(result.failedReasonCounts || {})
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .slice(0, 3)
+    .map(([reason, count]) => `${reason} ${count}건`)
+    .join(', ');
   setFlash(
     req,
     'success',
-    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리, ${result.skippedCount}개 스킵`
+    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리(원격 ${result.convertedRemoteCount}개 변환), ${result.skippedCount}개 스킵, ${result.failedCount}개 실패${failedReasonSummary ? ` (${failedReasonSummary})` : ''}`
   );
   return res.redirect(backPath);
 }));
@@ -10397,6 +10931,123 @@ app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
   db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(nextState, id);
   setFlash(req, 'success', '상품 노출 상태를 변경했습니다.');
   res.redirect(backPath);
+});
+
+app.post('/admin/product/:id/sold-out-toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 상품입니다.');
+    return res.redirect(backPath);
+  }
+
+  const product = db.prepare('SELECT id, is_sold_out FROM products WHERE id = ? LIMIT 1').get(id);
+  if (!product) {
+    setFlash(req, 'error', '상품을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextState = Number(product.is_sold_out || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE products SET is_sold_out = ? WHERE id = ?').run(nextState, id);
+  setFlash(
+    req,
+    'success',
+    nextState === 1 ? '상품을 판매완료 처리했습니다.' : '상품 판매완료를 해제했습니다.'
+  );
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/create', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const labelKo = normalizeProductBadgeLabel(req.body.labelKo || '');
+  const labelEn = normalizeProductBadgeLabel(req.body.labelEn || '');
+
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '배지명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const maxSortOrderRow = db
+    .prepare('SELECT COALESCE(MAX(sort_order), 0) AS max_sort_order FROM product_badge_defs')
+    .get();
+  const fallbackSortOrder = parseNonNegativeInt(maxSortOrderRow?.max_sort_order, 0) + 1;
+  const sortOrder = parseNonNegativeInt(req.body.sortOrder, fallbackSortOrder);
+  const requestedCode = normalizeProductBadgeCode(
+    req.body.code || '',
+    buildProductBadgeCodeFromLabels(labelKo, labelEn, 'badge')
+  );
+  const code = makeUniqueProductBadgeCode(requestedCode);
+
+  db.prepare(
+    `
+      INSERT INTO product_badge_defs (code, label_ko, label_en, sort_order, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    `
+  ).run(code, labelKo, labelEn, sortOrder);
+
+  setFlash(req, 'success', '상품 배지가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/:id/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 배지입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db
+    .prepare('SELECT id, code, sort_order FROM product_badge_defs WHERE id = ? LIMIT 1')
+    .get(id);
+  if (!existing) {
+    setFlash(req, 'error', '배지를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const labelKo = normalizeProductBadgeLabel(req.body.labelKo || '');
+  const labelEn = normalizeProductBadgeLabel(req.body.labelEn || '');
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '배지명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const sortOrder = parseNonNegativeInt(req.body.sortOrder, parseNonNegativeInt(existing.sort_order, 0));
+  const requestedCode = normalizeProductBadgeCode(
+    req.body.code || existing.code || '',
+    buildProductBadgeCodeFromLabels(labelKo, labelEn, existing.code || 'badge')
+  );
+  const code = makeUniqueProductBadgeCode(requestedCode, id);
+
+  db.prepare(
+    `
+      UPDATE product_badge_defs
+      SET code = ?, label_ko = ?, label_en = ?, sort_order = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `
+  ).run(code, labelKo, labelEn, sortOrder, id);
+
+  setFlash(req, 'success', '상품 배지가 수정되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-badge/:id/delete', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=badges');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 배지입니다.');
+    return res.redirect(backPath);
+  }
+
+  const existing = db.prepare('SELECT id FROM product_badge_defs WHERE id = ? LIMIT 1').get(id);
+  if (!existing) {
+    setFlash(req, 'error', '배지를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare('DELETE FROM product_badge_defs WHERE id = ?').run(id);
+  setFlash(req, 'success', '상품 배지가 삭제되었습니다.');
+  return res.redirect(backPath);
 });
 
 app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res) => {
@@ -11108,7 +11759,7 @@ app.use((req, res) => {
 
 app.use((error, req, res, next) => {
   // eslint-disable-next-line no-console
-  console.error('[chrono-lab:error]', error);
+  console.error('[chronolab:error]', error);
 
   const message = error?.message?.includes('지원되지 않는 파일 형식')
     ? error.message

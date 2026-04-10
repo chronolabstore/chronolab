@@ -92,17 +92,28 @@
     <% } %>
 
     <% products.forEach((item) => { %>
+      <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
       <a href="/shop/item/<%= item.id %>" class="product-card">
-        <div class="product-image-box">
+        <div class="product-image-box <%= soldOut ? 'is-sold-out' : '' %>">
           <% if (item.image_path) { %>
             <img src="<%= item.image_path %>" alt="<%= item.brand %>" />
           <% } else { %>
             <div class="image-fallback">WATCH</div>
           <% } %>
+          <% if (soldOut) { %>
+            <span class="soldout-overlay-label"><%= isEn ? 'Sold out' : '판매완료' %></span>
+          <% } %>
         </div>
         <div class="product-meta">
           <small><%= resolvedGroupLabelMap[item.category_group] || item.category_group || '-' %></small>
           <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+          <% if ((item.product_badges || []).length > 0) { %>
+            <div class="product-badge-row">
+              <% (item.product_badges || []).forEach((badge) => { %>
+                <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+              <% }) %>
+            </div>
+          <% } %>
           <span><%= item.display_subtitle || '' %></span>
           <small><%= item.display_meta || (item.case_material || '-') + ' / ' + (item.movement || '-') %></small>
           <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>

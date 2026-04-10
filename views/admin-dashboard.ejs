@@ -107,7 +107,7 @@
     ? String(pointSection)
     : 'signup';
   const siteTab = String(siteSection || '') === 'theme' ? 'theme' : 'basic';
-  const productsTab = ['upload', 'list'].includes(String(productSection || ''))
+  const productsTab = ['upload', 'list', 'badges'].includes(String(productSection || ''))
     ? String(productSection)
     : 'upload';
   const noticesTab = String(noticeSection || '') === 'list' ? 'list' : 'create';
@@ -131,6 +131,13 @@
     totals: { orderCount: 0, salesKrw: 0, costKrw: 0, marginKrw: 0, realMarginKrw: 0 }
   };
   const editingItem = editingProduct && typeof editingProduct === 'object' ? editingProduct : null;
+  const productBadgeList = Array.isArray(productBadgeDefinitions) ? productBadgeDefinitions : [];
+  const editingBadgeIds = Array.isArray(editingItem?.product_badges)
+    ? editingItem.product_badges
+        .map((badge) => Number.parseInt(String(badge?.id ?? ''), 10))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const editingBadgeIdSet = new Set(editingBadgeIds);
   const uploadActiveGroupKey =
     String(editingItem?.category_group || productGroupKeys[0] || defaultGroupKey);
   const activeOrderDateFrom = String(orderDateFrom || '');
@@ -1918,6 +1925,7 @@
     <div class="security-subnav">
       <a href="/admin/products?section=upload" class="menu-pill <%= productsTab === 'upload' ? 'active' : '' %>"><%= isEn ? 'Upload Product' : '상품 업로드' %></a>
       <a href="/admin/products?section=list" class="menu-pill <%= productsTab === 'list' ? 'active' : '' %>"><%= isEn ? 'Product List' : '상품 목록' %></a>
+      <a href="/admin/products?section=badges" class="menu-pill <%= productsTab === 'badges' ? 'active' : '' %>"><%= isEn ? 'Badge Settings' : '배지 설정' %></a>
     </div>
 
     <% if (productsTab === 'upload') { %>
@@ -2057,6 +2065,23 @@
             <% }) %>
           </div>
         <% }) %>
+
+        <% if (productBadgeList.length > 0) { %>
+          <div class="filter-group">
+            <h4><%= isEn ? 'Product Badges' : '상품 배지' %></h4>
+            <div class="admin-field-chip-row">
+              <% productBadgeList.forEach((badge) => { %>
+                <label class="check-chip product-badge-check-chip">
+                  <input type="checkbox" name="badgeIds" value="<%= badge.id %>" <%= editingBadgeIdSet.has(Number(badge.id)) ? 'checked' : '' %> />
+                  <span><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                </label>
+              <% }) %>
+            </div>
+            <p class="muted-label"><%= isEn ? 'Checked badges are shown on the shop listing, main 4-item blocks, and product detail.' : '체크한 배지는 쇼핑몰 목록, 메인 4개 노출 카드, 상품 상세에 함께 표시됩니다.' %></p>
+          </div>
+        <% } else { %>
+          <p class="muted-label"><%= isEn ? 'No badge definitions yet. Create badges in Badge Settings.' : '등록된 배지가 없습니다. 배지 설정에서 먼저 생성해 주세요.' %></p>
+        <% } %>
 
         <button type="submit" class="cta-main"><%= editingItem ? (isEn ? 'Update Product' : '상품 수정 저장') : (isEn ? 'Add Product' : '상품 등록') %></button>
       </form>
@@ -2297,13 +2322,29 @@
                     <br />
                     <small><%= item.display_subtitle %></small>
                   <% } %>
+                  <% if ((item.product_badges || []).length > 0) { %>
+                    <div class="product-badge-row admin-product-badge-row">
+                      <% (item.product_badges || []).forEach((badge) => { %>
+                        <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                      <% }) %>
+                    </div>
+                  <% } %>
                 </td>
                 <td><%= Number(item.price || 0) > 0 ? `₩${formatPrice(item.price)}` : (isEn ? 'On request' : '가격문의') %></td>
-                <td><%= item.is_active ? (isEn ? 'Visible' : '노출') : (isEn ? 'Hidden' : '숨김') %></td>
+                <td>
+                  <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
+                  <%= item.is_active ? (isEn ? 'Visible' : '노출') : (isEn ? 'Hidden' : '숨김') %>
+                  <% if (soldOut) { %>
+                    · <%= isEn ? 'Sold Out' : '판매완료' %>
+                  <% } %>
+                </td>
                 <td>
                   <div class="admin-account-actions">
                     <a href="/shop/item/<%= item.id %>" class="chip" target="_blank" rel="noreferrer"><%= isEn ? 'View' : '보기' %></a>
                     <a href="/admin/products?section=upload&editId=<%= item.id %>" class="chip"><%= isEn ? 'Edit' : '수정' %></a>
+                    <form method="post" action="/admin/product/<%= item.id %>/sold-out-toggle" class="inline-form">
+                      <button type="submit" class="chip"><%= Number(item.is_sold_out || 0) === 1 ? (isEn ? 'On Sale' : '판매중') : (isEn ? 'Sold Out' : '판매완료') %></button>
+                    </form>
                     <form method="post" action="/admin/product/<%= item.id %>/toggle" class="inline-form">
                       <button type="submit" class="chip"><%= item.is_active ? (isEn ? 'Hide' : '숨김') : (isEn ? 'Show' : '노출') %></button>
                     </form>
@@ -2344,6 +2385,70 @@
           applyFilter('__ALL__');
         })();
       </script>
+    <% } %>
+
+    <% if (productsTab === 'badges') { %>
+      <div class="admin-grid">
+        <div class="block-card">
+          <h4><%= isEn ? 'Create Badge' : '배지 추가' %></h4>
+          <form method="post" action="/admin/product-badge/create" class="form-grid compact">
+            <label>
+              <%= isEn ? 'Badge Name (KR)' : '배지명 (KR)' %>
+              <input type="text" name="labelKo" maxlength="40" required placeholder="<%= isEn ? 'e.g. Domestic Stock' : '예: 국내재고' %>" />
+            </label>
+            <label>
+              <%= isEn ? 'Badge Name (EN)' : '배지명 (EN)' %>
+              <input type="text" name="labelEn" maxlength="40" required placeholder="<%= isEn ? 'e.g. Domestic Stock' : '예: Domestic Stock' %>" />
+            </label>
+            <label>
+              <%= isEn ? 'Sort Order' : '정렬 순서' %>
+              <input type="number" name="sortOrder" min="0" step="1" value="<%= productBadgeList.length + 1 %>" />
+            </label>
+            <button type="submit" class="cta-main"><%= isEn ? 'Add Badge' : '배지 추가' %></button>
+          </form>
+          <p class="muted-label"><%= isEn ? 'Added badges can be selected when uploading or editing products.' : '추가한 배지는 상품 업로드/수정 시 체크해서 표시할 수 있습니다.' %></p>
+        </div>
+
+        <div class="block-card">
+          <h4><%= isEn ? 'Badge List' : '배지 목록' %></h4>
+          <% if (productBadgeList.length === 0) { %>
+            <p class="muted-label"><%= isEn ? 'No badges created yet.' : '등록된 배지가 없습니다.' %></p>
+          <% } %>
+          <div class="admin-list">
+            <% productBadgeList.forEach((badge) => { %>
+              <details class="admin-list-item product-badge-admin-item">
+                <summary>
+                  <strong><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></strong>
+                  <small><%= isEn ? `Code ${badge.code}` : `코드 ${badge.code}` %> · <%= isEn ? `Order ${badge.sort_order}` : `정렬 ${badge.sort_order}` %></small>
+                </summary>
+                <form method="post" action="/admin/product-badge/<%= badge.id %>/update" class="form-grid compact">
+                  <input type="hidden" name="code" value="<%= badge.code %>" />
+                  <label>
+                    <%= isEn ? 'Badge Name (KR)' : '배지명 (KR)' %>
+                    <input type="text" name="labelKo" maxlength="40" required value="<%= badge.label_ko %>" />
+                  </label>
+                  <label>
+                    <%= isEn ? 'Badge Name (EN)' : '배지명 (EN)' %>
+                    <input type="text" name="labelEn" maxlength="40" required value="<%= badge.label_en %>" />
+                  </label>
+                  <label>
+                    <%= isEn ? 'Sort Order' : '정렬 순서' %>
+                    <input type="number" name="sortOrder" min="0" step="1" value="<%= badge.sort_order %>" />
+                  </label>
+                  <div class="admin-field-chip-row">
+                    <button type="submit" class="chip dark"><%= isEn ? 'Save' : '저장' %></button>
+                  </div>
+                </form>
+                <div class="admin-field-chip-row">
+                  <form method="post" action="/admin/product-badge/<%= badge.id %>/delete" class="inline-form" onsubmit="return confirm('<%= isEn ? 'Delete this badge? (It will also be removed from linked products.)' : '이 배지를 삭제할까요? (연결된 상품에서도 함께 제거됩니다.)' %>');">
+                    <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                  </form>
+                </div>
+              </details>
+            <% }) %>
+          </div>
+        </div>
+      </div>
     <% } %>
   </article>
   <% } %>

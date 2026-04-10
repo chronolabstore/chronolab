@@ -1,12 +1,14 @@
 <footer class="site-footer">
   <div class="footer-grid">
-    <section class="footer-card">
+    <section class="footer-card footer-brand-card">
       <h4>Brand</h4>
-      <% if (ctx.settings.footerLogoPath) { %>
-        <img src="<%= ctx.settings.footerLogoPath %>" alt="footer logo" class="footer-logo" />
-      <% } else { %>
-        <div class="footer-logo-fallback">Chrono Lab</div>
-      <% } %>
+      <div class="footer-brand-visual">
+        <% if (ctx.settings.footerLogoPath) { %>
+          <img src="<%= ctx.settings.footerLogoPath %>" alt="footer logo" class="footer-logo" />
+        <% } else { %>
+          <div class="footer-logo-fallback">Chrono Lab</div>
+        <% } %>
+      </div>
       <p class="footer-small"><%= ctx.lang === 'en' ? 'Simple. Clean. Trusted watch shopping.' : '심플하고 신뢰할 수 있는 시계 쇼핑.' %></p>
     </section>
 
