@@ -100,13 +100,15 @@
         <% }) %>
       </div>
     <% } %>
-    <div class="detail-action-row">
-      <a href="/shop/item/<%= product.id %>/purchase" class="cta-main detail-buy-btn"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
-      <form method="post" action="/shop/item/<%= product.id %>/cart" class="inline-form detail-cart-form">
-        <input type="hidden" name="quantity" value="1" />
-        <button type="submit" class="detail-cart-btn"><%= isEn ? 'Add to Cart' : '장바구니' %></button>
-      </form>
-    </div>
+    <% if (!soldOut) { %>
+      <div class="detail-action-row">
+        <a href="/shop/item/<%= product.id %>/purchase" class="cta-main detail-buy-btn"><%= isEn ? 'Go to Purchase' : '구매하기' %></a>
+        <form method="post" action="/shop/item/<%= product.id %>/cart" class="inline-form detail-cart-form">
+          <input type="hidden" name="quantity" value="1" />
+          <button type="submit" class="detail-cart-btn"><%= isEn ? 'Add to Cart' : '장바구니' %></button>
+        </form>
+      </div>
+    <% } %>
   </div>
 </section>
 
