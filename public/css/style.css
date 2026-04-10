@@ -1919,9 +1919,9 @@ body.theme-night .watermark-preview-canvas {
 }
 
 .footer-logo {
-  width: clamp(112px, 58%, 158px);
+  width: clamp(92px, 50%, 132px);
   height: auto;
-  max-height: 112px;
+  max-height: 90px;
   object-fit: contain;
   object-position: left center;
   display: block;
@@ -1943,7 +1943,7 @@ body.theme-night .watermark-preview-canvas {
 
 .footer-brand-visual {
   flex: 0 0 auto;
-  min-height: 72px;
+  min-height: 62px;
   margin-bottom: 6px;
   display: flex;
   align-items: center;
