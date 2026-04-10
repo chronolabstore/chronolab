@@ -144,9 +144,14 @@ pm2 logs chrono-lab --lines 100
 ```bash
 cd /var/www/chrono-lab
 chmod +x ./scripts/server/*.sh
+./scripts/server/install-ops.sh chronolab.co.kr --with-security
+```
+`install-ops.sh`는 자동배포 cron + 백업 cron + 로그 로테이션(`logrotate`) + SSH 고정(22/key-only) + fail2ban까지 함께 설정합니다.
+
+보안 설정을 건너뛰고 운영 스크립트만 적용하려면:
+```bash
 ./scripts/server/install-ops.sh chronolab.co.kr
 ```
-`install-ops.sh`는 자동배포 cron + 백업 cron + 로그 로테이션(`logrotate`)까지 함께 설정합니다.
 
 수동 즉시 배포:
 ```bash
@@ -176,6 +181,18 @@ cd /var/www/chrono-lab
 - `pm2`가 `errored/stopped`
 - Nginx 상태가 `inactive/failed`
 - HTTP 코드가 `5xx` 또는 `000`
+
+## 8-1) Cafe24 방화벽 고정 권장값
+- `INBOUND (모든 IP)`:
+  - `80/tcp ALLOW`
+  - `443/tcp ALLOW`
+- `INBOUND (특정 IP)`:
+  - 사용하지 않음 (이동 작업이 많을 때는 비권장)
+- SSH:
+  - 서버는 `22`만 사용
+  - `59398`은 사용하지 않음
+
+이동 환경(카페/테더링 등)에서 작업 시에는 Cafe24 방화벽에서 SSH를 특정 IP로 묶지 말고, 서버 내부는 `key-only + fail2ban`으로 방어하는 방식을 권장합니다.
 
 ## 9) Render 종료 체크리스트
 1. Render Dashboard -> 해당 서비스 선택

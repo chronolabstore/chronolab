@@ -11,6 +11,13 @@ echo "== NGINX =="
 systemctl is-active nginx
 nginx -t
 
+echo "== SSH =="
+ss -lntp | grep sshd || true
+
+echo "== FAIL2BAN =="
+systemctl is-active fail2ban || true
+fail2ban-client status sshd || true
+
 echo "== LOCAL APP =="
 curl -sS -o /dev/null -w "http://127.0.0.1:3100/main -> %{http_code}\n" http://127.0.0.1:3100/main
 
