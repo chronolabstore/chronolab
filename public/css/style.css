@@ -1790,6 +1790,7 @@ textarea {
   border-color: var(--text);
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.16);
   z-index: 3;
+  opacity: 0.95;
 }
 
 .watermark-preview-order {
