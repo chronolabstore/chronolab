@@ -261,6 +261,10 @@ const ALLOWED_UPLOAD_MIME = new Set([
 ]);
 const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
 const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
+const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
+const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
+const WATERMARK_REMOTE_FETCH_MAX_DELAY_MS = 8000;
+const WATERMARK_REMOTE_FETCH_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 
 let mailTransporter = null;
 
@@ -1163,8 +1167,53 @@ function resolveLocalPathFromImageUrl(imageUrl = '') {
   return '';
 }
 
+function waitForMs(ms = 0) {
+  const delayMs = Number(ms);
+  if (!Number.isFinite(delayMs) || delayMs <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimeout(resolve, Math.floor(delayMs)));
+}
+
+function normalizeRemoteImageUrl(imageUrl = '') {
+  const raw = String(imageUrl || '').trim();
+  if (!raw) {
+    return '';
+  }
+  const source = raw.startsWith('//') ? `https:${raw}` : raw;
+  try {
+    const parsed = new URL(source);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function parseRetryAfterMs(retryAfter = '') {
+  const value = String(retryAfter || '').trim();
+  if (!value) {
+    return 0;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(Math.floor(seconds * 1000), WATERMARK_REMOTE_FETCH_MAX_DELAY_MS);
+  }
+  const scheduledAt = Date.parse(value);
+  if (!Number.isFinite(scheduledAt)) {
+    return 0;
+  }
+  const diffMs = scheduledAt - Date.now();
+  if (diffMs <= 0) {
+    return 0;
+  }
+  return Math.min(Math.floor(diffMs), WATERMARK_REMOTE_FETCH_MAX_DELAY_MS);
+}
+
 function isRemoteImageUrl(imageUrl = '') {
-  return /^https?:\/\//i.test(String(imageUrl || '').trim());
+  return Boolean(normalizeRemoteImageUrl(imageUrl));
 }
 
 function buildUploadFilenameForFormat(format = '') {
@@ -1202,60 +1251,102 @@ function replaceProductImageUrlEverywhere(fromImageUrl = '', toImageUrl = '') {
 }
 
 async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
-  const src = String(imageUrl || '').trim();
-  if (!isRemoteImageUrl(src) || typeof fetch !== 'function') {
+  const src = normalizeRemoteImageUrl(imageUrl);
+  if (!src || typeof fetch !== 'function') {
     return { ok: false, reason: 'unsupported-url' };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
+  let reason = 'download-error';
 
-  try {
-    const response = await fetch(src, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: { accept: 'image/*,*/*;q=0.8' },
-      signal: controller.signal
-    });
+  for (let attempt = 1; attempt <= WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
 
-    if (!response.ok) {
-      return { ok: false, reason: `http-${response.status}` };
+    try {
+      const parsedUrl = new URL(src);
+      const response = await fetch(src, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+          'cache-control': 'no-cache',
+          pragma: 'no-cache',
+          referer: `${parsedUrl.origin}/`,
+          'user-agent': WATERMARK_REMOTE_FETCH_USER_AGENT
+        },
+        signal: controller.signal
+      });
+
+      if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+        reason = `http-${response.status}`;
+        if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
+          const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+          const fallbackDelayMs = Math.min(
+            WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
+            WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
+          );
+          await waitForMs(Math.max(retryAfterMs, fallbackDelayMs));
+          continue;
+        }
+        return { ok: false, reason };
+      }
+
+      if (!response.ok) {
+        return { ok: false, reason: `http-${response.status}` };
+      }
+
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (contentType && !contentType.includes('image/')) {
+        return { ok: false, reason: 'non-image-content-type' };
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length <= 0) {
+        return { ok: false, reason: 'empty-body' };
+      }
+
+      const metadata = await sharp(buffer).metadata();
+      const format = String(metadata.format || '').toLowerCase();
+      if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
+        return { ok: false, reason: 'unsupported-format', format };
+      }
+
+      const uploadDir = path.join(__dirname, 'uploads');
+      await fs.mkdir(uploadDir, { recursive: true });
+
+      const filename = buildUploadFilenameForFormat(format);
+      const localPath = path.join(uploadDir, filename);
+      await fs.writeFile(localPath, buffer);
+
+      const result = await applyChronoLabWatermarkToFile(localPath);
+      if (!result.ok) {
+        await fs.unlink(localPath).catch(() => {});
+        return { ok: false, reason: result.reason || 'watermark-failed' };
+      }
+
+      return {
+        ok: true,
+        imagePath: `/uploads/${filename}`,
+        format
+      };
+    } catch (error) {
+      reason = error?.name === 'AbortError' ? 'download-timeout' : 'download-error';
+      if (attempt < WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS) {
+        const fallbackDelayMs = Math.min(
+          WATERMARK_REMOTE_FETCH_BASE_DELAY_MS * attempt,
+          WATERMARK_REMOTE_FETCH_MAX_DELAY_MS
+        );
+        await waitForMs(fallbackDelayMs);
+        continue;
+      }
+      return { ok: false, reason };
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length <= 0) {
-      return { ok: false, reason: 'empty-body' };
-    }
-
-    const metadata = await sharp(buffer).metadata();
-    const format = String(metadata.format || '').toLowerCase();
-    if (!WATERMARK_SUPPORTED_FORMATS.has(format)) {
-      return { ok: false, reason: 'unsupported-format', format };
-    }
-
-    const uploadDir = path.join(__dirname, 'uploads');
-    await fs.mkdir(uploadDir, { recursive: true });
-
-    const filename = buildUploadFilenameForFormat(format);
-    const localPath = path.join(uploadDir, filename);
-    await fs.writeFile(localPath, buffer);
-
-    const result = await applyChronoLabWatermarkToFile(localPath);
-    if (!result.ok) {
-      await fs.unlink(localPath).catch(() => {});
-      return { ok: false, reason: result.reason || 'watermark-failed' };
-    }
-
-    return {
-      ok: true,
-      imagePath: `/uploads/${filename}`,
-      format
-    };
-  } catch {
-    return { ok: false, reason: 'download-error' };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return { ok: false, reason };
 }
 
 async function applyChronoLabWatermarkToAllProductImages() {
@@ -1278,6 +1369,11 @@ async function applyChronoLabWatermarkToAllProductImages() {
   let convertedRemoteCount = 0;
   let skippedCount = 0;
   let failedCount = 0;
+  const failedReasonCounts = {};
+  const addFailedReason = (reason = '') => {
+    const key = String(reason || 'unknown').trim() || 'unknown';
+    failedReasonCounts[key] = Number(failedReasonCounts[key] || 0) + 1;
+  };
 
   for (const imageUrl of uniqueUrls) {
     const localPath = resolveLocalPathFromImageUrl(imageUrl);
@@ -1297,6 +1393,7 @@ async function applyChronoLabWatermarkToAllProductImages() {
         skippedCount += 1;
       } else {
         failedCount += 1;
+        addFailedReason(result.reason);
       }
       // eslint-disable-next-line no-continue
       continue;
@@ -1312,6 +1409,7 @@ async function applyChronoLabWatermarkToAllProductImages() {
         skippedCount += 1;
       } else {
         failedCount += 1;
+        addFailedReason(downloaded.reason);
       }
       // eslint-disable-next-line no-continue
       continue;
@@ -1325,7 +1423,8 @@ async function applyChronoLabWatermarkToAllProductImages() {
     processedCount,
     convertedRemoteCount,
     skippedCount,
-    failedCount
+    failedCount,
+    failedReasonCounts
   };
 }
 
@@ -10733,10 +10832,15 @@ app.post('/admin/product/:id/delete', requireAdmin, (req, res) => {
 app.post('/admin/product/watermark/apply-all', requireAdmin, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=list');
   const result = await applyChronoLabWatermarkToAllProductImages();
+  const failedReasonSummary = Object.entries(result.failedReasonCounts || {})
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .slice(0, 3)
+    .map(([reason, count]) => `${reason} ${count}건`)
+    .join(', ');
   setFlash(
     req,
     'success',
-    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리(원격 ${result.convertedRemoteCount}개 변환), ${result.skippedCount}개 스킵, ${result.failedCount}개 실패`
+    `워터마크 일괄 적용 완료: 총 ${result.totalCount}개 중 ${result.processedCount}개 처리(원격 ${result.convertedRemoteCount}개 변환), ${result.skippedCount}개 스킵, ${result.failedCount}개 실패${failedReasonSummary ? ` (${failedReasonSummary})` : ''}`
   );
   return res.redirect(backPath);
 }));
