@@ -1,10 +1,13 @@
 <%- include('partials/layout-start') %>
-<% const isEn = ctx.lang === 'en'; %>
+<%
+  const isEn = ctx.lang === 'en';
+  const soldOut = Number(product?.is_sold_out || 0) === 1;
+%>
 
 <section class="detail-shell">
   <div class="detail-visual detail-gallery" data-gallery>
     <% if (imageList && imageList.length > 0) { %>
-      <div class="detail-main-wrap">
+      <div class="detail-main-wrap <%= soldOut ? 'is-sold-out' : '' %>">
         <button
           type="button"
           class="gallery-nav gallery-prev"
@@ -42,7 +45,7 @@
         <% imageList.forEach((src, index) => { %>
           <button
             type="button"
-            class="detail-thumb <%= index === 0 ? 'active' : '' %>"
+            class="detail-thumb <%= index === 0 ? 'active' : '' %> <%= soldOut ? 'is-sold-out' : '' %>"
             data-gallery-thumb
             data-index="<%= index %>"
             data-src="<%= src %>"

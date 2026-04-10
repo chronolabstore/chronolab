@@ -2331,11 +2331,20 @@
                   <% } %>
                 </td>
                 <td><%= Number(item.price || 0) > 0 ? `₩${formatPrice(item.price)}` : (isEn ? 'On request' : '가격문의') %></td>
-                <td><%= item.is_active ? (isEn ? 'Visible' : '노출') : (isEn ? 'Hidden' : '숨김') %></td>
+                <td>
+                  <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
+                  <%= item.is_active ? (isEn ? 'Visible' : '노출') : (isEn ? 'Hidden' : '숨김') %>
+                  <% if (soldOut) { %>
+                    · <%= isEn ? 'Sold Out' : '판매완료' %>
+                  <% } %>
+                </td>
                 <td>
                   <div class="admin-account-actions">
                     <a href="/shop/item/<%= item.id %>" class="chip" target="_blank" rel="noreferrer"><%= isEn ? 'View' : '보기' %></a>
                     <a href="/admin/products?section=upload&editId=<%= item.id %>" class="chip"><%= isEn ? 'Edit' : '수정' %></a>
+                    <form method="post" action="/admin/product/<%= item.id %>/sold-out-toggle" class="inline-form">
+                      <button type="submit" class="chip"><%= Number(item.is_sold_out || 0) === 1 ? (isEn ? 'On Sale' : '판매중') : (isEn ? 'Sold Out' : '판매완료') %></button>
+                    </form>
                     <form method="post" action="/admin/product/<%= item.id %>/toggle" class="inline-form">
                       <button type="submit" class="chip"><%= item.is_active ? (isEn ? 'Hide' : '숨김') : (isEn ? 'Show' : '노출') %></button>
                     </form>

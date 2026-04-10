@@ -92,12 +92,16 @@
     <% } %>
 
     <% products.forEach((item) => { %>
+      <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
       <a href="/shop/item/<%= item.id %>" class="product-card">
-        <div class="product-image-box">
+        <div class="product-image-box <%= soldOut ? 'is-sold-out' : '' %>">
           <% if (item.image_path) { %>
             <img src="<%= item.image_path %>" alt="<%= item.brand %>" />
           <% } else { %>
             <div class="image-fallback">WATCH</div>
+          <% } %>
+          <% if (soldOut) { %>
+            <span class="soldout-overlay-label"><%= isEn ? 'Sold out' : '판매완료' %></span>
           <% } %>
         </div>
         <div class="product-meta">

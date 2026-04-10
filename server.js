@@ -5132,7 +5132,8 @@ app.get('/main', (req, res) => {
             case_material,
             movement,
             features,
-            extra_fields_json
+            extra_fields_json,
+            is_sold_out
           FROM products
           WHERE is_active = 1 AND category_group = ?
           ORDER BY id DESC
@@ -5305,7 +5306,8 @@ app.get('/shop', (req, res) => {
           case_material,
           movement,
           features,
-          extra_fields_json
+          extra_fields_json,
+          is_sold_out
         FROM products
         WHERE ${where.join(' AND ')}
         ORDER BY id DESC
@@ -5472,7 +5474,7 @@ app.get('/shop/item/:id', (req, res) => {
     similarRows = db
       .prepare(
         `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
           FROM products
           WHERE is_active = 1 AND brand = ? AND id != ?
           ORDER BY id DESC
@@ -5484,7 +5486,7 @@ app.get('/shop/item/:id', (req, res) => {
     similarRows = db
       .prepare(
         `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json
+          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
           FROM products
           WHERE is_active = 1 AND category_group = ? AND id != ?
           ORDER BY id DESC
@@ -10925,6 +10927,30 @@ app.post('/admin/product/:id/toggle', requireAdmin, (req, res) => {
   db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(nextState, id);
   setFlash(req, 'success', '상품 노출 상태를 변경했습니다.');
   res.redirect(backPath);
+});
+
+app.post('/admin/product/:id/sold-out-toggle', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/products?section=list');
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    setFlash(req, 'error', '유효하지 않은 상품입니다.');
+    return res.redirect(backPath);
+  }
+
+  const product = db.prepare('SELECT id, is_sold_out FROM products WHERE id = ? LIMIT 1').get(id);
+  if (!product) {
+    setFlash(req, 'error', '상품을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextState = Number(product.is_sold_out || 0) === 1 ? 0 : 1;
+  db.prepare('UPDATE products SET is_sold_out = ? WHERE id = ?').run(nextState, id);
+  setFlash(
+    req,
+    'success',
+    nextState === 1 ? '상품을 판매완료 처리했습니다.' : '상품 판매완료를 해제했습니다.'
+  );
+  return res.redirect(backPath);
 });
 
 app.post('/admin/product-badge/create', requireAdmin, (req, res) => {

@@ -373,6 +373,15 @@ function ensureProductsExtraFieldsColumn() {
   }
 }
 
+function ensureProductsSoldOutColumn() {
+  const columns = db.prepare('PRAGMA table_info(products)').all();
+  const hasSoldOut = columns.some((column) => column.name === 'is_sold_out');
+
+  if (!hasSoldOut) {
+    db.prepare('ALTER TABLE products ADD COLUMN is_sold_out INTEGER NOT NULL DEFAULT 0').run();
+  }
+}
+
 function ensureProductBadgeTables() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS product_badge_defs (
@@ -1333,6 +1342,7 @@ export function initDb() {
       shipping_period TEXT,
       image_path TEXT,
       extra_fields_json TEXT NOT NULL DEFAULT '{}',
+      is_sold_out INTEGER NOT NULL DEFAULT 0,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -1485,6 +1495,7 @@ export function initDb() {
 
   ensureProductsCategoryColumn();
   ensureProductsExtraFieldsColumn();
+  ensureProductsSoldOutColumn();
   ensureProductBadgeTables();
   ensureUserAdminProfileColumns();
   ensureUserMemberProfileColumns();
