@@ -1939,10 +1939,12 @@
       <form method="post" action="<%= editingItem ? `/admin/product/${editingItem.id}/update` : '/admin/product/create' %>" enctype="multipart/form-data" class="form-grid" data-admin-product-form data-product-groups="<%- encodeURIComponent(JSON.stringify(productGroupConfigList)) %>" data-initial-group="<%- encodeURIComponent(uploadActiveGroupKey) %>">
         <label><%= isEn ? 'Images (multiple upload)' : '사진 (여러 장 업로드 가능)' %>
           <input type="file" name="images" accept="image/*" multiple />
+          <small class="muted-label"><%= isEn ? 'Upload limit: up to 100MB per image (max 20 images).' : '업로드 제한: 이미지 1개당 최대 100MB, 최대 20장까지 업로드할 수 있습니다.' %></small>
           <small class="muted-label"><%= isEn ? 'All uploaded images are automatically watermarked with "Chrono Lab".' : '업로드된 모든 이미지는 자동으로 "Chrono Lab" 워터마크가 적용됩니다.' %></small>
         </label>
         <div class="watermark-preview-wrap" data-image-watermark-preview hidden>
           <p class="muted-label"><%= isEn ? 'Preview with watermark applied before upload' : '업로드 전 워터마크 적용 미리보기' %></p>
+          <p class="muted-label"><%= isEn ? 'Drag images to change order. Number 1 becomes the first image.' : '이미지를 드래그해 순서를 바꿀 수 있습니다. 1번 이미지가 대표 순서입니다.' %></p>
           <div class="watermark-preview-grid" data-image-watermark-preview-grid></div>
         </div>
 
@@ -2099,8 +2101,17 @@
           const previewWrap = form.querySelector('[data-image-watermark-preview]');
           const previewGrid = form.querySelector('[data-image-watermark-preview-grid]');
           const watermarkImageUrl = '<%= ctx.settings.watermarkLogoPath || '' %>';
+          const MAX_IMAGE_FILE_BYTES = 100 * 1024 * 1024;
+          const MAX_IMAGE_FILE_MB = Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024));
+          const imageOverLimitMessage = '<%= isEn ? 'Some files exceed 100MB per image. Please reduce file size and try again.' : '이미지 1개당 최대 100MB까지 업로드할 수 있습니다. 용량을 줄여 다시 시도해 주세요.' %>';
+          const dragHandleLabel = '<%= isEn ? 'Drag to reorder image' : '드래그하여 이미지 순서 변경' %>';
           let watermarkImage = null;
           let watermarkImagePromise = null;
+          let selectedImageFiles = [];
+          let draggingPreviewItem = null;
+          let draggingPointerId = null;
+          let dragStartX = 0;
+          let dragStartY = 0;
 
           const clearWatermarkPreview = () => {
             if (!previewGrid) return;
@@ -2108,6 +2119,52 @@
             if (previewWrap) {
               previewWrap.hidden = true;
             }
+          };
+
+          const replaceInputFiles = (files) => {
+            if (!imageInput || typeof DataTransfer !== 'function') {
+              return false;
+            }
+            try {
+              const transfer = new DataTransfer();
+              (files || []).forEach((file) => {
+                transfer.items.add(file);
+              });
+              imageInput.files = transfer.files;
+              return true;
+            } catch (error) {
+              return false;
+            }
+          };
+
+          const updatePreviewOrderLabels = () => {
+            if (!previewGrid) return;
+            const items = Array.from(previewGrid.querySelectorAll('.watermark-preview-item'));
+            items.forEach((item, index) => {
+              const orderNode = item.querySelector('[data-watermark-preview-order]');
+              if (orderNode) {
+                orderNode.textContent = String(index + 1);
+              }
+            });
+          };
+
+          const syncSelectedFilesFromPreviewDom = () => {
+            if (!previewGrid) return;
+            const orderedIds = Array.from(previewGrid.querySelectorAll('.watermark-preview-item'))
+              .map((item) => String(item.dataset.fileId || ''))
+              .filter(Boolean);
+            if (!orderedIds.length) {
+              updatePreviewOrderLabels();
+              return;
+            }
+
+            const entryMap = new Map(selectedImageFiles.map((entry) => [entry.id, entry]));
+            selectedImageFiles = orderedIds
+              .map((id) => entryMap.get(id))
+              .filter((entry) => entry && entry.file);
+            updatePreviewOrderLabels();
+
+            replaceInputFiles(selectedImageFiles.map((entry) => entry.file));
           };
 
           const loadWatermarkImage = () => {
@@ -2180,10 +2237,43 @@
             ctx.restore();
           };
 
-          const appendWatermarkPreview = (file) => {
+          const appendWatermarkPreview = (fileEntry) => {
             if (!previewGrid) return;
+            if (!fileEntry || !fileEntry.file) return;
+
+            const file = fileEntry.file;
             const blobUrl = URL.createObjectURL(file);
             const image = new Image();
+            const item = document.createElement('div');
+            item.className = 'watermark-preview-item';
+            item.dataset.fileId = fileEntry.id;
+
+            const order = document.createElement('span');
+            order.className = 'watermark-preview-order';
+            order.setAttribute('data-watermark-preview-order', '1');
+            order.textContent = '1';
+
+            const dragHandle = document.createElement('button');
+            dragHandle.type = 'button';
+            dragHandle.className = 'watermark-preview-drag-handle';
+            dragHandle.setAttribute('data-preview-drag-handle', '1');
+            dragHandle.setAttribute('aria-label', dragHandleLabel);
+            dragHandle.textContent = '::';
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'watermark-preview-canvas';
+            canvas.width = 4;
+            canvas.height = 3;
+
+            const name = document.createElement('span');
+            name.className = 'watermark-preview-name';
+            name.textContent = file.name || 'image';
+
+            item.appendChild(order);
+            item.appendChild(dragHandle);
+            item.appendChild(canvas);
+            item.appendChild(name);
+            previewGrid.appendChild(item);
 
             image.onload = async () => {
               const maxWidth = 480;
@@ -2191,12 +2281,6 @@
               const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
               const width = Math.max(1, Math.round(image.width * scale));
               const height = Math.max(1, Math.round(image.height * scale));
-
-              const item = document.createElement('div');
-              item.className = 'watermark-preview-item';
-
-              const canvas = document.createElement('canvas');
-              canvas.className = 'watermark-preview-canvas';
               canvas.width = width;
               canvas.height = height;
 
@@ -2211,14 +2295,6 @@
                 }
               }
 
-              const name = document.createElement('span');
-              name.className = 'watermark-preview-name';
-              name.textContent = file.name || 'image';
-
-              item.appendChild(canvas);
-              item.appendChild(name);
-              previewGrid.appendChild(item);
-
               URL.revokeObjectURL(blobUrl);
             };
 
@@ -2229,15 +2305,124 @@
             image.src = blobUrl;
           };
 
+          const renderWatermarkPreview = () => {
+            if (!previewWrap || !previewGrid) return;
+            previewGrid.innerHTML = '';
+            if (!selectedImageFiles.length) {
+              previewWrap.hidden = true;
+              return;
+            }
+            previewWrap.hidden = false;
+            selectedImageFiles.forEach((fileEntry) => appendWatermarkPreview(fileEntry));
+            updatePreviewOrderLabels();
+          };
+
+          const startPreviewDrag = (event) => {
+            if (!previewGrid || !event || !event.target) return;
+            const handle = event.target.closest('[data-preview-drag-handle]');
+            if (!handle) return;
+            const item = handle.closest('.watermark-preview-item');
+            if (!item || item.parentElement !== previewGrid) return;
+
+            draggingPreviewItem = item;
+            draggingPointerId = event.pointerId;
+            dragStartX = event.clientX;
+            dragStartY = event.clientY;
+            item.classList.add('is-dragging');
+            item.style.transform = 'translate(0px, 0px)';
+            if (handle.setPointerCapture) {
+              try {
+                handle.setPointerCapture(event.pointerId);
+              } catch (error) {
+                // ignore pointer capture failures
+              }
+            }
+            event.preventDefault();
+          };
+
+          const movePreviewDrag = (event) => {
+            if (!previewGrid || !draggingPreviewItem) return;
+            if (event.pointerId !== draggingPointerId) return;
+
+            const dx = event.clientX - dragStartX;
+            const dy = event.clientY - dragStartY;
+            draggingPreviewItem.style.transform = `translate(${dx}px, ${dy}px)`;
+
+            const hoverNode = document.elementFromPoint(event.clientX, event.clientY);
+            const targetItem = hoverNode ? hoverNode.closest('.watermark-preview-item') : null;
+            if (!targetItem || targetItem === draggingPreviewItem || targetItem.parentElement !== previewGrid) {
+              event.preventDefault();
+              return;
+            }
+
+            const allItems = Array.from(previewGrid.querySelectorAll('.watermark-preview-item'));
+            const draggingIndex = allItems.indexOf(draggingPreviewItem);
+            const targetIndex = allItems.indexOf(targetItem);
+            if (draggingIndex < 0 || targetIndex < 0 || draggingIndex === targetIndex) {
+              event.preventDefault();
+              return;
+            }
+
+            const rect = targetItem.getBoundingClientRect();
+            const placeAfter = event.clientX > rect.left + rect.width / 2;
+            if (placeAfter) {
+              previewGrid.insertBefore(draggingPreviewItem, targetItem.nextSibling);
+            } else {
+              previewGrid.insertBefore(draggingPreviewItem, targetItem);
+            }
+            updatePreviewOrderLabels();
+            event.preventDefault();
+          };
+
+          const finishPreviewDrag = (event) => {
+            if (!draggingPreviewItem) return;
+            if (event && typeof event.pointerId === 'number' && event.pointerId !== draggingPointerId) {
+              return;
+            }
+
+            draggingPreviewItem.classList.remove('is-dragging');
+            draggingPreviewItem.style.transform = '';
+            draggingPreviewItem = null;
+            draggingPointerId = null;
+            syncSelectedFilesFromPreviewDom();
+          };
+
           const refreshWatermarkPreview = () => {
             if (!imageInput || !previewWrap || !previewGrid) return;
             clearWatermarkPreview();
-            const files = Array.from(imageInput.files || []).filter((file) =>
+
+            const rawFiles = Array.from(imageInput.files || []).filter((file) =>
               typeof file.type === 'string' && file.type.startsWith('image/')
             );
-            if (!files.length) return;
-            previewWrap.hidden = false;
-            files.forEach((file) => appendWatermarkPreview(file));
+            if (!rawFiles.length) {
+              selectedImageFiles = [];
+              return;
+            }
+
+            const validFiles = rawFiles.filter((file) => Number(file.size || 0) <= MAX_IMAGE_FILE_BYTES);
+            if (validFiles.length !== rawFiles.length) {
+              window.alert(imageOverLimitMessage.replace('100MB', `${MAX_IMAGE_FILE_MB}MB`));
+              const replaced = replaceInputFiles(validFiles);
+              if (!replaced) {
+                imageInput.value = '';
+                selectedImageFiles = [];
+                renderWatermarkPreview();
+                return;
+              }
+            }
+
+            const previewFiles = (validFiles.length !== rawFiles.length ? Array.from(imageInput.files || []) : validFiles).filter(
+              (file) =>
+                typeof file.type === 'string' &&
+                file.type.startsWith('image/') &&
+                Number(file.size || 0) <= MAX_IMAGE_FILE_BYTES
+            );
+
+            selectedImageFiles = previewFiles.map((file, index) => ({
+              id: `preview-file-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+              file
+            }));
+            renderWatermarkPreview();
           };
 
           const applyGroup = (groupKey) => {
@@ -2281,6 +2466,15 @@
           if (imageInput) {
             imageInput.addEventListener('change', refreshWatermarkPreview);
             refreshWatermarkPreview();
+          }
+
+          if (previewGrid) {
+            previewGrid.addEventListener('pointerdown', startPreviewDrag);
+            previewGrid.addEventListener('pointermove', movePreviewDrag);
+            previewGrid.addEventListener('pointerup', finishPreviewDrag);
+            previewGrid.addEventListener('pointercancel', finishPreviewDrag);
+            window.addEventListener('pointerup', finishPreviewDrag);
+            window.addEventListener('pointercancel', finishPreviewDrag);
           }
         })();
       </script>
