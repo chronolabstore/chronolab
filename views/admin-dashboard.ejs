@@ -2330,6 +2330,7 @@
             dragStartY = event.clientY;
             item.classList.add('is-dragging');
             item.style.transform = 'translate(0px, 0px)';
+            item.style.pointerEvents = 'none';
             if (handle.setPointerCapture) {
               try {
                 handle.setPointerCapture(event.pointerId);
@@ -2382,6 +2383,7 @@
 
             draggingPreviewItem.classList.remove('is-dragging');
             draggingPreviewItem.style.transform = '';
+            draggingPreviewItem.style.pointerEvents = '';
             draggingPreviewItem = null;
             draggingPointerId = null;
             syncSelectedFilesFromPreviewDom();
