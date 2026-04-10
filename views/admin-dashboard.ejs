@@ -2171,7 +2171,7 @@
             const xStep = Math.max(targetWidth + 6, Math.round(targetWidth * 1.04));
 
             ctx.save();
-            ctx.globalAlpha = 0.2;
+            ctx.globalAlpha = 0.18;
             rows.forEach((y) => {
               for (let x = -targetWidth; x < width + targetWidth; x += xStep) {
                 ctx.drawImage(image, Math.round(x), Math.round(y - targetHeight / 2), targetWidth, targetHeight);
