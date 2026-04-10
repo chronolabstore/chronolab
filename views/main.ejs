@@ -68,7 +68,8 @@
                 <% if ((item.product_badges || []).length > 0) { %>
                   <div class="product-badge-row">
                     <% (item.product_badges || []).forEach((badge) => { %>
-                      <span class="product-badge-chip"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                      <% const badgeThemeClass = `product-badge-theme-${String(badge.color_theme || 'slate').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'slate'}`; %>
+                      <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
                     <% }) %>
                   </div>
                 <% } %>

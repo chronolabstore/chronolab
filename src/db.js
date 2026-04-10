@@ -429,6 +429,7 @@ function ensureProductBadgeTables() {
       code TEXT NOT NULL UNIQUE,
       label_ko TEXT NOT NULL,
       label_en TEXT NOT NULL,
+      color_theme TEXT NOT NULL DEFAULT 'slate',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -446,6 +447,32 @@ function ensureProductBadgeTables() {
 
   db.prepare('CREATE INDEX IF NOT EXISTS idx_product_badges_product_id ON product_badges (product_id)').run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_product_badges_badge_def_id ON product_badges (badge_def_id)').run();
+
+  const badgeDefColumns = db.prepare('PRAGMA table_info(product_badge_defs)').all();
+  const hasColorTheme = badgeDefColumns.some((column) => column.name === 'color_theme');
+  if (!hasColorTheme) {
+    db.prepare("ALTER TABLE product_badge_defs ADD COLUMN color_theme TEXT NOT NULL DEFAULT 'slate'").run();
+  }
+
+  db.prepare(
+    `
+      UPDATE product_badge_defs
+      SET color_theme = 'slate'
+      WHERE color_theme IS NULL OR TRIM(color_theme) = ''
+    `
+  ).run();
+
+  const applyDefaultColorTheme = db.prepare(
+    `
+      UPDATE product_badge_defs
+      SET color_theme = ?
+      WHERE code = ?
+        AND (color_theme IS NULL OR TRIM(color_theme) = '' OR LOWER(TRIM(color_theme)) = 'slate')
+    `
+  );
+  applyDefaultColorTheme.run('red', 'domestic-stock');
+  applyDefaultColorTheme.run('blue', 'same-day-dispatch');
+  applyDefaultColorTheme.run('green', 'made-to-order');
 }
 
 function seedDefaultProductBadgesOnce() {
@@ -457,18 +484,18 @@ function seedDefaultProductBadgesOnce() {
   const countRow = db.prepare('SELECT COUNT(*) AS count FROM product_badge_defs').get();
   if (Number(countRow?.count || 0) === 0) {
     const defaults = [
-      { code: 'domestic-stock', labelKo: '국내재고', labelEn: 'Domestic Stock' },
-      { code: 'same-day-dispatch', labelKo: '당일발송', labelEn: 'Same-Day Dispatch' },
-      { code: 'made-to-order', labelKo: '주문제작', labelEn: 'Made to Order' }
+      { code: 'domestic-stock', labelKo: '국내재고', labelEn: 'Domestic Stock', colorTheme: 'red' },
+      { code: 'same-day-dispatch', labelKo: '당일발송', labelEn: 'Same-Day Dispatch', colorTheme: 'blue' },
+      { code: 'made-to-order', labelKo: '주문제작', labelEn: 'Made to Order', colorTheme: 'green' }
     ];
     const insert = db.prepare(
       `
-        INSERT INTO product_badge_defs (code, label_ko, label_en, sort_order, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
+        INSERT INTO product_badge_defs (code, label_ko, label_en, color_theme, sort_order, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
       `
     );
     defaults.forEach((item, index) => {
-      insert.run(item.code, item.labelKo, item.labelEn, index + 1);
+      insert.run(item.code, item.labelKo, item.labelEn, item.colorTheme, index + 1);
     });
   }
 
