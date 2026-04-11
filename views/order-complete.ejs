@@ -4,6 +4,7 @@
 <% const pointAwarded = Number(awardedPoints || 0); %>
 <% const pointExpected = Number(expectedPoints || 0); %>
 <% const memberOrder = Boolean(isMemberOrder); %>
+<% const trackingLookupUrl = order.tracking_number ? `https://tracker.delivery/#/${encodeURIComponent(order.tracking_carrier || 'kr.cjlogistics')}/${encodeURIComponent(order.tracking_number)}` : ''; %>
 
 <section class="block-card narrow">
   <h2><%= ctx.t('orderComplete') %></h2>
@@ -39,6 +40,10 @@
       </small>
     </p>
     <p><%= isEn ? 'Order Status' : '주문상태' %>: <strong><%= statusMeta.label %></strong> <%= statusMeta.detail ? `(${statusMeta.detail})` : '' %></p>
+    <% if (order.tracking_number) { %>
+      <p><%= isEn ? 'Tracking No.' : '송장번호' %>: <strong><%= order.tracking_number %></strong></p>
+      <a href="<%= trackingLookupUrl %>" class="chip" target="_blank" rel="noreferrer"><%= isEn ? 'Track Package' : '송장 조회' %></a>
+    <% } %>
   </div>
 
   <div class="notice-box">

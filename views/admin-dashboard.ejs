@@ -32,7 +32,7 @@
     { key: 'all', labelKo: '전체', labelEn: 'All' },
     { key: 'PENDING_REVIEW', labelKo: '입금확인중', labelEn: 'Awaiting Payment' },
     { key: 'ORDER_CONFIRMED', labelKo: '입금확인', labelEn: 'Payment Confirmed' },
-    { key: 'READY_TO_SHIP', labelKo: '출고중', labelEn: 'Preparing Shipment' },
+    { key: 'READY_TO_SHIP', labelKo: '출고완료', labelEn: 'Shipment Complete' },
     { key: 'SHIPPING', labelKo: '배송중', labelEn: 'Shipping' },
     { key: 'DELIVERED', labelKo: '배송완료', labelEn: 'Delivered' }
   ];
@@ -267,7 +267,7 @@
           <ul class="metric-list">
             <li><span><%= isEn ? 'Awaiting Payment Verification' : '입금확인중 주문건' %></span><strong data-order-value="pendingReview"><%= defaultOrderGroup.pendingReview %></strong></li>
             <li><span><%= isEn ? 'Payment Confirmed' : '입금확인 주문건' %></span><strong data-order-value="confirmed"><%= defaultOrderGroup.confirmed %></strong></li>
-            <li><span><%= isEn ? 'Preparing Shipment' : '출고중 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
+            <li><span><%= isEn ? 'Shipment Complete' : '출고완료 주문건' %></span><strong data-order-value="readyToShip"><%= defaultOrderGroup.readyToShip %></strong></li>
             <li><span><%= isEn ? 'Shipping' : '배송중 주문건' %></span><strong data-order-value="shipping"><%= defaultOrderGroup.shipping %></strong></li>
             <li><span><%= isEn ? 'Delivered' : '배송완료 주문건' %></span><strong data-order-value="delivered"><%= defaultOrderGroup.delivered %></strong></li>
           </ul>
@@ -291,7 +291,7 @@
           <ul class="metric-list">
             <li><span><%= isEn ? 'Awaiting Payment 24h+' : '입금확인중 24시간+' %></span><strong><%= Number(stats.delayWarnings.pendingOver24h || 0).toLocaleString() %></strong></li>
             <li><span><%= isEn ? 'Payment Confirmed 48h+' : '입금확인 후 48시간+' %></span><strong><%= Number(stats.delayWarnings.confirmedOver48h || 0).toLocaleString() %></strong></li>
-            <li><span><%= isEn ? 'Ready 72h+' : '출고중 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
+            <li><span><%= isEn ? 'Shipment Complete 72h+' : '출고완료 72시간+' %></span><strong><%= Number(stats.delayWarnings.readyOver72h || 0).toLocaleString() %></strong></li>
             <li><span><%= isEn ? 'Shipping 7d+' : '배송중 7일+' %></span><strong><%= Number(stats.delayWarnings.shippingOver7d || 0).toLocaleString() %></strong></li>
           </ul>
         </div>
@@ -3031,7 +3031,7 @@
   <% if (tab === 'orders') { %>
   <article class="block-card">
     <h3><%= isEn ? 'Order Management' : '주문관리' %></h3>
-    <p class="muted-label"><%= isEn ? 'Flow: Awaiting Payment Verification -> Payment Confirmed -> Preparing Shipment -> Shipping (Tracking Auto Sync) -> Delivered(auto)' : '프로세스: 입금확인중 -> 입금확인 -> 출고중 -> 배송중(송장 자동조회) -> 배송완료(자동)' %></p>
+    <p class="muted-label"><%= isEn ? 'Flow: Awaiting Payment Verification -> Payment Confirmed/Preparing Shipment -> Shipment Complete/Shipping -> Delivered(auto)' : '프로세스: 입금확인중 -> 입금확인/출고중 -> 출고완료/배송중 -> 배송완료(자동)' %></p>
     <div class="admin-order-toolbar">
       <span class="muted-label"><%= isEn ? 'Category Filter' : '쇼핑몰 분류' %></span>
       <div class="chip-row admin-order-filter-row">
@@ -3108,7 +3108,7 @@
                       <li><small><%= isEn ? 'Payment Confirmed' : '입금확인' %> · <%= item.checked_at.slice(0, 16) %></small></li>
                     <% } %>
                     <% if (item.ready_to_ship_at) { %>
-                      <li><small><%= isEn ? 'Preparing Shipment' : '출고중' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
+                      <li><small><%= isEn ? 'Shipment Complete' : '출고완료' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
                     <% } %>
                     <% if (item.shipping_started_at) { %>
                       <li><small><%= isEn ? 'Shipping Started' : '배송시작' %> · <%= item.shipping_started_at.slice(0, 16) %></small></li>
@@ -3150,7 +3150,7 @@
                     </form>
                   <% } else if (item.status_code === 'ORDER_CONFIRMED') { %>
                     <form method="post" action="/admin/order/<%= item.id %>/ready" class="inline-form">
-                      <button type="submit" class="chip dark"><%= isEn ? 'Mark Preparing' : '출고중 처리' %></button>
+                      <button type="submit" class="chip dark"><%= isEn ? 'Mark Shipment Complete' : '출고완료 처리' %></button>
                     </form>
                   <% } else if (item.status_code === 'READY_TO_SHIP') { %>
                     <form method="post" action="/admin/order/<%= item.id %>/start-shipping" class="form-grid compact">

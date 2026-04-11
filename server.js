@@ -2015,9 +2015,10 @@ function normalizeOrderStatus(rawStatus = '') {
   return ORDER_STATUS.PENDING_REVIEW;
 }
 
-function getOrderStatusMeta(rawStatus, lang = 'ko') {
+function getOrderStatusMeta(rawStatus, lang = 'ko', audience = 'admin') {
   const status = normalizeOrderStatus(rawStatus);
   const isEn = lang === 'en';
+  const isMemberView = String(audience || '').trim().toLowerCase() === 'member';
 
   if (status === ORDER_STATUS.PENDING_REVIEW) {
     return {
@@ -2028,6 +2029,13 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
   }
 
   if (status === ORDER_STATUS.ORDER_CONFIRMED) {
+    if (isMemberView) {
+      return {
+        code: status,
+        label: isEn ? 'Payment Confirmed / Preparing Shipment' : '입금확인 / 출고중',
+        detail: ''
+      };
+    }
     return {
       code: status,
       label: isEn ? 'Payment Confirmed' : '입금확인',
@@ -2036,14 +2044,28 @@ function getOrderStatusMeta(rawStatus, lang = 'ko') {
   }
 
   if (status === ORDER_STATUS.READY_TO_SHIP) {
+    if (isMemberView) {
+      return {
+        code: ORDER_STATUS.SHIPPING,
+        label: isEn ? 'Shipment Complete / Shipping' : '출고완료 / 배송중',
+        detail: ''
+      };
+    }
     return {
       code: status,
-      label: isEn ? 'Preparing Shipment' : '출고중',
+      label: isEn ? 'Shipment Complete' : '출고완료',
       detail: ''
     };
   }
 
   if (status === ORDER_STATUS.SHIPPING) {
+    if (isMemberView) {
+      return {
+        code: status,
+        label: isEn ? 'Shipment Complete / Shipping' : '출고완료 / 배송중',
+        detail: ''
+      };
+    }
     return {
       code: status,
       label: isEn ? 'Shipping' : '배송중',
@@ -2071,7 +2093,7 @@ function getNextOrderActionLabel(rawStatus, lang = 'ko') {
   const current = normalizeOrderStatus(rawStatus);
   const isEn = lang === 'en';
   if (current === ORDER_STATUS.PENDING_REVIEW) return isEn ? 'Confirm Payment' : '입금확인';
-  if (current === ORDER_STATUS.ORDER_CONFIRMED) return isEn ? 'Mark Preparing Shipment' : '출고중 처리';
+  if (current === ORDER_STATUS.ORDER_CONFIRMED) return isEn ? 'Mark Shipment Complete' : '출고완료 처리';
   if (current === ORDER_STATUS.READY_TO_SHIP) return isEn ? 'Register Tracking & Start Shipping' : '송장등록(배송시작)';
   return '';
 }
@@ -6418,7 +6440,7 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '주문을 찾을 수 없습니다.' });
   }
 
-  const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
+  const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang, 'member');
   const isMemberOrder = Number(order.created_by_user_id || 0) > 0;
   const purchasePointRate = isMemberOrder
     ? parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting())
@@ -6558,7 +6580,7 @@ app.get('/mypage', requireAuth, (req, res) => {
   }
 
   const orders = baseOrders.map((order) => {
-    const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang);
+    const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang, 'member');
     const latestLog = latestLogMap.get(Number(order.id)) || { event_note: '', created_at: '' };
     return {
       ...order,
@@ -12225,7 +12247,7 @@ app.post('/admin/order/:id/ready', requireAdmin, (req, res) => {
 
   const current = normalizeOrderStatus(order.status);
   if (current !== ORDER_STATUS.ORDER_CONFIRMED) {
-    setFlash(req, 'error', '입금확인 상태에서만 출고중 처리할 수 있습니다.');
+    setFlash(req, 'error', '입금확인 상태에서만 출고완료 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
@@ -12244,7 +12266,7 @@ app.post('/admin/order/:id/ready', requireAdmin, (req, res) => {
 
   appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.ORDER_CONFIRMED, ORDER_STATUS.READY_TO_SHIP, 'admin:ready');
 
-  setFlash(req, 'success', '출고중 상태로 변경되었습니다.');
+  setFlash(req, 'success', '출고완료 처리되었습니다.');
   return res.redirect(backPath);
 });
 
@@ -12260,7 +12282,7 @@ app.post('/admin/order/:id/start-shipping', requireAdmin, (req, res) => {
 
   const current = normalizeOrderStatus(order.status);
   if (current !== ORDER_STATUS.READY_TO_SHIP) {
-    setFlash(req, 'error', '출고중 상태에서만 송장등록(배송시작) 처리할 수 있습니다.');
+    setFlash(req, 'error', '출고완료 상태에서만 송장등록(배송시작) 처리할 수 있습니다.');
     return res.redirect(backPath);
   }
 
