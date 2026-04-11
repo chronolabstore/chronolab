@@ -691,6 +691,16 @@
                         aria-expanded="false"
                         aria-controls="admin-editor-<%= adminItem.id %>"
                       ><%= isEn ? 'Edit' : '수정' %></button>
+                      <% if (adminItem.otp_enabled) { %>
+                        <form
+                          method="post"
+                          action="/admin/security/admin/<%= adminItem.id %>/otp-reset"
+                          class="inline-form"
+                          onsubmit="return confirm('<%= isEn ? 'Reset OTP for this admin?' : '이 관리자 계정의 OTP를 초기화할까요?' %>');"
+                        >
+                          <button type="submit" class="chip"><%= isEn ? 'OTP Reset' : 'OTP 초기화' %></button>
+                        </form>
+                      <% } %>
                       <% if (!adminItem.is_primary && Number(adminItem.id) !== Number(ctx.currentUser.id)) { %>
                         <form method="post" action="/admin/security/admin/<%= adminItem.id %>/delete" class="inline-form">
                           <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
@@ -702,6 +712,7 @@
                   <div class="admin-account-editor" id="admin-editor-<%= adminItem.id %>">
                     <div class="admin-account-meta">
                       <small><%= isEn ? 'Role' : '권한' %>: <%= adminItem.admin_role_label %></small>
+                      <small><%= isEn ? 'OTP' : 'OTP' %>: <%= adminItem.otp_enabled ? (isEn ? 'Enabled' : '활성화') : (isEn ? 'Disabled' : '비활성화') %></small>
                       <small><%= isEn ? 'Created' : '생성일' %>: <%= adminItem.created_at ? adminItem.created_at.slice(0, 16) : '-' %></small>
                       <small><%= isEn ? 'Last Login' : '최근 로그인' %>: <%= adminItem.last_login_at ? adminItem.last_login_at.slice(0, 16) : '-' %></small>
                     </div>

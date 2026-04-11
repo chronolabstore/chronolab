@@ -1,0 +1,31 @@
+<%- include('partials/layout-start') %>
+<% const isEn = ctx.lang === 'en'; %>
+
+<section class="auth-wrap">
+  <div class="auth-card">
+    <h2><%= isEn ? 'Admin OTP Verification' : '어드민 OTP 인증' %></h2>
+    <p class="muted-label">
+      <%= isEn ? 'Account' : '계정' %>: <strong><%= pending?.username || '-' %></strong>
+    </p>
+    <form method="post" action="/admin/otp/verify" class="form-grid">
+      <label>
+        <%= isEn ? '6-digit OTP Code' : '6자리 OTP 코드' %>
+        <input
+          type="text"
+          name="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          autocomplete="one-time-code"
+          required
+        />
+      </label>
+      <button type="submit" class="cta-main"><%= isEn ? 'Verify and Login' : '인증 후 로그인' %></button>
+    </form>
+    <p class="muted-label">
+      <a href="/admin/login"><%= isEn ? 'Back to admin login' : '관리자 로그인으로 돌아가기' %></a>
+    </p>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

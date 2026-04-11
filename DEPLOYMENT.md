@@ -50,6 +50,7 @@ SMTP_SECURE=false
 SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
+ADMIN_OTP_ISSUER=Chrono LAB
 ENV
 
 sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chronolab/.env

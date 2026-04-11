@@ -1,0 +1,89 @@
+<%- include('partials/layout-start') %>
+<% const isEn = ctx.lang === 'en'; %>
+<%
+  const otpEnabled = Boolean(otpState?.enabled);
+  const hasSetupSecret = String(otpState?.setupSecret || '').trim().length > 0;
+%>
+
+<section class="auth-wrap">
+  <div class="auth-card auth-card-wide">
+    <h2><%= isEn ? 'Admin OTP Setup' : '어드민 OTP 설정' %></h2>
+    <p class="muted-label">
+      <%= isEn
+        ? 'Connect Google Authenticator to strengthen admin login security.'
+        : '구글 OTP(Authenticator)를 연동해 관리자 로그인 보안을 강화할 수 있습니다.' %>
+    </p>
+
+    <div class="auth-result-card">
+      <h3><%= isEn ? 'Current Status' : '현재 상태' %></h3>
+      <p class="auth-found-account">
+        <strong><%= otpEnabled ? (isEn ? 'Enabled' : '활성화됨') : (isEn ? 'Disabled' : '비활성화') %></strong>
+      </p>
+      <% if (otpEnabled && otpState?.enabledAt) { %>
+        <small class="muted-label"><%= isEn ? 'Enabled at' : '활성화 시각' %>: <%= otpState.enabledAt %></small>
+      <% } %>
+    </div>
+
+    <% if (!otpEnabled && !hasSetupSecret) { %>
+      <form method="post" action="/admin/otp/setup/start" class="form-grid">
+        <button type="submit" class="cta-main"><%= isEn ? 'Start OTP Setup' : 'OTP 설정 시작' %></button>
+      </form>
+    <% } %>
+
+    <% if (!otpEnabled && hasSetupSecret) { %>
+      <hr class="auth-divider" />
+      <h3><%= isEn ? 'Step 1. Register this key in Google Authenticator' : '1단계. 구글 OTP 앱에 아래 키 등록' %></h3>
+      <p class="muted-label">
+        <%= isEn
+          ? 'Open Google Authenticator -> Add account -> Enter a setup key, then paste the key below.'
+          : 'Google Authenticator 앱에서 계정 추가 -> 설정 키 입력을 선택한 뒤 아래 키를 입력하세요.' %>
+      </p>
+      <div class="form-grid">
+        <label>
+          <%= isEn ? 'Setup Key (secret)' : '설정 키 (Secret)' %>
+          <input type="text" value="<%= otpState.setupSecret %>" readonly onclick="this.select();" />
+        </label>
+        <label>
+          <%= isEn ? 'OTP URI (optional)' : 'OTP URI (선택)' %>
+          <input type="text" value="<%= otpState.setupUri %>" readonly onclick="this.select();" />
+        </label>
+      </div>
+
+      <h3><%= isEn ? 'Step 2. Enter 6-digit OTP code' : '2단계. 생성된 6자리 OTP 입력' %></h3>
+      <form method="post" action="/admin/otp/setup/confirm" class="form-grid">
+        <label>
+          <%= isEn ? '6-digit OTP Code' : '6자리 OTP 코드' %>
+          <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />
+        </label>
+        <button type="submit" class="cta-main"><%= isEn ? 'Enable OTP' : 'OTP 활성화' %></button>
+      </form>
+
+      <form method="post" action="/admin/otp/setup/cancel" class="form-grid">
+        <button type="submit" class="chip"><%= isEn ? 'Cancel Setup' : '설정 취소' %></button>
+      </form>
+    <% } %>
+
+    <% if (otpEnabled) { %>
+      <hr class="auth-divider" />
+      <h3><%= isEn ? 'Disable OTP' : 'OTP 해제' %></h3>
+      <p class="muted-label">
+        <%= isEn
+          ? 'For safety, enter your current password and current OTP code to disable.'
+          : '안전을 위해 현재 비밀번호와 현재 OTP 코드를 함께 입력해야 해제됩니다.' %>
+      </p>
+      <form method="post" action="/admin/otp/disable" class="form-grid">
+        <label>
+          <%= isEn ? 'Current Password' : '현재 비밀번호' %>
+          <input type="password" name="currentPassword" autocomplete="current-password" required />
+        </label>
+        <label>
+          <%= isEn ? 'Current 6-digit OTP Code' : '현재 6자리 OTP 코드' %>
+          <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required />
+        </label>
+        <button type="submit" class="chip"><%= isEn ? 'Disable OTP' : 'OTP 해제' %></button>
+      </form>
+    <% } %>
+  </div>
+</section>
+
+<%- include('partials/layout-end') %>

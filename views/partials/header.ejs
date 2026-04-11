@@ -53,6 +53,9 @@
       <% if (ctx.currentUser) { %>
         <% if (ctx.currentUser.isAdmin) { %>
           <% if (ctx.isAdminPage) { %>
+            <% if (!ctx.currentUser.isAdminOtpEnabled) { %>
+              <a href="/admin/otp" class="chip"><%= ctx.lang === 'en' ? 'OTP' : 'OTP 설정' %></a>
+            <% } %>
             <a href="/admin/logout" class="chip"><%= ctx.lang === 'en' ? 'Admin Logout' : '어드민 로그아웃' %></a>
           <% } else { %>
             <span class="chip muted"><%= ctx.currentUser.username %></span>
