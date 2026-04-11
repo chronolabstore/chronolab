@@ -1621,7 +1621,7 @@
     <% if (menusTab === 'groups') { %>
       <div class="menu-manage-stack">
         <p class="muted-label menu-manage-note">
-          <%= isEn ? 'Add or remove shop top categories. Category filter settings are managed in the Category Filters tab.' : '쇼핑몰 상위 분류를 추가/삭제할 수 있습니다. 브랜드/공장 필터는 분류 필터 탭에서 관리합니다.' %>
+          <%= isEn ? 'Add or remove shop top categories. Category filter settings are managed in the Category Filters tab.' : '쇼핑몰 상위 분류를 추가/삭제할 수 있습니다. 브랜드/공장/모델 필터는 분류 필터 탭에서 관리합니다.' %>
         </p>
         <form method="post" action="/admin/product-group/add" class="form-grid menu-manage-form">
           <label><%= isEn ? 'Category Key (optional)' : '분류 키 (선택)' %>
@@ -1668,7 +1668,7 @@
     <% if (menusTab === 'group-filters') { %>
       <div class="menu-manage-stack">
         <p class="muted-label menu-manage-note">
-          <%= isEn ? 'Manage category-level brand/factory filters used by shop search and product upload dropdowns.' : '쇼핑몰 검색 필터와 상품 업로드 드롭다운에서 사용할 분류별 브랜드/공장 필터를 관리합니다.' %>
+          <%= isEn ? 'Manage category-level brand/factory/model filters used by shop search and product upload dropdowns.' : '쇼핑몰 검색 필터와 상품 업로드 드롭다운에서 사용할 분류별 브랜드/공장/모델 필터를 관리합니다.' %>
         </p>
 
         <div class="admin-list menu-manage-list">
@@ -1676,6 +1676,7 @@
             <%
               const brandFilters = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const factoryFilters = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
+              const modelFilters = Array.isArray(group.modelOptions) ? group.modelOptions : [];
               const supportsFactoryFilterGroup =
                 String(group.key || '').trim() === '공장제' ||
                 String(group.key || '').trim() === '현지중고' ||
@@ -1689,7 +1690,7 @@
                 </div>
               </div>
 
-              <div class="admin-grid two-col">
+              <div class="admin-grid two-col menu-group-filter-grid">
                 <section class="kpi-card">
                   <h4><%= isEn ? 'Brand Filters' : '브랜드 필터' %></h4>
                   <% if (brandFilters.length === 0) { %>
@@ -1704,7 +1705,7 @@
                               <input type="hidden" name="groupKey" value="<%= group.key %>" />
                               <input type="hidden" name="filterType" value="brand" />
                               <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                              <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                              <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
                             </form>
                           </div>
                         </div>
@@ -1718,7 +1719,7 @@
                     <label><%= isEn ? 'Add Brand Option' : '브랜드 옵션 추가' %>
                       <input type="text" name="optionValue" required />
                     </label>
-                    <button type="submit" class="chip dark"><%= isEn ? 'Add Brand' : '브랜드 추가' %></button>
+                    <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Brand' : '브랜드 추가' %></button>
                   </form>
                 </section>
 
@@ -1737,7 +1738,7 @@
                                 <input type="hidden" name="groupKey" value="<%= group.key %>" />
                                 <input type="hidden" name="filterType" value="factory" />
                                 <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
                               </form>
                             </div>
                           </div>
@@ -1751,10 +1752,42 @@
                       <label><%= isEn ? 'Add Factory Option' : '공장 옵션 추가' %>
                         <input type="text" name="optionValue" required />
                       </label>
-                      <button type="submit" class="chip dark"><%= isEn ? 'Add Factory' : '공장 추가' %></button>
+                      <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Factory' : '공장 추가' %></button>
                     </form>
                   </section>
                 <% } %>
+
+                <section class="kpi-card">
+                  <h4><%= isEn ? 'Model Filters' : '모델 필터' %></h4>
+                  <% if (modelFilters.length === 0) { %>
+                    <p class="muted-label"><%= isEn ? 'No model filter options yet.' : '등록된 모델 필터가 없습니다.' %></p>
+                  <% } else { %>
+                    <div class="admin-list">
+                      <% modelFilters.forEach((optionValue) => { %>
+                        <div class="admin-list-item">
+                          <div class="menu-manage-item-row">
+                            <strong><%= optionValue %></strong>
+                            <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                              <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                              <input type="hidden" name="filterType" value="model" />
+                              <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                              <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                            </form>
+                          </div>
+                        </div>
+                      <% }) %>
+                    </div>
+                  <% } %>
+
+                  <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
+                    <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                    <input type="hidden" name="filterType" value="model" />
+                    <label><%= isEn ? 'Add Model Option' : '모델 옵션 추가' %>
+                      <input type="text" name="optionValue" required />
+                    </label>
+                    <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Model' : '모델 추가' %></button>
+                  </form>
+                </section>
               </div>
             </div>
           <% }) %>
@@ -1995,7 +2028,7 @@
           <h4><%= isEn ? 'Upload Category' : '업로드 분류 선택' %></h4>
           <div class="chip-row" data-admin-product-group-btn-wrap>
             <% productGroupKeys.forEach((groupName) => { %>
-              <button type="button" class="chip <%= uploadActiveGroupKey === groupName ? 'dark' : '' %>" data-admin-product-group-btn="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
+              <button type="button" class="chip filter-chip <%= uploadActiveGroupKey === groupName ? 'dark' : '' %>" data-admin-product-group-btn="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
             <% }) %>
           </div>
         </div>
@@ -2008,6 +2041,7 @@
             <%
               const groupBrandOptions = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const groupFactoryOptions = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
+              const groupModelOptions = Array.isArray(group.modelOptions) ? group.modelOptions : [];
               const supportsFactorySelectionGroup =
                 String(group.mode || '').toLowerCase() === 'factory' ||
                 String(group.key || '').trim() === '공장제' ||
@@ -2017,6 +2051,8 @@
                 editingItem && editingItem.category_group === group.key ? String(editingItem.brand || '').trim() : '';
               const editFactoryValue =
                 editingItem && editingItem.category_group === group.key ? String(editingItem.factory_name || '').trim() : '';
+              const editModelValue =
+                editingItem && editingItem.category_group === group.key ? String(editingItem.model || '').trim() : '';
               const resolvedBrandOptions = (() => {
                 const list = [];
                 const seen = new Set();
@@ -2043,6 +2079,20 @@
                 });
                 return list;
               })();
+              const resolvedModelOptions = (() => {
+                const list = [];
+                const seen = new Set();
+                [...groupModelOptions, editModelValue].forEach((value) => {
+                  const safeValue = String(value || '').trim();
+                  if (!safeValue) return;
+                  const dedupeKey = safeValue.toLowerCase();
+                  if (seen.has(dedupeKey)) return;
+                  seen.add(dedupeKey);
+                  list.push(safeValue);
+                });
+                return list;
+              })();
+              const shouldUseModelSelect = resolvedModelOptions.length > 0;
             %>
             <label>
               <%= isEn ? 'Brand Filter' : '브랜드 필터' %>
@@ -2076,13 +2126,28 @@
               </label>
             <% } %>
 
+            <label>
+              <%= isEn ? 'Model Filter' : '모델 필터' %>
+              <select
+                name="selectedModelOption"
+                data-admin-field-input
+                data-group="<%= group.key %>"
+                data-required="<%= shouldUseModelSelect ? '1' : '0' %>"
+              >
+                <option value=""><%= shouldUseModelSelect ? (isEn ? 'Select Model' : '모델 선택') : (isEn ? 'No model options' : '등록된 모델 옵션 없음') %></option>
+                <% resolvedModelOptions.forEach((optionValue) => { %>
+                  <option value="<%= optionValue %>" <%= editModelValue === optionValue ? 'selected' : '' %>><%= optionValue %></option>
+                <% }) %>
+              </select>
+            </label>
+
             <% if (!group.customFields || group.customFields.length === 0) { %>
               <p class="muted-label"><%= isEn ? 'No fields configured. Add fields in Menu Manager.' : '설정된 업로드 항목이 없습니다. 메뉴관리에서 항목을 추가해 주세요.' %></p>
             <% } %>
             <% (group.customFields || []).forEach((field) => { %>
               <%
                 const key = field.key;
-                if (key === 'brand' || key === 'factory_name') {
+                if (key === 'brand' || key === 'factory_name' || (key === 'model' && shouldUseModelSelect)) {
                   return;
                 }
                 const value =
