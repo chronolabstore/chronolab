@@ -3414,7 +3414,10 @@ body.theme-night .sales-computed-cell.is-negative {
 }
 
 .order-table-wrap {
-  overflow-x: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
 .address-book-save-box {
@@ -3438,7 +3441,7 @@ table {
 
 .mypage-order-table {
   width: 100%;
-  min-width: 0;
+  min-width: 980px;
   table-layout: fixed;
 }
 
@@ -3461,6 +3464,7 @@ table {
 .mypage-order-table th,
 .mypage-order-table td {
   padding: 8px 7px;
+  vertical-align: middle;
 }
 
 .mypage-order-table th {
