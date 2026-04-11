@@ -830,7 +830,13 @@
                   <tr>
                     <td><%= log.created_at ? log.created_at.slice(0, 16) : '-' %></td>
                     <td><%= log.admin_username %></td>
-                    <td><%= log.ip_address || '-' %></td>
+                    <td>
+                      <%= log.ip_address || '-' %>
+                      <% if (log.ip_location) { %>
+                        <br />
+                        <small class="muted-label"><%= log.ip_location %></small>
+                      <% } %>
+                    </td>
                     <td><%= log.user_agent || '-' %></td>
                     <td><%= log.method %> <%= log.path %></td>
                     <td><%= log.action_type %></td>
@@ -911,7 +917,13 @@
                   <tr>
                     <td><%= alert.created_at ? alert.created_at.slice(0, 16) : '-' %></td>
                     <td><%= alert.actor_username %></td>
-                    <td><%= alert.ip_address || '-' %></td>
+                    <td>
+                      <%= alert.ip_address || '-' %>
+                      <% if (alert.ip_location) { %>
+                        <br />
+                        <small class="muted-label"><%= alert.ip_location %></small>
+                      <% } %>
+                    </td>
                     <td><%= alert.method %> <%= alert.path %></td>
                     <td><%= alert.reason_label || alert.reason %><br /><small><%= alert.detail || '-' %></small></td>
                     <td>

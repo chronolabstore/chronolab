@@ -127,6 +127,19 @@ const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels']);
 const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'level-rates']);
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
+const DEFAULT_IP_GEO_CACHE_TTL_HOURS = 24 * 30;
+const DEFAULT_IP_GEO_LOOKUP_TIMEOUT_MS = 1800;
+const DEFAULT_IP_GEO_MAX_LOOKUP_PER_RENDER = 8;
+const IP_GEO_CACHE_TTL_HOURS = Number.isFinite(Number(process.env.IP_GEO_CACHE_TTL_HOURS))
+  ? Math.max(1, Number(process.env.IP_GEO_CACHE_TTL_HOURS))
+  : DEFAULT_IP_GEO_CACHE_TTL_HOURS;
+const IP_GEO_LOOKUP_TIMEOUT_MS = Number.isFinite(Number(process.env.IP_GEO_LOOKUP_TIMEOUT_MS))
+  ? Math.max(700, Number(process.env.IP_GEO_LOOKUP_TIMEOUT_MS))
+  : DEFAULT_IP_GEO_LOOKUP_TIMEOUT_MS;
+const IP_GEO_MAX_LOOKUP_PER_RENDER = Number.isFinite(Number(process.env.IP_GEO_MAX_LOOKUP_PER_RENDER))
+  ? Math.max(1, Number(process.env.IP_GEO_MAX_LOOKUP_PER_RENDER))
+  : DEFAULT_IP_GEO_MAX_LOOKUP_PER_RENDER;
+const ipGeoLookupInFlight = new Map();
 const DATE_INPUT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 const PRODUCT_GROUP_MODE = Object.freeze({
@@ -2691,14 +2704,369 @@ function inferSecuritySectionFromRequest(req) {
   return 'profile';
 }
 
+function normalizeIpAddress(rawIp = '') {
+  const candidate = Array.isArray(rawIp)
+    ? String(rawIp[0] || '').trim()
+    : String(rawIp || '').split(',')[0].trim();
+  if (!candidate) {
+    return '';
+  }
+  if (candidate.startsWith('::ffff:')) {
+    return candidate.slice('::ffff:'.length).trim();
+  }
+  return candidate;
+}
+
+function isPublicIpAddress(ipAddress = '') {
+  const ip = normalizeIpAddress(ipAddress).toLowerCase();
+  if (!ip || ip === 'unknown' || ip === 'localhost') {
+    return false;
+  }
+
+  if (ip.includes(':')) {
+    if (ip === '::' || ip === '::1') {
+      return false;
+    }
+    if (ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) {
+      return false;
+    }
+    return true;
+  }
+
+  const octets = ip.split('.').map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
+
+  const [a, b] = octets;
+  if (a === 10 || a === 127 || a === 0) {
+    return false;
+  }
+  if (a === 169 && b === 254) {
+    return false;
+  }
+  if (a === 172 && b >= 16 && b <= 31) {
+    return false;
+  }
+  if (a === 192 && b === 168) {
+    return false;
+  }
+  if (a === 100 && b >= 64 && b <= 127) {
+    return false;
+  }
+  if (a >= 224) {
+    return false;
+  }
+  return true;
+}
+
+function parseSqliteUtcToMs(rawValue = '') {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value.replace(' ', 'T') + 'Z');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isIpGeoCacheFresh(cacheRow = null) {
+  if (!cacheRow) {
+    return false;
+  }
+  const updatedAtMs = parseSqliteUtcToMs(cacheRow.updated_at || '');
+  if (!updatedAtMs) {
+    return false;
+  }
+  return Date.now() - updatedAtMs <= IP_GEO_CACHE_TTL_HOURS * 60 * 60 * 1000;
+}
+
+function formatIpLocationDisplay(rawLocation = {}) {
+  const country = String(rawLocation.country || '').trim();
+  const region = String(rawLocation.region || '').trim();
+  const city = String(rawLocation.city || '').trim();
+  const district = String(rawLocation.district || '').trim();
+  const postalCode = String(rawLocation.postalCode || rawLocation.postal_code || '').trim();
+
+  const parts = [country, region, city, district].filter(Boolean);
+  const uniqueParts = parts.filter((value, index) => parts.indexOf(value) === index);
+  if (postalCode && !uniqueParts.includes(postalCode)) {
+    uniqueParts.push(postalCode);
+  }
+  return uniqueParts.join(' / ').slice(0, 200);
+}
+
+function getIpGeoCacheMapByIps(ipList = []) {
+  const normalizedIps = Array.from(
+    new Set(
+      (Array.isArray(ipList) ? ipList : [])
+        .map((value) => normalizeIpAddress(value))
+        .filter(Boolean)
+    )
+  );
+  if (normalizedIps.length === 0) {
+    return new Map();
+  }
+
+  const placeholders = normalizedIps.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          ip_address,
+          country,
+          region,
+          city,
+          district,
+          postal_code,
+          latitude,
+          longitude,
+          location_display,
+          source,
+          updated_at
+        FROM ip_geolocation_cache
+        WHERE ip_address IN (${placeholders})
+      `
+    )
+    .all(...normalizedIps);
+
+  const cacheMap = new Map();
+  for (const row of rows) {
+    const normalizedIp = normalizeIpAddress(row.ip_address || '');
+    if (!normalizedIp) {
+      continue;
+    }
+    cacheMap.set(normalizedIp, row);
+  }
+  return cacheMap;
+}
+
+function upsertIpGeoCache(ipAddress, geoData = {}) {
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  if (!normalizedIp) {
+    return;
+  }
+
+  const country = String(geoData.country || '').trim().slice(0, 80);
+  const region = String(geoData.region || '').trim().slice(0, 120);
+  const city = String(geoData.city || '').trim().slice(0, 120);
+  const district = String(geoData.district || '').trim().slice(0, 120);
+  const postalCode = String(geoData.postalCode || '').trim().slice(0, 40);
+  const latitude = Number.isFinite(Number(geoData.latitude)) ? Number(geoData.latitude) : null;
+  const longitude = Number.isFinite(Number(geoData.longitude)) ? Number(geoData.longitude) : null;
+  const source = String(geoData.source || '').trim().slice(0, 40);
+  const locationDisplay = String(geoData.locationDisplay || formatIpLocationDisplay({
+    country,
+    region,
+    city,
+    district,
+    postalCode
+  }))
+    .trim()
+    .slice(0, 200);
+
+  db.prepare(
+    `
+      INSERT INTO ip_geolocation_cache (
+        ip_address,
+        country,
+        region,
+        city,
+        district,
+        postal_code,
+        latitude,
+        longitude,
+        location_display,
+        source,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(ip_address) DO UPDATE SET
+        country = excluded.country,
+        region = excluded.region,
+        city = excluded.city,
+        district = excluded.district,
+        postal_code = excluded.postal_code,
+        latitude = excluded.latitude,
+        longitude = excluded.longitude,
+        location_display = excluded.location_display,
+        source = excluded.source,
+        updated_at = datetime('now')
+    `
+  ).run(
+    normalizedIp,
+    country,
+    region,
+    city,
+    district,
+    postalCode,
+    latitude,
+    longitude,
+    locationDisplay,
+    source
+  );
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = IP_GEO_LOOKUP_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`status:${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function lookupIpGeoFromIpApi(ipAddress) {
+  const url =
+    `http://ip-api.com/json/${encodeURIComponent(ipAddress)}` +
+    '?fields=status,message,country,regionName,city,district,zip,lat,lon,query';
+  const payload = await fetchJsonWithTimeout(url);
+  if (!payload || payload.status !== 'success') {
+    return null;
+  }
+  return {
+    country: String(payload.country || '').trim(),
+    region: String(payload.regionName || '').trim(),
+    city: String(payload.city || '').trim(),
+    district: String(payload.district || '').trim(),
+    postalCode: String(payload.zip || '').trim(),
+    latitude: payload.lat,
+    longitude: payload.lon,
+    source: 'ip-api'
+  };
+}
+
+async function lookupIpGeoFromIpWhoIs(ipAddress) {
+  const url = `https://ipwho.is/${encodeURIComponent(ipAddress)}`;
+  const payload = await fetchJsonWithTimeout(url);
+  if (!payload || payload.success !== true) {
+    return null;
+  }
+  return {
+    country: String(payload.country || '').trim(),
+    region: String(payload.region || '').trim(),
+    city: String(payload.city || '').trim(),
+    district: String(payload.district || '').trim(),
+    postalCode: String(payload.postal || '').trim(),
+    latitude: payload.latitude,
+    longitude: payload.longitude,
+    source: 'ipwho.is'
+  };
+}
+
+async function resolveIpGeolocation(ipAddress) {
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  if (!isPublicIpAddress(normalizedIp)) {
+    return null;
+  }
+
+  const providers = [lookupIpGeoFromIpApi, lookupIpGeoFromIpWhoIs];
+  for (const provider of providers) {
+    try {
+      const result = await provider(normalizedIp);
+      if (!result) {
+        continue;
+      }
+      const locationDisplay = formatIpLocationDisplay(result);
+      return {
+        ...result,
+        locationDisplay
+      };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function queueIpGeolocationLookup(ipAddress) {
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  if (!isPublicIpAddress(normalizedIp)) {
+    return;
+  }
+
+  if (ipGeoLookupInFlight.has(normalizedIp)) {
+    return;
+  }
+
+  const existingCache = db
+    .prepare(
+      `
+        SELECT ip_address, updated_at
+        FROM ip_geolocation_cache
+        WHERE ip_address = ?
+        LIMIT 1
+      `
+    )
+    .get(normalizedIp);
+  if (isIpGeoCacheFresh(existingCache)) {
+    return;
+  }
+
+  const task = (async () => {
+    const geoData = await resolveIpGeolocation(normalizedIp);
+    if (!geoData) {
+      return;
+    }
+    upsertIpGeoCache(normalizedIp, geoData);
+  })();
+
+  ipGeoLookupInFlight.set(normalizedIp, task);
+  task
+    .catch(() => {})
+    .finally(() => {
+      ipGeoLookupInFlight.delete(normalizedIp);
+    });
+}
+
+function getIpLocationLabel(ipAddress, cacheMap, lang = 'ko') {
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  if (!normalizedIp || normalizedIp === 'unknown') {
+    return '';
+  }
+
+  const cached = cacheMap.get(normalizedIp);
+  if (cached) {
+    const cachedLabel = String(cached.location_display || '').trim();
+    if (cachedLabel) {
+      return cachedLabel;
+    }
+    const fallbackLabel = formatIpLocationDisplay({
+      country: cached.country,
+      region: cached.region,
+      city: cached.city,
+      district: cached.district,
+      postalCode: cached.postal_code
+    });
+    if (fallbackLabel) {
+      return fallbackLabel;
+    }
+  }
+
+  if (!isPublicIpAddress(normalizedIp)) {
+    return lang === 'en' ? 'Local/Private IP' : '내부/사설 IP';
+  }
+  return lang === 'en' ? 'Resolving location...' : '위치 확인 중...';
+}
+
 function getClientIp(req) {
-  return String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim() || 'unknown';
+  const rawIp = req.headers['cf-connecting-ip'] || req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.ip || '';
+  return normalizeIpAddress(rawIp) || 'unknown';
 }
 
 function logAdminActivity(req, actionType, detail = '') {
   if (!req.user?.isAdmin) {
     return;
   }
+  const clientIp = getClientIp(req);
 
   db.prepare(
     `
@@ -2718,19 +3086,21 @@ function logAdminActivity(req, actionType, detail = '') {
     req.user.id,
     req.user.username,
     req.user.adminRole || '',
-    getClientIp(req),
+    clientIp,
     String(req.get('user-agent') || '').slice(0, 300),
     req.method,
     `${req.path}${req.url.includes('?') ? req.url.slice(req.path.length) : ''}`.slice(0, 300),
     String(actionType || '').slice(0, 80),
     String(detail || '').slice(0, 300)
   );
+  queueIpGeolocationLookup(clientIp);
 }
 
 function logAdminActivityByUser(userRow, req, actionType, detail = '') {
   if (!userRow) {
     return;
   }
+  const clientIp = getClientIp(req);
 
   db.prepare(
     `
@@ -2750,13 +3120,14 @@ function logAdminActivityByUser(userRow, req, actionType, detail = '') {
     Number(userRow.id),
     String(userRow.username || ''),
     normalizeAdminRole(userRow.admin_role || ''),
-    getClientIp(req),
+    clientIp,
     String(req.get('user-agent') || '').slice(0, 300),
     req.method,
     req.path.slice(0, 300),
     String(actionType || '').slice(0, 80),
     String(detail || '').slice(0, 300)
   );
+  queueIpGeolocationLookup(clientIp);
 }
 
 function recordSecurityAlert(req, reason, detail = '') {
@@ -2764,6 +3135,8 @@ function recordSecurityAlert(req, reason, detail = '') {
   const actorRole = isAdmin ? req.user.adminRole || ADMIN_ROLE.SUB : '';
   const actorName = isAdmin ? req.user.username : 'unknown';
   const actorId = isAdmin ? req.user.id : null;
+
+  const clientIp = getClientIp(req);
 
   db.prepare(
     `
@@ -2782,12 +3155,13 @@ function recordSecurityAlert(req, reason, detail = '') {
     actorId,
     String(actorName || 'unknown'),
     String(actorRole || ''),
-    getClientIp(req),
+    clientIp,
     String(req.method || '').slice(0, 16),
     `${req.path}${req.url.includes('?') ? req.url.slice(req.path.length) : ''}`.slice(0, 300),
     String(reason || '').slice(0, 120),
     String(detail || '').slice(0, 300)
   );
+  queueIpGeolocationLookup(clientIp);
 }
 
 function appendOrderStatusLog(orderId, orderNo, fromStatus, toStatus, eventNote = '') {
@@ -8753,7 +9127,7 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
       };
     });
 
-  const subAdminLogs = db
+  const subAdminLogRows = db
     .prepare(
       `
         SELECT
@@ -8775,11 +9149,7 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
         OFFSET ?
       `
     )
-    .all(...logParams, SECURITY_PAGE_SIZE, logOffset)
-    .map((row) => ({
-      ...row,
-      user_agent: String(row.user_agent || '')
-    }));
+    .all(...logParams, SECURITY_PAGE_SIZE, logOffset);
 
   const alertWhere = ['1=1'];
   const alertParams = [];
@@ -8811,7 +9181,7 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
   const alertPage = clampPage(options.alertPage, alertTotalPages);
   const alertOffset = (alertPage - 1) * SECURITY_PAGE_SIZE;
 
-  const securityAlerts = db
+  const securityAlertRows = db
     .prepare(
       `
         SELECT
@@ -8835,11 +9205,57 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
         OFFSET ?
       `
     )
-    .all(...alertParams, SECURITY_PAGE_SIZE, alertOffset)
-    .map((row) => ({
+    .all(...alertParams, SECURITY_PAGE_SIZE, alertOffset);
+
+  const ipCandidates = [
+    ...subAdminLogRows.map((row) => normalizeIpAddress(row.ip_address || '')),
+    ...securityAlertRows.map((row) => normalizeIpAddress(row.ip_address || ''))
+  ].filter(Boolean);
+  const ipGeoCacheMap = getIpGeoCacheMapByIps(ipCandidates);
+  const queuedLookupIps = new Set();
+  let queuedLookupCount = 0;
+
+  const tryQueueIpGeoLookup = (ipAddress) => {
+    const normalizedIp = normalizeIpAddress(ipAddress);
+    if (!isPublicIpAddress(normalizedIp)) {
+      return;
+    }
+    if (queuedLookupCount >= IP_GEO_MAX_LOOKUP_PER_RENDER) {
+      return;
+    }
+    const cached = ipGeoCacheMap.get(normalizedIp);
+    if (cached && isIpGeoCacheFresh(cached)) {
+      return;
+    }
+    if (queuedLookupIps.has(normalizedIp)) {
+      return;
+    }
+    queuedLookupIps.add(normalizedIp);
+    queuedLookupCount += 1;
+    queueIpGeolocationLookup(normalizedIp);
+  };
+
+  const subAdminLogs = subAdminLogRows.map((row) => {
+    const normalizedIp = normalizeIpAddress(row.ip_address || '');
+    tryQueueIpGeoLookup(normalizedIp);
+    return {
       ...row,
+      ip_address: normalizedIp || String(row.ip_address || ''),
+      ip_location: getIpLocationLabel(normalizedIp, ipGeoCacheMap, lang),
+      user_agent: String(row.user_agent || '')
+    };
+  });
+
+  const securityAlerts = securityAlertRows.map((row) => {
+    const normalizedIp = normalizeIpAddress(row.ip_address || '');
+    tryQueueIpGeoLookup(normalizedIp);
+    return {
+      ...row,
+      ip_address: normalizedIp || String(row.ip_address || ''),
+      ip_location: getIpLocationLabel(normalizedIp, ipGeoCacheMap, lang),
       reason_label: getSecurityAlertReasonLabel(row.reason, lang)
-    }));
+    };
+  });
 
   const unresolvedAlertsRow = db
     .prepare(
