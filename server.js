@@ -87,7 +87,6 @@ const FUNNEL_EVENT = Object.freeze({
 const ADMIN_MENUS = Object.freeze([
   { id: 'admin-dashboard', labelKo: '대시보드', labelEn: 'Dashboard', path: '/admin/dashboard' },
   { id: 'admin-security', labelKo: '보안', labelEn: 'Security', path: '/admin/security' },
-  { id: 'admin-otp', labelKo: 'OTP', labelEn: 'OTP', path: '/admin/otp' },
   { id: 'admin-site', labelKo: '사이트설정', labelEn: 'Site', path: '/admin/site' },
   { id: 'admin-menus', labelKo: '메뉴관리', labelEn: 'Menus', path: '/admin/menus' },
   { id: 'admin-members', labelKo: '회원관리', labelEn: 'Members', path: '/admin/members' },
@@ -1525,14 +1524,10 @@ async function applyChronoLabWatermarkToAllProductImages() {
 
 function getAdminMenus(currentUser = null) {
   const isPrimaryAdmin = Boolean(currentUser?.isPrimaryAdmin);
-  const isAdminOtpEnabled = Boolean(currentUser?.isAdminOtpEnabled);
   return ADMIN_MENUS
     .filter((menu) => {
       if (menu.id === 'admin-security') {
         return isPrimaryAdmin;
-      }
-      if (menu.id === 'admin-otp') {
-        return !isAdminOtpEnabled;
       }
       return true;
     })
