@@ -6151,7 +6151,14 @@ app.get('/shop', (req, res) => {
   const factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
     ? selectedFactoryRaw
     : '';
-  const models = brand ? getGroupModelOptionsForBrand(selectedGroupConfig, brand) : [];
+  const modelOptionMap = getGroupModelOptionsByBrand(selectedGroupConfig);
+  const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
+  const fallbackModelOptions = getGroupModelOptions(selectedGroupConfig);
+  const models = brand
+    ? getGroupModelOptionsForBrand(selectedGroupConfig, brand)
+    : hasModelOptionMap
+      ? []
+      : fallbackModelOptions;
   const model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
 
   const where = ['is_active = 1', 'category_group = ?'];
@@ -6205,7 +6212,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
-    supportsModelFilter: Boolean(brand) && models.length > 0,
+    supportsModelFilter: hasModelOptionMap || fallbackModelOptions.length > 0,
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,

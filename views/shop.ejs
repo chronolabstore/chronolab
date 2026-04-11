@@ -60,18 +60,6 @@
     </div>
   </div>
 
-  <% if (supportsFactoryFilter) { %>
-    <div class="filter-group">
-      <h4><%= isEn ? 'Factory' : '공장' %></h4>
-      <div class="chip-row chip-scroll-row">
-        <a href="<%= makeShopHref({ factory: '', model: '' }) %>" class="chip filter-chip <%= safeFactory ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
-        <% factories.forEach((item) => { %>
-          <a href="<%= makeShopHref({ factory: item, model: '' }) %>" class="chip filter-chip <%= safeFactory === item ? 'dark' : '' %>"><%= item %></a>
-        <% }) %>
-      </div>
-    </div>
-  <% } %>
-
   <% if (supportsModelFilter) { %>
     <div class="filter-group">
       <h4><%= isEn ? 'Model' : '모델' %></h4>
@@ -79,6 +67,18 @@
         <a href="<%= makeShopHref({ model: '' }) %>" class="chip filter-chip <%= safeModel ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
         <% models.forEach((item) => { %>
           <a href="<%= makeShopHref({ model: item }) %>" class="chip filter-chip <%= safeModel === item ? 'dark' : '' %>"><%= item %></a>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (supportsFactoryFilter) { %>
+    <div class="filter-group">
+      <h4><%= isEn ? 'Factory' : '공장' %></h4>
+      <div class="chip-row chip-scroll-row">
+        <a href="<%= makeShopHref({ factory: '', model: '' }) %>" class="chip filter-chip <%= safeFactory ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
+        <% factories.forEach((item) => { %>
+          <a href="<%= makeShopHref({ factory: item, model: '' }) %>" class="chip filter-chip <%= safeFactory === item ? 'dark' : '' %>"><%= item %></a>
         <% }) %>
       </div>
     </div>
