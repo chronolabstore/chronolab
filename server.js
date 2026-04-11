@@ -186,7 +186,8 @@ const FACTORY_DEFAULT_FIELDS = Object.freeze([
 
 const COMPACT_DEFAULT_FIELDS = Object.freeze([
   { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
-  { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true }
+  { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true },
+  { key: 'price', labelKo: '가격', labelEn: 'Price', type: 'number', required: false }
 ]);
 
 const DEFAULT_THEME_COLORS = Object.freeze({
@@ -650,6 +651,27 @@ function getCompactDefaultFields() {
   return cloneFieldTemplate(COMPACT_DEFAULT_FIELDS);
 }
 
+function ensureSimpleBaselineFields(fields = []) {
+  const source = Array.isArray(fields) ? fields : [];
+  const next = source.map((field) => ({ ...field }));
+  const existingFieldKeySet = new Set(
+    next
+      .map((field) => normalizeProductFieldAliasKey(field?.key || ''))
+      .filter(Boolean)
+  );
+
+  COMPACT_DEFAULT_FIELDS.forEach((baselineField) => {
+    const baselineKey = normalizeProductFieldAliasKey(baselineField.key || '');
+    if (!baselineKey || existingFieldKeySet.has(baselineKey)) {
+      return;
+    }
+    next.push({ ...baselineField });
+    existingFieldKeySet.add(baselineKey);
+  });
+
+  return next;
+}
+
 function isFactoryTemplateGroup(group = {}) {
   const key = String(group.key || '').trim();
   const labelKo = String(group.labelKo || '').trim();
@@ -979,6 +1001,9 @@ function normalizeProductGroupConfigs(rawValue) {
     )
       ? PRODUCT_GROUP_MODE.FACTORY
       : PRODUCT_GROUP_MODE.SIMPLE;
+    if (mode === PRODUCT_GROUP_MODE.SIMPLE) {
+      customFields = ensureSimpleBaselineFields(customFields);
+    }
     const brandOptions = hasExplicitBrandOptions
       ? normalizeProductFilterOptionList(group.brandOptions)
       : fallbackBrandOptions;
