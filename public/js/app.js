@@ -255,11 +255,7 @@
     });
   }
 
-  function initAdminInlineImagePreviews() {
-    if (!window.location.pathname.startsWith('/admin')) {
-      return;
-    }
-
+  function initInlineImagePreviews() {
     var isEn = document.documentElement.lang === 'en';
     var fileInputs = document.querySelectorAll('input[type="file"][accept*="image"]');
     if (!fileInputs.length) {
@@ -273,6 +269,12 @@
       input.dataset.inlinePreviewBound = '1';
 
       if (input.name === 'images' && input.closest('[data-admin-product-form]')) {
+        // Product upload uses its own watermark-preview pipeline.
+        return;
+      }
+
+      if (input.classList.contains('mypage-avatar-input')) {
+        // Avatar upload is an immediate-submit flow.
         return;
       }
 
@@ -284,45 +286,304 @@
       title.className = 'muted-label';
       title.textContent = isEn ? 'Image preview (click to enlarge)' : '이미지 미리보기 (클릭 시 확대)';
 
+      var hint = document.createElement('p');
+      hint.className = 'muted-label';
+      hint.textContent = input.multiple
+        ? (isEn ? 'Drag images to reorder. Use X to remove.' : '이미지를 드래그해 순서를 바꾸고, X로 선택 취소할 수 있습니다.')
+        : (isEn ? 'Use X to remove selected image.' : 'X 버튼으로 선택한 이미지를 취소할 수 있습니다.');
+
       var grid = document.createElement('div');
       grid.className = 'inline-file-preview-grid';
 
       wrap.appendChild(title);
+      wrap.appendChild(hint);
       wrap.appendChild(grid);
       input.insertAdjacentElement('afterend', wrap);
 
-      var objectUrls = [];
-      function clearPreview() {
-        objectUrls.forEach(function (url) {
-          URL.revokeObjectURL(url);
+      var selectedEntries = [];
+      var dragItem = null;
+      var dragPointerId = null;
+      var dragStartX = 0;
+      var dragStartY = 0;
+      var dragActivated = false;
+      var lastDragFinishedAt = 0;
+
+      function toImageFiles(fileList) {
+        return Array.prototype.slice.call(fileList || []).filter(function (file) {
+          return typeof file.type === 'string' && file.type.startsWith('image/');
         });
-        objectUrls = [];
-        grid.innerHTML = '';
-        wrap.hidden = true;
       }
 
-      input.addEventListener('change', function () {
-        clearPreview();
-        var files = Array.prototype.slice
-          .call(input.files || [])
-          .filter(function (file) {
-            return typeof file.type === 'string' && file.type.startsWith('image/');
-          });
+      function revokeEntryUrls(entries) {
+        (entries || []).forEach(function (entry) {
+          if (entry && entry.url) {
+            URL.revokeObjectURL(entry.url);
+          }
+        });
+      }
 
-        if (!files.length) {
+      function syncInputFiles(nextEntries) {
+        if (!input || typeof DataTransfer !== 'function') {
+          return false;
+        }
+        try {
+          var transfer = new DataTransfer();
+          (nextEntries || []).forEach(function (entry) {
+            if (entry && entry.file) {
+              transfer.items.add(entry.file);
+            }
+          });
+          input.files = transfer.files;
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function updateOrderLabels() {
+        Array.prototype.forEach.call(grid.querySelectorAll('[data-inline-preview-order]'), function (node, index) {
+          node.textContent = String(index + 1);
+        });
+      }
+
+      function renderPreview() {
+        grid.innerHTML = '';
+        if (!selectedEntries.length) {
+          wrap.hidden = true;
           return;
         }
 
         wrap.hidden = false;
-        files.forEach(function (file) {
-          var url = URL.createObjectURL(file);
-          objectUrls.push(url);
+        selectedEntries.forEach(function (entry) {
+          var item = document.createElement('div');
+          item.className = 'watermark-preview-item inline-file-preview-item';
+          item.dataset.inlinePreviewId = entry.id;
+
+          var order = document.createElement('span');
+          order.className = 'watermark-preview-order inline-file-preview-order';
+          order.setAttribute('data-inline-preview-order', '1');
+          order.textContent = '1';
+
+          var removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'watermark-preview-remove-btn inline-file-preview-remove-btn';
+          removeBtn.setAttribute('data-inline-preview-remove', '1');
+          removeBtn.setAttribute('data-inline-preview-remove-id', entry.id);
+          removeBtn.setAttribute('aria-label', isEn ? 'Remove image' : '이미지 선택 취소');
+          removeBtn.textContent = '×';
+
           var preview = document.createElement('img');
           preview.className = 'inline-file-preview-image zoomable-media';
-          preview.setAttribute('src', url);
-          preview.setAttribute('alt', file.name || 'preview');
-          grid.appendChild(preview);
+          preview.setAttribute('src', entry.url);
+          preview.setAttribute('alt', entry.file && entry.file.name ? entry.file.name : 'preview');
+
+          var name = document.createElement('span');
+          name.className = 'watermark-preview-name inline-file-preview-name';
+          name.textContent = entry.file && entry.file.name ? entry.file.name : (isEn ? 'image' : '이미지');
+
+          item.appendChild(order);
+          item.appendChild(removeBtn);
+          item.appendChild(preview);
+          item.appendChild(name);
+          grid.appendChild(item);
         });
+
+        updateOrderLabels();
+      }
+
+      function resetPreview() {
+        revokeEntryUrls(selectedEntries);
+        selectedEntries = [];
+        renderPreview();
+      }
+
+      function rebuildEntriesFromDomAndSync() {
+        var orderedIds = Array.prototype.map.call(
+          grid.querySelectorAll('.inline-file-preview-item'),
+          function (item) {
+            return String(item.dataset.inlinePreviewId || '').trim();
+          }
+        ).filter(Boolean);
+
+        if (!orderedIds.length) {
+          updateOrderLabels();
+          return;
+        }
+
+        var entryMap = new Map(
+          selectedEntries.map(function (entry) {
+            return [entry.id, entry];
+          })
+        );
+
+        selectedEntries = orderedIds
+          .map(function (id) {
+            return entryMap.get(id);
+          })
+          .filter(function (entry) {
+            return entry && entry.file;
+          });
+
+        if (!syncInputFiles(selectedEntries)) {
+          input.value = '';
+          resetPreview();
+          window.alert(
+            isEn
+              ? 'Your browser does not support file reorder/removal for this input. Please reselect images.'
+              : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.'
+          );
+          return;
+        }
+
+        updateOrderLabels();
+      }
+
+      function startDrag(event) {
+        if (!input.multiple || !grid || !event || !event.target) return;
+        if (event.target.closest('[data-inline-preview-remove]')) return;
+        if (event.pointerType === 'mouse' && Number(event.button) !== 0) return;
+
+        var item = event.target.closest('.inline-file-preview-item');
+        if (!item || item.parentElement !== grid) return;
+
+        dragItem = item;
+        dragPointerId = event.pointerId;
+        dragStartX = event.clientX;
+        dragStartY = event.clientY;
+        dragActivated = false;
+      }
+
+      function moveDrag(event) {
+        if (!dragItem || !grid || event.pointerId !== dragPointerId) return;
+
+        var dx = event.clientX - dragStartX;
+        var dy = event.clientY - dragStartY;
+
+        if (!dragActivated) {
+          if (Math.abs(dx) < 6 && Math.abs(dy) < 6) {
+            return;
+          }
+          dragActivated = true;
+          dragItem.classList.add('is-dragging');
+          dragItem.style.pointerEvents = 'none';
+          if (dragItem.setPointerCapture) {
+            try {
+              dragItem.setPointerCapture(event.pointerId);
+            } catch (error) {
+              // ignore
+            }
+          }
+        }
+
+        dragItem.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+
+        var hoverNode = document.elementFromPoint(event.clientX, event.clientY);
+        var targetItem = hoverNode ? hoverNode.closest('.inline-file-preview-item') : null;
+        if (!targetItem || targetItem === dragItem || targetItem.parentElement !== grid) {
+          event.preventDefault();
+          return;
+        }
+
+        var allItems = Array.prototype.slice.call(grid.querySelectorAll('.inline-file-preview-item'));
+        var dragIndex = allItems.indexOf(dragItem);
+        var targetIndex = allItems.indexOf(targetItem);
+        if (dragIndex < 0 || targetIndex < 0 || dragIndex === targetIndex) {
+          event.preventDefault();
+          return;
+        }
+
+        var rect = targetItem.getBoundingClientRect();
+        var placeAfter = event.clientX > rect.left + rect.width / 2;
+        if (placeAfter) {
+          grid.insertBefore(dragItem, targetItem.nextSibling);
+        } else {
+          grid.insertBefore(dragItem, targetItem);
+        }
+        updateOrderLabels();
+        event.preventDefault();
+      }
+
+      function finishDrag(event) {
+        if (!dragItem) return;
+        if (event && typeof event.pointerId === 'number' && event.pointerId !== dragPointerId) {
+          return;
+        }
+
+        if (dragActivated) {
+          dragItem.classList.remove('is-dragging');
+          dragItem.style.transform = '';
+          dragItem.style.pointerEvents = '';
+          lastDragFinishedAt = Date.now();
+          rebuildEntriesFromDomAndSync();
+        }
+
+        dragItem = null;
+        dragPointerId = null;
+        dragActivated = false;
+      }
+
+      function removeById(id) {
+        var targetId = String(id || '').trim();
+        if (!targetId) return;
+
+        var removedEntries = selectedEntries.filter(function (entry) {
+          return entry && entry.id === targetId;
+        });
+        if (!removedEntries.length) return;
+
+        selectedEntries = selectedEntries.filter(function (entry) {
+          return entry && entry.id !== targetId;
+        });
+        revokeEntryUrls(removedEntries);
+
+        if (!syncInputFiles(selectedEntries)) {
+          input.value = '';
+          resetPreview();
+          window.alert(
+            isEn
+              ? 'Your browser does not support file reorder/removal for this input. Please reselect images.'
+              : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.'
+          );
+          return;
+        }
+
+        renderPreview();
+      }
+
+      grid.addEventListener('click', function (event) {
+        var removeBtn = event.target.closest('[data-inline-preview-remove]');
+        if (removeBtn) {
+          event.preventDefault();
+          event.stopPropagation();
+          removeById(removeBtn.getAttribute('data-inline-preview-remove-id') || '');
+          return;
+        }
+
+        if (Date.now() - lastDragFinishedAt < 320) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+
+      if (input.multiple) {
+        grid.addEventListener('pointerdown', startDrag);
+        grid.addEventListener('pointermove', moveDrag);
+        grid.addEventListener('pointerup', finishDrag);
+        grid.addEventListener('pointercancel', finishDrag);
+        window.addEventListener('pointerup', finishDrag);
+        window.addEventListener('pointercancel', finishDrag);
+      }
+
+      input.addEventListener('change', function () {
+        revokeEntryUrls(selectedEntries);
+        selectedEntries = toImageFiles(input.files).map(function (file, index) {
+          return {
+            id: 'inline-preview-' + Date.now() + '-' + index + '-' + Math.random().toString(36).slice(2, 8),
+            file: file,
+            url: URL.createObjectURL(file)
+          };
+        });
+        renderPreview();
       });
     });
   }
@@ -769,7 +1030,7 @@
     initNoticePopup();
     initFlashPopup();
     initProductGallery();
-    initAdminInlineImagePreviews();
+    initInlineImagePreviews();
     initImageLightbox();
     initPasswordVisibilityToggles();
   }

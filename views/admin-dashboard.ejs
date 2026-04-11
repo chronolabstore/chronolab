@@ -2474,6 +2474,7 @@
           let dragStartX = 0;
           let dragStartY = 0;
           let dragMoved = false;
+          let dragActivated = false;
           let lastDragFinishedAt = 0;
 
           const normalizeSelectValue = (value) => String(value || '').trim();
@@ -2874,17 +2875,7 @@
             dragStartX = event.clientX;
             dragStartY = event.clientY;
             dragMoved = false;
-            item.classList.add('is-dragging');
-            item.style.transform = 'translate(0px, 0px)';
-            item.style.pointerEvents = 'none';
-            if (item.setPointerCapture) {
-              try {
-                item.setPointerCapture(event.pointerId);
-              } catch (error) {
-                // ignore pointer capture failures
-              }
-            }
-            event.preventDefault();
+            dragActivated = false;
           };
 
           const movePreviewDrag = (event) => {
@@ -2893,11 +2884,21 @@
 
             const dx = event.clientX - dragStartX;
             const dy = event.clientY - dragStartY;
-            if (!dragMoved) {
-              if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+            if (!dragActivated) {
+              if (Math.abs(dx) < 6 && Math.abs(dy) < 6) {
                 return;
               }
+              dragActivated = true;
               dragMoved = true;
+              draggingPreviewItem.classList.add('is-dragging');
+              draggingPreviewItem.style.pointerEvents = 'none';
+              if (draggingPreviewItem.setPointerCapture) {
+                try {
+                  draggingPreviewItem.setPointerCapture(event.pointerId);
+                } catch (error) {
+                  // ignore pointer capture failures
+                }
+              }
             }
             draggingPreviewItem.style.transform = `translate(${dx}px, ${dy}px)`;
 
@@ -2933,16 +2934,17 @@
               return;
             }
 
-            draggingPreviewItem.classList.remove('is-dragging');
-            draggingPreviewItem.style.transform = '';
-            draggingPreviewItem.style.pointerEvents = '';
-            if (dragMoved) {
+            if (dragActivated) {
+              draggingPreviewItem.classList.remove('is-dragging');
+              draggingPreviewItem.style.transform = '';
+              draggingPreviewItem.style.pointerEvents = '';
               lastDragFinishedAt = Date.now();
+              syncSelectedFilesFromPreviewDom();
             }
             draggingPreviewItem = null;
             draggingPointerId = null;
             dragMoved = false;
-            syncSelectedFilesFromPreviewDom();
+            dragActivated = false;
           };
 
           const removePreviewFileById = (fileId) => {
