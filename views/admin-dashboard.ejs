@@ -1744,8 +1744,8 @@
                               <div class="admin-list menu-brand-model-list">
                                 <% brandModels.forEach((optionValue) => { %>
                                   <div class="admin-list-item">
-                                    <div class="menu-manage-item-row">
-                                      <strong><%= optionValue %></strong>
+                                    <div class="menu-manage-item-row menu-brand-model-row">
+                                      <strong class="menu-brand-model-name"><%= optionValue %></strong>
                                       <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
                                         <input type="hidden" name="groupKey" value="<%= group.key %>" />
                                         <input type="hidden" name="filterType" value="model" />
