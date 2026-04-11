@@ -111,7 +111,8 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
     modelOptions: [],
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
-      { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true }
+      { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true },
+      { key: 'price', labelKo: '가격', labelEn: 'Price', type: 'number', required: false }
     ]
   },
   {
@@ -133,7 +134,8 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
     modelOptions: [],
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
-      { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true }
+      { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true },
+      { key: 'price', labelKo: '가격', labelEn: 'Price', type: 'number', required: false }
     ]
   }
 ];
