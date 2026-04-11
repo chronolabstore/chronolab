@@ -868,10 +868,11 @@ body.theme-night .hero-quick-grid a:hover {
 
 .shop-filter-card {
   overflow: hidden;
+  gap: 6px;
 }
 
 .shop-filter-card .section-head {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .shop-filter-card .shop-filter-title {
@@ -879,7 +880,7 @@ body.theme-night .hero-quick-grid a:hover {
 }
 
 .shop-filter-card .filter-group:first-of-type {
-  margin-top: 0;
+  margin-top: 2px;
 }
 
 .filter-group .chip-row {
