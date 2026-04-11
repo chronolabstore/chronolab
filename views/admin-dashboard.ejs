@@ -16,6 +16,40 @@
     });
     return generated;
   })();
+  const normalizeFilterValue = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 80);
+  const findFilterMapKey = (map, rawValue) => {
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return '';
+    const needle = normalizeFilterValue(rawValue).toLowerCase();
+    if (!needle) return '';
+    return (
+      Object.keys(map).find((key) => normalizeFilterValue(key).toLowerCase() === needle) || ''
+    );
+  };
+  const resolveFilterLabelEntry = (map, rawValue) => {
+    const fallback = normalizeFilterValue(rawValue);
+    const matchedKey = findFilterMapKey(map, rawValue);
+    const source =
+      matchedKey &&
+      map[matchedKey] &&
+      typeof map[matchedKey] === 'object' &&
+      !Array.isArray(map[matchedKey])
+        ? map[matchedKey]
+        : null;
+    const labelKo = normalizeFilterValue(source?.labelKo || source?.label_ko || source?.ko || source?.label || fallback);
+    const labelEn = normalizeFilterValue(source?.labelEn || source?.label_en || source?.en || source?.label || fallback);
+    return {
+      labelKo: labelKo || fallback,
+      labelEn: labelEn || fallback
+    };
+  };
+  const resolveFilterLabelByValue = (map, rawValue) => {
+    const entry = resolveFilterLabelEntry(map, rawValue);
+    return isEn ? (entry.labelEn || entry.labelKo || normalizeFilterValue(rawValue)) : (entry.labelKo || entry.labelEn || normalizeFilterValue(rawValue));
+  };
   const defaultGroupKey = productGroupKeys[0] || '공장제';
   const activeOrderFilterKey = (() => {
     const candidate = String(orderGroupFilter || 'all');
@@ -1710,6 +1744,7 @@
               <div class="admin-grid two-col menu-group-filter-grid">
                 <section class="kpi-card menu-brand-filter-card">
                   <h4><%= isEn ? 'Brand + Models' : '브랜드 + 모델' %></h4>
+                  <p class="muted-label"><%= isEn ? 'Set Korean/English labels together. EN value is used for saved filter value unless edited.' : '한국어/영어 라벨을 함께 설정합니다. 별도 수정하지 않으면 영어명이 필터 저장값으로 사용됩니다.' %></p>
                   <% if (brandFilters.length === 0) { %>
                     <p class="muted-label"><%= isEn ? 'No brand filter options yet.' : '등록된 브랜드 필터가 없습니다.' %></p>
                   <% } else { %>
@@ -1722,13 +1757,51 @@
                           const brandModels = matchedBrandKey && Array.isArray(modelFilterMap[matchedBrandKey])
                             ? modelFilterMap[matchedBrandKey]
                             : [];
+                          const brandLabelMap = group.brandOptionLabels && typeof group.brandOptionLabels === 'object' && !Array.isArray(group.brandOptionLabels)
+                            ? group.brandOptionLabels
+                            : {};
+                          const modelLabelMapByBrand = group.modelOptionLabelsByBrand && typeof group.modelOptionLabelsByBrand === 'object' && !Array.isArray(group.modelOptionLabelsByBrand)
+                            ? group.modelOptionLabelsByBrand
+                            : {};
+                          const matchedBrandModelLabelKey = Object.keys(modelLabelMapByBrand).find(
+                            (optionValue) => String(optionValue || '').trim().toLowerCase() === String(brandOption || '').trim().toLowerCase()
+                          );
+                          const brandModelLabelMap =
+                            matchedBrandModelLabelKey &&
+                            modelLabelMapByBrand[matchedBrandModelLabelKey] &&
+                            typeof modelLabelMapByBrand[matchedBrandModelLabelKey] === 'object' &&
+                            !Array.isArray(modelLabelMapByBrand[matchedBrandModelLabelKey])
+                              ? modelLabelMapByBrand[matchedBrandModelLabelKey]
+                              : {};
+                          const brandLabelEntry = resolveFilterLabelEntry(brandLabelMap, brandOption);
+                          const brandDisplayName = isEn ? (brandLabelEntry.labelEn || brandOption) : (brandLabelEntry.labelKo || brandOption);
                         %>
                         <details class="admin-list-item menu-brand-model-item">
                           <summary class="menu-brand-model-summary">
-                            <strong><%= brandOption %></strong>
+                            <strong><%= brandDisplayName %></strong>
                             <small><%= isEn ? `${brandModels.length} models` : `모델 ${brandModels.length}개` %></small>
                           </summary>
                           <div class="menu-brand-model-body">
+                            <div class="admin-list-item">
+                              <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                <input type="hidden" name="filterType" value="brand" />
+                                <input type="hidden" name="optionValue" value="<%= brandOption %>" />
+                                <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                  <input type="text" name="nextOptionValue" value="<%= brandOption %>" required />
+                                </label>
+                                <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                  <input type="text" name="optionLabelKo" value="<%= brandLabelEntry.labelKo || brandOption %>" required />
+                                </label>
+                                <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                  <input type="text" name="optionLabelEn" value="<%= brandLabelEntry.labelEn || brandOption %>" required />
+                                </label>
+                                <div class="admin-account-actions menu-brand-model-actions">
+                                  <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Brand' : '브랜드 수정' %></button>
+                                </div>
+                              </form>
+                            </div>
+
                             <div class="admin-account-actions menu-brand-model-actions">
                               <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
                                 <input type="hidden" name="groupKey" value="<%= group.key %>" />
@@ -1743,9 +1816,31 @@
                             <% } else { %>
                               <div class="admin-list menu-brand-model-list">
                                 <% brandModels.forEach((optionValue) => { %>
+                                  <%
+                                    const modelLabelEntry = resolveFilterLabelEntry(brandModelLabelMap, optionValue);
+                                    const modelDisplayName = isEn ? (modelLabelEntry.labelEn || optionValue) : (modelLabelEntry.labelKo || optionValue);
+                                  %>
                                   <div class="admin-list-item">
-                                    <div class="menu-manage-item-row menu-brand-model-row">
-                                      <strong class="menu-brand-model-name"><%= optionValue %></strong>
+                                    <div class="menu-brand-model-row">
+                                      <strong class="menu-brand-model-name"><%= modelDisplayName %></strong>
+                                      <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                        <input type="hidden" name="filterType" value="model" />
+                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                        <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                          <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
+                                        </label>
+                                        <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                          <input type="text" name="optionLabelKo" value="<%= modelLabelEntry.labelKo || optionValue %>" required />
+                                        </label>
+                                        <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                          <input type="text" name="optionLabelEn" value="<%= modelLabelEntry.labelEn || optionValue %>" required />
+                                        </label>
+                                        <div class="admin-account-actions">
+                                          <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Model' : '모델 수정' %></button>
+                                        </div>
+                                      </form>
                                       <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
                                         <input type="hidden" name="groupKey" value="<%= group.key %>" />
                                         <input type="hidden" name="filterType" value="model" />
@@ -1763,8 +1858,11 @@
                               <input type="hidden" name="groupKey" value="<%= group.key %>" />
                               <input type="hidden" name="filterType" value="model" />
                               <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                              <label><%= isEn ? `Add model to ${brandOption}` : `${brandOption} 모델 추가` %>
-                                <input type="text" name="optionValue" required />
+                              <label><%= isEn ? `Model Name (KR)` : `모델명 (KR)` %>
+                                <input type="text" name="optionLabelKo" required />
+                              </label>
+                              <label><%= isEn ? `Model Name (EN)` : `모델명 (EN)` %>
+                                <input type="text" name="optionLabelEn" required />
                               </label>
                               <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Model' : '모델 추가' %></button>
                             </form>
@@ -1783,8 +1881,11 @@
                   <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
                     <input type="hidden" name="groupKey" value="<%= group.key %>" />
                     <input type="hidden" name="filterType" value="brand" />
-                    <label><%= isEn ? 'Add Brand Option' : '브랜드 옵션 추가' %>
-                      <input type="text" name="optionValue" required />
+                    <label><%= isEn ? 'Brand Name (KR)' : '브랜드명 (KR)' %>
+                      <input type="text" name="optionLabelKo" required />
+                    </label>
+                    <label><%= isEn ? 'Brand Name (EN)' : '브랜드명 (EN)' %>
+                      <input type="text" name="optionLabelEn" required />
                     </label>
                     <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Brand' : '브랜드 추가' %></button>
                   </form>
@@ -1793,14 +1894,41 @@
                 <% if (supportsFactoryFilterGroup) { %>
                   <section class="kpi-card menu-factory-filter-card">
                     <h4><%= isEn ? 'Factory Filters' : '공장 필터' %></h4>
+                    <p class="muted-label"><%= isEn ? 'Factory filters also support Korean/English labels.' : '공장 필터도 한국어/영어 라벨을 함께 관리할 수 있습니다.' %></p>
                     <% if (factoryFilters.length === 0) { %>
                       <p class="muted-label"><%= isEn ? 'No factory filter options yet.' : '등록된 공장 필터가 없습니다.' %></p>
                     <% } else { %>
+                      <%
+                        const factoryLabelMap = group.factoryOptionLabels && typeof group.factoryOptionLabels === 'object' && !Array.isArray(group.factoryOptionLabels)
+                          ? group.factoryOptionLabels
+                          : {};
+                      %>
                       <div class="admin-list">
                         <% factoryFilters.forEach((optionValue) => { %>
+                          <%
+                            const factoryLabelEntry = resolveFilterLabelEntry(factoryLabelMap, optionValue);
+                            const factoryDisplayName = isEn ? (factoryLabelEntry.labelEn || optionValue) : (factoryLabelEntry.labelKo || optionValue);
+                          %>
                           <div class="admin-list-item">
-                            <div class="menu-manage-item-row">
-                              <strong><%= optionValue %></strong>
+                            <div class="menu-brand-model-row">
+                              <strong><%= factoryDisplayName %></strong>
+                              <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                <input type="hidden" name="filterType" value="factory" />
+                                <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                  <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
+                                </label>
+                                <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                  <input type="text" name="optionLabelKo" value="<%= factoryLabelEntry.labelKo || optionValue %>" required />
+                                </label>
+                                <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                  <input type="text" name="optionLabelEn" value="<%= factoryLabelEntry.labelEn || optionValue %>" required />
+                                </label>
+                                <div class="admin-account-actions">
+                                  <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Factory' : '공장 수정' %></button>
+                                </div>
+                              </form>
                               <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
                                 <input type="hidden" name="groupKey" value="<%= group.key %>" />
                                 <input type="hidden" name="filterType" value="factory" />
@@ -1816,8 +1944,11 @@
                     <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
                       <input type="hidden" name="groupKey" value="<%= group.key %>" />
                       <input type="hidden" name="filterType" value="factory" />
-                      <label><%= isEn ? 'Add Factory Option' : '공장 옵션 추가' %>
-                        <input type="text" name="optionValue" required />
+                      <label><%= isEn ? 'Factory Name (KR)' : '공장명 (KR)' %>
+                        <input type="text" name="optionLabelKo" required />
+                      </label>
+                      <label><%= isEn ? 'Factory Name (EN)' : '공장명 (EN)' %>
+                        <input type="text" name="optionLabelEn" required />
                       </label>
                       <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Factory' : '공장 추가' %></button>
                     </form>
@@ -2077,6 +2208,18 @@
               const groupBrandOptions = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const groupFactoryOptions = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
               const groupModelOptions = Array.isArray(group.modelOptions) ? group.modelOptions : [];
+              const groupBrandLabelMap =
+                group.brandOptionLabels && typeof group.brandOptionLabels === 'object' && !Array.isArray(group.brandOptionLabels)
+                  ? group.brandOptionLabels
+                  : {};
+              const groupFactoryLabelMap =
+                group.factoryOptionLabels && typeof group.factoryOptionLabels === 'object' && !Array.isArray(group.factoryOptionLabels)
+                  ? group.factoryOptionLabels
+                  : {};
+              const rawGroupModelLabelMapByBrand =
+                group.modelOptionLabelsByBrand && typeof group.modelOptionLabelsByBrand === 'object' && !Array.isArray(group.modelOptionLabelsByBrand)
+                  ? group.modelOptionLabelsByBrand
+                  : {};
               const rawGroupModelOptionMap =
                 group.modelOptionsByBrand && typeof group.modelOptionsByBrand === 'object' && !Array.isArray(group.modelOptionsByBrand)
                   ? group.modelOptionsByBrand
@@ -2098,6 +2241,12 @@
                 if (normalizedModels.length > 0) {
                   groupModelOptionMap[safeBrandName] = normalizedModels;
                 }
+              });
+              const groupModelLabelMapByBrand = {};
+              Object.entries(rawGroupModelLabelMapByBrand).forEach(([brandName, modelLabelMap]) => {
+                const safeBrandName = String(brandName || '').trim();
+                if (!safeBrandName || !modelLabelMap || typeof modelLabelMap !== 'object' || Array.isArray(modelLabelMap)) return;
+                groupModelLabelMapByBrand[safeBrandName] = modelLabelMap;
               });
               const groupHasModelOptionMap = Object.keys(groupModelOptionMap).length > 0;
               const supportsFactorySelectionGroup =
@@ -2165,6 +2314,17 @@
                 });
                 return list;
               })();
+              const initialModelLabelMap = (() => {
+                if (!editBrandValue) {
+                  return {};
+                }
+                const matchedBrandLabelKey = findFilterMapKey(groupModelLabelMapByBrand, editBrandValue);
+                if (!matchedBrandLabelKey) {
+                  return {};
+                }
+                const source = groupModelLabelMapByBrand[matchedBrandLabelKey];
+                return source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+              })();
               const shouldUseModelSelect = groupHasModelOptionMap || resolvedModelOptions.length > 0;
             %>
             <label>
@@ -2177,7 +2337,7 @@
               >
                 <option value=""><%= resolvedBrandOptions.length > 0 ? (isEn ? 'Select Brand' : '브랜드 선택') : (isEn ? 'No brand options' : '등록된 브랜드 옵션 없음') %></option>
                 <% resolvedBrandOptions.forEach((optionValue) => { %>
-                  <option value="<%= optionValue %>" <%= editBrandValue === optionValue ? 'selected' : '' %>><%= optionValue %></option>
+                  <option value="<%= optionValue %>" <%= editBrandValue === optionValue ? 'selected' : '' %>><%= resolveFilterLabelByValue(groupBrandLabelMap, optionValue) %></option>
                 <% }) %>
               </select>
             </label>
@@ -2193,7 +2353,7 @@
                 >
                   <option value=""><%= resolvedFactoryOptions.length > 0 ? (isEn ? 'Select Factory' : '공장 선택') : (isEn ? 'No factory options' : '등록된 공장 옵션 없음') %></option>
                   <% resolvedFactoryOptions.forEach((optionValue) => { %>
-                    <option value="<%= optionValue %>" <%= editFactoryValue === optionValue ? 'selected' : '' %>><%= optionValue %></option>
+                    <option value="<%= optionValue %>" <%= editFactoryValue === optionValue ? 'selected' : '' %>><%= resolveFilterLabelByValue(groupFactoryLabelMap, optionValue) %></option>
                   <% }) %>
                 </select>
               </label>
@@ -2217,7 +2377,7 @@
                     : (shouldUseModelSelect ? (isEn ? 'Select Model' : '모델 선택') : (isEn ? 'No model options' : '등록된 모델 옵션 없음')) %>
                 </option>
                 <% resolvedModelOptions.forEach((optionValue) => { %>
-                  <option value="<%= optionValue %>" <%= editModelValue === optionValue ? 'selected' : '' %>><%= optionValue %></option>
+                  <option value="<%= optionValue %>" <%= editModelValue === optionValue ? 'selected' : '' %>><%= resolveFilterLabelByValue(initialModelLabelMap, optionValue) %></option>
                 <% }) %>
               </select>
             </label>
@@ -2291,6 +2451,7 @@
           const selectModelLabel = '<%= isEn ? 'Select Model' : '모델 선택' %>';
           const emptyBrandModelLabel = '<%= isEn ? 'No model options for this brand' : '이 브랜드에 등록된 모델 옵션 없음' %>';
           const noModelOptionsLabel = '<%= isEn ? 'No model options' : '등록된 모델 옵션 없음' %>';
+          const useEnglishLabels = <%= isEn ? 'true' : 'false' %>;
           const parsedProductGroups = (() => {
             try {
               const decoded = decodeURIComponent(form.dataset.productGroups || '');
@@ -2316,6 +2477,35 @@
           let lastDragFinishedAt = 0;
 
           const normalizeSelectValue = (value) => String(value || '').trim();
+          const findCaseInsensitiveKey = (source, rawValue) => {
+            if (!source || typeof source !== 'object' || Array.isArray(source)) return '';
+            const needle = normalizeSelectValue(rawValue).toLowerCase();
+            if (!needle) return '';
+            return (
+              Object.keys(source).find((key) => normalizeSelectValue(key).toLowerCase() === needle) || ''
+            );
+          };
+          const resolveLabelEntry = (source, rawValue) => {
+            const fallback = normalizeSelectValue(rawValue);
+            const matchedKey = findCaseInsensitiveKey(source, rawValue);
+            const rawEntry =
+              matchedKey &&
+              source[matchedKey] &&
+              typeof source[matchedKey] === 'object' &&
+              !Array.isArray(source[matchedKey])
+                ? source[matchedKey]
+                : {};
+            const labelKo = normalizeSelectValue(
+              rawEntry.labelKo || rawEntry.label_ko || rawEntry.ko || rawEntry.label || fallback
+            );
+            const labelEn = normalizeSelectValue(
+              rawEntry.labelEn || rawEntry.label_en || rawEntry.en || rawEntry.label || fallback
+            );
+            return {
+              labelKo: labelKo || fallback,
+              labelEn: labelEn || fallback
+            };
+          };
           const dedupeOptionList = (rawList = []) => {
             const list = [];
             const seen = new Set();
@@ -2346,6 +2536,31 @@
               modelMap[brand] = models;
             });
             return modelMap;
+          };
+          const getGroupModelLabelMapByBrand = (groupKey) => {
+            const groupConfig = productGroupConfigMap.get(String(groupKey || '')) || {};
+            const rawMap =
+              groupConfig.modelOptionLabelsByBrand &&
+              typeof groupConfig.modelOptionLabelsByBrand === 'object' &&
+              !Array.isArray(groupConfig.modelOptionLabelsByBrand)
+                ? groupConfig.modelOptionLabelsByBrand
+                : {};
+            return rawMap;
+          };
+          const getModelLabelForBrand = (groupKey, brandValue, modelValue) => {
+            const mapByBrand = getGroupModelLabelMapByBrand(groupKey);
+            const matchedBrandKey = findCaseInsensitiveKey(mapByBrand, brandValue);
+            if (!matchedBrandKey) {
+              return normalizeSelectValue(modelValue);
+            }
+            const brandMap =
+              mapByBrand[matchedBrandKey] &&
+              typeof mapByBrand[matchedBrandKey] === 'object' &&
+              !Array.isArray(mapByBrand[matchedBrandKey])
+                ? mapByBrand[matchedBrandKey]
+                : {};
+            const entry = resolveLabelEntry(brandMap, modelValue);
+            return useEnglishLabels ? (entry.labelEn || entry.labelKo || modelValue) : (entry.labelKo || entry.labelEn || modelValue);
           };
           const getModelOptionsForBrand = (groupKey, selectedBrand) => {
             const groupConfig = productGroupConfigMap.get(String(groupKey || '')) || {};
@@ -2416,7 +2631,7 @@
             modelOptions.forEach((item) => {
               const option = document.createElement('option');
               option.value = item;
-              option.textContent = item;
+              option.textContent = getModelLabelForBrand(safeGroupKey, selectedBrand, item) || item;
               modelSelect.appendChild(option);
             });
 

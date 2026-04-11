@@ -14,6 +14,9 @@
   const safeBrand = String(brand || '').trim();
   const safeFactory = String(factory || '').trim();
   const safeModel = String(model || '').trim();
+  const safeBrandItems = Array.isArray(brandItems) ? brandItems : (Array.isArray(brands) ? brands.map((value) => ({ value, label: value })) : []);
+  const safeFactoryItems = Array.isArray(factoryItems) ? factoryItems : (Array.isArray(factories) ? factories.map((value) => ({ value, label: value })) : []);
+  const safeModelItems = Array.isArray(modelItems) ? modelItems : (Array.isArray(models) ? models.map((value) => ({ value, label: value })) : []);
   const makeShopHref = (next = {}) => {
     const params = new URLSearchParams();
     params.set('group', group);
@@ -54,8 +57,9 @@
     <h4><%= isEn ? 'Brand' : '브랜드' %></h4>
     <div class="chip-row chip-scroll-row">
       <a href="<%= makeShopHref({ brand: '', model: '' }) %>" class="chip filter-chip <%= safeBrand ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
-      <% brands.forEach((item) => { %>
-        <a href="<%= makeShopHref({ brand: item, model: '' }) %>" class="chip filter-chip <%= safeBrand === item ? 'dark' : '' %>"><%= item %></a>
+      <% safeBrandItems.forEach((item) => { %>
+        <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
+        <a href="<%= makeShopHref({ brand: value, model: '' }) %>" class="chip filter-chip <%= safeBrand === value ? 'dark' : '' %>"><%= label %></a>
       <% }) %>
     </div>
   </div>
@@ -65,8 +69,9 @@
       <h4><%= isEn ? 'Model' : '모델' %></h4>
       <div class="chip-row chip-scroll-row">
         <a href="<%= makeShopHref({ model: '' }) %>" class="chip filter-chip <%= safeModel ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
-        <% models.forEach((item) => { %>
-          <a href="<%= makeShopHref({ model: item }) %>" class="chip filter-chip <%= safeModel === item ? 'dark' : '' %>"><%= item %></a>
+        <% safeModelItems.forEach((item) => { %>
+          <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
+          <a href="<%= makeShopHref({ model: value }) %>" class="chip filter-chip <%= safeModel === value ? 'dark' : '' %>"><%= label %></a>
         <% }) %>
       </div>
     </div>
@@ -77,8 +82,9 @@
       <h4><%= isEn ? 'Factory' : '공장' %></h4>
       <div class="chip-row chip-scroll-row">
         <a href="<%= makeShopHref({ factory: '', model: '' }) %>" class="chip filter-chip <%= safeFactory ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
-        <% factories.forEach((item) => { %>
-          <a href="<%= makeShopHref({ factory: item, model: '' }) %>" class="chip filter-chip <%= safeFactory === item ? 'dark' : '' %>"><%= item %></a>
+        <% safeFactoryItems.forEach((item) => { %>
+          <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
+          <a href="<%= makeShopHref({ factory: value, model: '' }) %>" class="chip filter-chip <%= safeFactory === value ? 'dark' : '' %>"><%= label %></a>
         <% }) %>
       </div>
     </div>
