@@ -5873,31 +5873,62 @@ app.get('/shop/item/:id', (req, res) => {
     imageList.push(product.image_path);
   }
 
+  const SIMILAR_LIMIT = 4;
+  const normalizedModel = String(product.model || '')
+    .trim()
+    .toLowerCase();
+
   let similarRows = [];
-  if (isFactoryLikeGroup(productGroupConfig)) {
+
+  if (normalizedModel) {
     similarRows = db
       .prepare(
         `
           SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
           FROM products
-          WHERE is_active = 1 AND brand = ? AND id != ?
+          WHERE is_active = 1
+            AND brand = ?
+            AND id != ?
+            AND LOWER(TRIM(COALESCE(model, ''))) = ?
           ORDER BY id DESC
-          LIMIT 6
+          LIMIT ?
         `
       )
-      .all(product.brand, product.id);
-  } else {
-    similarRows = db
-      .prepare(
-        `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
-          FROM products
-          WHERE is_active = 1 AND category_group = ? AND id != ?
-          ORDER BY id DESC
-          LIMIT 6
-        `
-      )
-      .all(product.category_group, product.id);
+      .all(product.brand, product.id, normalizedModel, SIMILAR_LIMIT);
+  }
+
+  const remainingSimilarCount = SIMILAR_LIMIT - similarRows.length;
+  if (remainingSimilarCount > 0) {
+    const fallbackRows = normalizedModel
+      ? db
+          .prepare(
+            `
+              SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
+              FROM products
+              WHERE is_active = 1
+                AND brand = ?
+                AND id != ?
+                AND LOWER(TRIM(COALESCE(model, ''))) != ?
+              ORDER BY RANDOM()
+              LIMIT ?
+            `
+          )
+          .all(product.brand, product.id, normalizedModel, remainingSimilarCount)
+      : db
+          .prepare(
+            `
+              SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
+              FROM products
+              WHERE is_active = 1
+                AND brand = ?
+                AND id != ?
+              ORDER BY RANDOM()
+              LIMIT ?
+            `
+          )
+          .all(product.brand, product.id, remainingSimilarCount);
+
+    similarRows = [...similarRows, ...fallbackRows];
   }
 
   const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
