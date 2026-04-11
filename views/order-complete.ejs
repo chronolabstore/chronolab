@@ -34,7 +34,7 @@
         <% if (!memberOrder) { %>
           <%= isEn ? '(guest order)' : '(비회원 주문)' %>
         <% } else { %>
-          <%= pointAwarded > 0 ? (isEn ? '(credited)' : '(적립완료)') : (isEn ? '(credited after payment confirmation)' : '(입금확인 후 적립)') %>
+          <%= pointAwarded > 0 ? (isEn ? '(credited)' : '(적립완료)') : (isEn ? '(credited after delivery completion)' : '(배송완료 후 적립)') %>
         <% } %>
       </small>
     </p>

@@ -19,7 +19,7 @@
       <strong>
         <%= pointRate > 0 ? `${pointRate}% (${ctx.formatPrice(pointAmount)}P)` : (isEn ? 'Not set' : '미설정') %>
       </strong>
-      <small class="muted-label"><%= isEn ? '(credited after payment confirmation)' : '(입금확인 후 적립)' %></small>
+      <small class="muted-label"><%= isEn ? '(credited after delivery completion)' : '(배송완료 후 적립)' %></small>
     </p>
   </div>
 

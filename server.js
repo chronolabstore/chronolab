@@ -3911,6 +3911,7 @@ async function pollTrackingAndAutoCompleteOrders(force = false) {
             ORDER_STATUS.DELIVERED,
             `tracking:auto:${latestEvent || 'delivered'}`
           );
+          awardDeliveredOrderPoints(item.id);
         }
       }
     }
@@ -4364,6 +4365,83 @@ function calculateEarnedPoints(totalPrice, pointRate) {
     return 0;
   }
   return Math.max(0, Math.floor((amount * rate) / 100));
+}
+
+function awardDeliveredOrderPoints(orderId) {
+  const targetOrderId = Number(orderId || 0);
+  if (!Number.isInteger(targetOrderId) || targetOrderId <= 0) {
+    return { awardedPoints: 0, memberUserId: 0 };
+  }
+
+  return db.transaction((resolvedOrderId) => {
+    const order = db
+      .prepare(
+        `
+          SELECT
+            id,
+            status,
+            total_price,
+            created_by_user_id,
+            awarded_points,
+            points_awarded_at,
+            point_rate_snapshot,
+            sales_margin_krw_snapshot,
+            sales_cost_krw_snapshot,
+            sales_synced_at
+          FROM orders
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(resolvedOrderId);
+
+    if (!order || normalizeOrderStatus(order.status) !== ORDER_STATUS.DELIVERED) {
+      return { awardedPoints: 0, memberUserId: 0 };
+    }
+
+    const memberUserId = Number(order.created_by_user_id || 0);
+    const hasPointRecord =
+      Boolean(order.points_awarded_at) || parseNonNegativeInt(order.awarded_points, 0) > 0;
+    if (memberUserId <= 0 || hasPointRecord) {
+      return { awardedPoints: 0, memberUserId: 0 };
+    }
+
+    const purchasePointRate = parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting());
+    const pointsToAward = calculateEarnedPoints(order.total_price, purchasePointRate);
+    if (pointsToAward <= 0) {
+      return { awardedPoints: 0, memberUserId: 0 };
+    }
+
+    const userUpdated = db
+      .prepare('UPDATE users SET reward_points = reward_points + ? WHERE id = ? AND is_admin = 0')
+      .run(pointsToAward, memberUserId);
+    if (userUpdated.changes === 0) {
+      return { awardedPoints: 0, memberUserId: 0 };
+    }
+
+    const hasSalesSnapshot = Boolean(String(order.sales_synced_at || '').trim());
+    const marginSnapshot = hasSalesSnapshot
+      ? Math.round(Number(order.sales_margin_krw_snapshot || 0))
+      : Math.round(
+          parseNonNegativeNumber(order.total_price, 0) -
+          parseNonNegativeNumber(order.sales_cost_krw_snapshot, 0)
+        );
+    const realMarginSnapshot = Math.round(marginSnapshot - pointsToAward);
+
+    db.prepare(
+      `
+        UPDATE orders
+        SET
+          awarded_points = ?,
+          points_awarded_at = COALESCE(points_awarded_at, datetime('now')),
+          sales_real_margin_krw_snapshot = ?,
+          sales_synced_at = COALESCE(sales_synced_at, datetime('now'))
+        WHERE id = ?
+      `
+    ).run(pointsToAward, realMarginSnapshot, resolvedOrderId);
+
+    return { awardedPoints: pointsToAward, memberUserId };
+  })(targetOrderId);
 }
 
 function normalizeMemberLevelOperator(rawOperator = '') {
@@ -11978,11 +12056,6 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   }
 
   const memberUserId = Number(order.created_by_user_id || 0);
-  const hasPointRecord =
-    Boolean(order.points_awarded_at) || parseNonNegativeInt(order.awarded_points, 0) > 0;
-  const purchasePointRate = parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting());
-  const pointsToAward =
-    memberUserId > 0 && !hasPointRecord ? calculateEarnedPoints(order.total_price, purchasePointRate) : 0;
 
   const confirmResult = db.transaction(() => {
     const updated = db
@@ -11996,32 +12069,10 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
       .run(ORDER_STATUS.ORDER_CONFIRMED, id, ORDER_STATUS.PENDING_REVIEW);
 
     if (updated.changes === 0) {
-      return { updated: 0, awardedPoints: 0 };
+      return { updated: 0 };
     }
 
-    let awardedPoints = 0;
-    if (memberUserId > 0 && pointsToAward > 0) {
-      const userUpdated = db
-        .prepare('UPDATE users SET reward_points = reward_points + ? WHERE id = ? AND is_admin = 0')
-        .run(pointsToAward, memberUserId);
-
-      if (userUpdated.changes > 0) {
-        db.prepare(
-          `
-            UPDATE orders
-            SET
-              awarded_points = ?,
-              points_awarded_at = COALESCE(points_awarded_at, datetime('now'))
-            WHERE id = ?
-          `
-        ).run(pointsToAward, id);
-        awardedPoints = pointsToAward;
-      }
-    }
-
-    const awardedPointsForMargin = awardedPoints > 0
-      ? awardedPoints
-      : parseNonNegativeInt(order.awarded_points, 0);
+    const awardedPointsForMargin = parseNonNegativeInt(order.awarded_points, 0);
     const hasSalesSnapshot = Boolean(String(order.sales_synced_at || '').trim());
     const marginSnapshot = hasSalesSnapshot
       ? Math.round(Number(order.sales_margin_krw_snapshot || 0))
@@ -12040,7 +12091,7 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
       `
     ).run(realMarginSnapshot, id);
 
-    return { updated: updated.changes, awardedPoints };
+    return { updated: updated.changes };
   })();
 
   if (confirmResult.updated === 0) {
@@ -12051,16 +12102,15 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
   appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.PENDING_REVIEW, ORDER_STATUS.ORDER_CONFIRMED, 'admin:confirm');
   incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.PAYMENT_CONFIRMED);
 
-  if (confirmResult.awardedPoints > 0) {
-    setFlash(
-      req,
-      'success',
-      `입금확인 처리되었습니다. 회원에게 ${formatPrice(confirmResult.awardedPoints)}포인트가 적립되었습니다.`
-    );
-    return res.redirect(backPath);
-  }
-
-  setFlash(req, 'success', '입금확인 처리되었습니다.');
+  const shouldMentionPointCredit =
+    memberUserId > 0 && parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting()) > 0;
+  setFlash(
+    req,
+    'success',
+    shouldMentionPointCredit
+      ? '입금확인 처리되었습니다. 포인트는 배송완료 후 자동 적립됩니다.'
+      : '입금확인 처리되었습니다.'
+  );
   return res.redirect(backPath);
 });
 
@@ -12283,6 +12333,16 @@ app.post('/admin/order/:id/mark-delivered', requireAdmin, (req, res) => {
   }
 
   appendOrderStatusLog(order.id, order.order_no, ORDER_STATUS.SHIPPING, ORDER_STATUS.DELIVERED, 'admin:delivered-manual');
+
+  const awardResult = awardDeliveredOrderPoints(order.id);
+  if (awardResult.awardedPoints > 0) {
+    setFlash(
+      req,
+      'success',
+      `수동 배송완료 처리되었습니다. 회원에게 ${formatPrice(awardResult.awardedPoints)}포인트가 적립되었습니다.`
+    );
+    return res.redirect(backPath);
+  }
 
   setFlash(req, 'success', '수동 배송완료 처리되었습니다.');
   return res.redirect(backPath);
