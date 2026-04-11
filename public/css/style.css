@@ -4321,6 +4321,10 @@ body.lightbox-open {
   gap: 8px;
 }
 
+.inline-file-preview-item {
+  min-height: auto;
+}
+
 .inline-file-preview-image {
   width: 100%;
   height: 100px;
@@ -4328,6 +4332,14 @@ body.lightbox-open {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--color-light-gray);
+}
+
+.inline-file-preview-item.is-dragging {
+  z-index: 2;
+}
+
+.inline-file-preview-name {
+  margin-top: 6px;
 }
 
 body.theme-night .inline-file-preview-image {
