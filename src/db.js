@@ -64,6 +64,7 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
       'Zenith'
     ],
     factoryOptions: ['ZF', 'CF', 'VSF', 'Clean', 'BT', 'OMF', 'TF'],
+    modelOptions: [],
     customFields: [
       { key: 'brand', labelKo: '브랜드', labelEn: 'Brand', type: 'text', required: true },
       { key: 'model', labelKo: '모델명', labelEn: 'Model', type: 'text', required: true },
@@ -97,6 +98,7 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
       'Audemars Piguet'
     ],
     factoryOptions: [],
+    modelOptions: [],
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
       { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true }
@@ -118,6 +120,7 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
       'Audemars Piguet'
     ],
     factoryOptions: [],
+    modelOptions: [],
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
       { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true }
