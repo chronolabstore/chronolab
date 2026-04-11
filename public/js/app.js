@@ -691,17 +691,17 @@
       if (isVisible) {
         return (
           '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-          '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"></path>' +
-          '<circle cx="12" cy="12" r="2.6"></circle>' +
+          '<path d="M1.5 12s3.75-7.5 10.5-7.5S22.5 12 22.5 12 18.75 19.5 12 19.5 1.5 12 1.5 12Z"></path>' +
+          '<circle cx="12" cy="12" r="3.25"></circle>' +
           '</svg>'
         );
       }
       return (
         '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-        '<path d="M3 12s3.5-6 9-6c2.25 0 4.17 1 5.67 2.2"></path>' +
-        '<path d="M21 12s-3.5 6-9 6c-2.25 0-4.17-1-5.67-2.2"></path>' +
-        '<path d="M4 4l16 16"></path>' +
-        '<circle cx="12" cy="12" r="2.6"></circle>' +
+        '<path d="M10.733 5.076A10.744 10.744 0 0 1 12 5c7 0 11 7 11 7a21.76 21.76 0 0 1-2.424 3.618"></path>' +
+        '<path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"></path>' +
+        '<path d="m2 2 20 20"></path>' +
+        '<path d="M6.71 6.708A21.758 21.758 0 0 0 1 12s4 7 11 7a10.745 10.745 0 0 0 5.294-1.292"></path>' +
         '</svg>'
       );
     }
