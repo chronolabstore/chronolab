@@ -3512,17 +3512,25 @@ th {
   min-width: 240px;
 }
 
+.member-admin-table-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
 .member-admin-table {
-  min-width: 1700px;
+  min-width: 1460px;
+  table-layout: fixed;
 }
 
 .member-admin-table th {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   background: var(--chip);
 }
 
 .member-admin-table td {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   vertical-align: middle;
 }
 
@@ -3530,7 +3538,13 @@ th {
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  line-height: 1.35;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.member-admin-table th,
+.member-admin-table td {
+  padding: 7px 6px;
 }
 
 .member-admin-table th:nth-child(1),
@@ -3555,11 +3569,13 @@ th {
 .member-admin-table td:nth-child(6),
 .member-admin-table td:nth-child(7),
 .member-admin-table td:nth-child(8) {
-  min-width: 130px;
+  min-width: 96px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .member-admin-table td:nth-child(9) {
-  min-width: 145px;
+  min-width: 124px;
 }
 
 .member-admin-table .member-level-inline {
@@ -3577,12 +3593,12 @@ th {
 }
 
 .member-admin-table td:nth-child(10) {
-  min-width: 120px;
+  min-width: 112px;
   text-align: right;
 }
 
 .member-admin-table td:nth-child(15) {
-  min-width: 170px;
+  min-width: 148px;
 }
 
 .member-admin-actions {
@@ -3599,6 +3615,35 @@ th {
   border-top: none;
   background: var(--card);
   padding: 12px;
+  max-width: 980px;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.member-admin-editor-row .admin-account-editor .form-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+}
+
+.member-admin-editor-row .admin-account-editor .form-grid.compact > button {
+  justify-self: flex-start;
+  min-width: 136px;
+}
+
+@media (max-width: 767px) {
+  .member-admin-table {
+    min-width: 1240px;
+  }
+
+  .member-admin-editor-row .admin-account-editor {
+    max-width: none;
+    margin: 0;
+  }
+
+  .member-admin-editor-row .admin-account-editor .form-grid.compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .mypage-order-table th:nth-child(1),
