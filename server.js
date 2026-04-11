@@ -489,6 +489,54 @@ function normalizeProductFilterOptionList(rawList) {
   return normalized;
 }
 
+function normalizeProductFilterOptionMap(rawMap, allowedKeys = []) {
+  const source = rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap) ? rawMap : {};
+  const allowedLookup = new Map();
+  if (Array.isArray(allowedKeys) && allowedKeys.length > 0) {
+    allowedKeys.forEach((item) => {
+      const normalized = normalizeProductFilterOption(item);
+      if (!normalized) {
+        return;
+      }
+      allowedLookup.set(normalized.toLowerCase(), normalized);
+    });
+  }
+
+  const mapped = {};
+  Object.entries(source).forEach(([rawKey, rawList]) => {
+    const normalizedKeySeed = normalizeProductFilterOption(rawKey);
+    if (!normalizedKeySeed) {
+      return;
+    }
+    const normalizedKey = allowedLookup.size > 0
+      ? allowedLookup.get(normalizedKeySeed.toLowerCase())
+      : normalizedKeySeed;
+    if (!normalizedKey) {
+      return;
+    }
+
+    const normalizedList = normalizeProductFilterOptionList(rawList);
+    if (normalizedList.length === 0) {
+      return;
+    }
+    mapped[normalizedKey] = normalizedList;
+  });
+
+  const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+  return Object.keys(mapped)
+    .sort((a, b) => {
+      const compared = collator.compare(a, b);
+      if (compared !== 0) {
+        return compared;
+      }
+      return String(a).localeCompare(String(b), 'en');
+    })
+    .reduce((acc, key) => {
+      acc[key] = mapped[key];
+      return acc;
+    }, {});
+}
+
 function getGroupBrandOptions(groupConfig = null) {
   if (!groupConfig || typeof groupConfig !== 'object') {
     return [];
@@ -510,6 +558,59 @@ function getGroupModelOptions(groupConfig = null) {
   return normalizeProductFilterOptionList(groupConfig.modelOptions);
 }
 
+function getGroupModelOptionsByBrand(groupConfig = null) {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return {};
+  }
+  const brandOptions = getGroupBrandOptions(groupConfig);
+  if (brandOptions.length === 0) {
+    return {};
+  }
+  return normalizeProductFilterOptionMap(groupConfig.modelOptionsByBrand, brandOptions);
+}
+
+function getGroupModelOptionsForBrand(groupConfig = null, rawBrandOption = '') {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return [];
+  }
+
+  const normalizedBrand = normalizeProductFilterOption(rawBrandOption);
+  const modelMap = getGroupModelOptionsByBrand(groupConfig);
+  const mapKeys = Object.keys(modelMap);
+
+  if (normalizedBrand) {
+    const matchedKey = mapKeys.find((item) => item.toLowerCase() === normalizedBrand.toLowerCase());
+    if (matchedKey) {
+      return modelMap[matchedKey];
+    }
+    if (mapKeys.length > 0) {
+      return [];
+    }
+  }
+
+  if (!normalizedBrand && mapKeys.length > 0) {
+    return [];
+  }
+
+  return getGroupModelOptions(groupConfig);
+}
+
+function getGroupAllModelOptions(groupConfig = null) {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return [];
+  }
+
+  const modelMap = getGroupModelOptionsByBrand(groupConfig);
+  const flattened = normalizeProductFilterOptionList(
+    Object.values(modelMap).flat()
+  );
+  if (flattened.length > 0) {
+    return flattened;
+  }
+
+  return getGroupModelOptions(groupConfig);
+}
+
 function getDefaultGroupFilterSeeds() {
   const defaults = getDefaultProductGroupConfigs();
   const factorySource = defaults.find((group) => isFactoryTemplateGroup(group)) || defaults[0] || {};
@@ -519,12 +620,20 @@ function getDefaultGroupFilterSeeds() {
     factory: {
       brandOptions: normalizeProductFilterOptionList(factorySource.brandOptions),
       factoryOptions: normalizeProductFilterOptionList(factorySource.factoryOptions),
-      modelOptions: normalizeProductFilterOptionList(factorySource.modelOptions)
+      modelOptions: normalizeProductFilterOptionList(factorySource.modelOptions),
+      modelOptionsByBrand: normalizeProductFilterOptionMap(
+        factorySource.modelOptionsByBrand,
+        normalizeProductFilterOptionList(factorySource.brandOptions)
+      )
     },
     simple: {
       brandOptions: normalizeProductFilterOptionList(simpleSource.brandOptions),
       factoryOptions: [],
-      modelOptions: normalizeProductFilterOptionList(simpleSource.modelOptions)
+      modelOptions: normalizeProductFilterOptionList(simpleSource.modelOptions),
+      modelOptionsByBrand: normalizeProductFilterOptionMap(
+        simpleSource.modelOptionsByBrand,
+        normalizeProductFilterOptionList(simpleSource.brandOptions)
+      )
     }
   };
 }
@@ -692,7 +801,7 @@ function parseProductFieldValuesFromBody(rawBody, groupConfig) {
   const fieldDefinitions = Array.isArray(groupConfig?.customFields) ? groupConfig.customFields : [];
   const brandOptions = getGroupBrandOptions(groupConfig);
   const factoryOptions = getGroupFactoryOptions(groupConfig);
-  const modelOptions = getGroupModelOptions(groupConfig);
+  const modelOptions = getGroupAllModelOptions(groupConfig);
   const values = {};
 
   for (const field of fieldDefinitions) {
@@ -808,6 +917,7 @@ function normalizeProductGroupConfigs(rawValue) {
     const hasExplicitBrandOptions = Object.prototype.hasOwnProperty.call(group, 'brandOptions');
     const hasExplicitFactoryOptions = Object.prototype.hasOwnProperty.call(group, 'factoryOptions');
     const hasExplicitModelOptions = Object.prototype.hasOwnProperty.call(group, 'modelOptions');
+    const hasExplicitModelOptionsByBrand = Object.prototype.hasOwnProperty.call(group, 'modelOptionsByBrand');
     const fallbackBrandOptions = normalizeProductFilterOptionList(fallbackGroup.brandOptions);
     const fallbackFactoryOptions = normalizeProductFilterOptionList(fallbackGroup.factoryOptions);
     const fallbackModelOptions = normalizeProductFilterOptionList(fallbackGroup.modelOptions);
@@ -875,9 +985,15 @@ function normalizeProductGroupConfigs(rawValue) {
     const factoryOptions = hasExplicitFactoryOptions
       ? normalizeProductFilterOptionList(group.factoryOptions)
       : fallbackFactoryOptions;
-    const modelOptions = hasExplicitModelOptions
+    let modelOptions = hasExplicitModelOptions
       ? normalizeProductFilterOptionList(group.modelOptions)
       : fallbackModelOptions;
+    const modelOptionsByBrand = hasExplicitModelOptionsByBrand
+      ? normalizeProductFilterOptionMap(group.modelOptionsByBrand, brandOptions)
+      : normalizeProductFilterOptionMap(fallbackGroup.modelOptionsByBrand, brandOptions);
+    if (Object.keys(modelOptionsByBrand).length > 0) {
+      modelOptions = [];
+    }
 
     normalizedGroups.push({
       key,
@@ -887,6 +1003,7 @@ function normalizeProductGroupConfigs(rawValue) {
       brandOptions,
       factoryOptions,
       modelOptions,
+      modelOptionsByBrand,
       customFields
     });
   });
@@ -5215,7 +5332,9 @@ function buildAdminProductSubmission(rawBody, groupConfig) {
   const safeBody = rawBody && typeof rawBody === 'object' ? rawBody : {};
   const brandOptions = getGroupBrandOptions(safeGroupConfig);
   const factoryOptions = getGroupFactoryOptions(safeGroupConfig);
-  const modelOptions = getGroupModelOptions(safeGroupConfig);
+  const modelOptionsByBrand = getGroupModelOptionsByBrand(safeGroupConfig);
+  const hasModelOptionsByBrand = Object.keys(modelOptionsByBrand).length > 0;
+  const fallbackModelOptions = getGroupModelOptions(safeGroupConfig);
   const selectedBrandOption = normalizeProductFilterOption(safeBody.selectedBrandOption || '');
   const selectedFactoryOption = normalizeProductFilterOption(safeBody.selectedFactoryOption || '');
   const selectedModelOption = normalizeProductFilterOption(safeBody.selectedModelOption || '');
@@ -5270,7 +5389,25 @@ function buildAdminProductSubmission(rawBody, groupConfig) {
     fieldValues.factory_name = selectedFactoryOption;
   }
 
-  if (modelOptions.length > 0) {
+  const selectedBrandForModel = normalizeProductFilterOption(selectedBrandOption || fieldValues.brand || '');
+  const modelOptions = hasModelOptionsByBrand
+    ? getGroupModelOptionsForBrand(safeGroupConfig, selectedBrandForModel)
+    : fallbackModelOptions;
+  const shouldValidateModelFilter = hasModelOptionsByBrand || modelOptions.length > 0;
+
+  if (hasModelOptionsByBrand && !selectedBrandForModel) {
+    return {
+      error: '브랜드를 먼저 선택해 주세요.'
+    };
+  }
+
+  if (hasModelOptionsByBrand && selectedBrandForModel && modelOptions.length === 0) {
+    return {
+      error: '선택한 브랜드에 등록된 모델이 없습니다. 메뉴관리 > 분류 필터에서 모델을 먼저 추가해 주세요.'
+    };
+  }
+
+  if (shouldValidateModelFilter) {
     if (!selectedModelOption) {
       return {
         error: '모델 필터를 선택해 주세요.'
@@ -5956,11 +6093,11 @@ app.get('/shop', (req, res) => {
     brandOptions: [],
     factoryOptions: [],
     modelOptions: [],
+    modelOptionsByBrand: {},
     customFields: []
   };
   const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
   const groupFactorySeedOptions = getGroupFactoryOptions(selectedGroupConfig);
-  const groupModelSeedOptions = getGroupModelOptions(selectedGroupConfig);
   const supportsFactoryFilter = (
     factoryTemplateGroup ||
     groupFactorySeedOptions.length > 0 ||
@@ -6014,47 +6151,7 @@ app.get('/shop', (req, res) => {
   const factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
     ? selectedFactoryRaw
     : '';
-
-  const modelWhere = ['is_active = 1', 'category_group = ?'];
-  const modelParams = [group];
-  if (brand) {
-    modelWhere.push('brand = ?');
-    modelParams.push(brand);
-  }
-  if (factory) {
-    modelWhere.push('factory_name = ?');
-    modelParams.push(factory);
-  }
-
-  const discoveredModels = db
-    .prepare(
-      `
-        SELECT DISTINCT model
-        FROM products
-        WHERE ${modelWhere.join(' AND ')}
-        ORDER BY model ASC
-      `
-    )
-    .all(...modelParams)
-    .map((row) => normalizeProductFilterOption(row.model))
-    .filter(Boolean);
-  const discoveredModelOptions = normalizeProductFilterOptionList(discoveredModels);
-  const configuredModels = groupModelSeedOptions;
-  const models = (() => {
-    if (brand || factory) {
-      return discoveredModelOptions;
-    }
-    if (configuredModels.length === 0) {
-      return discoveredModelOptions;
-    }
-    if (discoveredModelOptions.length === 0) {
-      return configuredModels;
-    }
-
-    const configuredModelSet = new Set(configuredModels.map((item) => item.toLowerCase()));
-    const matchedModels = discoveredModelOptions.filter((item) => configuredModelSet.has(item.toLowerCase()));
-    return matchedModels.length > 0 ? matchedModels : discoveredModelOptions;
-  })();
+  const models = brand ? getGroupModelOptionsForBrand(selectedGroupConfig, brand) : [];
   const model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
 
   const where = ['is_active = 1', 'category_group = ?'];
@@ -6108,7 +6205,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
-    supportsModelFilter: true,
+    supportsModelFilter: Boolean(brand) && models.length > 0,
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,
@@ -6241,6 +6338,7 @@ app.get('/shop/item/:id', (req, res) => {
     brandOptions: [],
     factoryOptions: [],
     modelOptions: [],
+    modelOptionsByBrand: {},
     customFields: []
   };
 
@@ -9764,6 +9862,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
         brandOptions: [],
         factoryOptions: [],
         modelOptions: [],
+        modelOptionsByBrand: {},
         customFields: []
       };
       const imageRows = db
@@ -11380,6 +11479,9 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
     brandOptions: useFactoryTemplate ? filterSeeds.factory.brandOptions : filterSeeds.simple.brandOptions,
     factoryOptions: useFactoryTemplate ? filterSeeds.factory.factoryOptions : [],
     modelOptions: useFactoryTemplate ? filterSeeds.factory.modelOptions : filterSeeds.simple.modelOptions,
+    modelOptionsByBrand: useFactoryTemplate
+      ? filterSeeds.factory.modelOptionsByBrand
+      : filterSeeds.simple.modelOptionsByBrand,
     customFields: useFactoryTemplate ? getFactoryDefaultFields() : getCompactDefaultFields()
   }];
   setProductGroupConfigs(nextConfigs);
@@ -11570,6 +11672,7 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
   const filterType = String(req.body.filterType || 'brand').trim().toLowerCase();
   const optionValue = normalizeProductFilterOption(req.body.optionValue || '');
+  const brandValue = normalizeProductFilterOption(req.body.brandValue || '');
 
   if (!groupKey || !optionValue) {
     setFlash(req, 'error', '필터 추가에 필요한 값을 입력해 주세요.');
@@ -11589,14 +11692,26 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   }
 
   const targetGroup = configs[targetIndex];
+  if (filterType === 'model' && !brandValue) {
+    setFlash(req, 'error', '모델 필터 추가 시 브랜드를 선택해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const brandOptions = getGroupBrandOptions(targetGroup);
+  const selectedBrand = brandOptions.find((item) => item.toLowerCase() === brandValue.toLowerCase()) || '';
+  if (filterType === 'model' && !selectedBrand) {
+    setFlash(req, 'error', '등록된 브랜드 중에서 모델 대상 브랜드를 선택해 주세요.');
+    return res.redirect(backPath);
+  }
+
   const currentList = (() => {
     if (filterType === 'factory') {
       return getGroupFactoryOptions(targetGroup);
     }
     if (filterType === 'model') {
-      return getGroupModelOptions(targetGroup);
+      return getGroupModelOptionsForBrand(targetGroup, selectedBrand);
     }
-    return getGroupBrandOptions(targetGroup);
+    return brandOptions;
   })();
   const duplicated = currentList.some((item) => item.toLowerCase() === optionValue.toLowerCase());
   if (duplicated) {
@@ -11606,12 +11721,21 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
 
   const nextList = [...currentList, optionValue];
   const nextGroups = [...configs];
+  const currentModelMap = getGroupModelOptionsByBrand(targetGroup);
+  const nextModelMap = { ...currentModelMap };
+  if (filterType === 'model') {
+    nextModelMap[selectedBrand] = normalizeProductFilterOptionList(nextList);
+  }
+
   nextGroups[targetIndex] = {
     ...targetGroup,
     ...(filterType === 'factory'
       ? { factoryOptions: nextList }
       : filterType === 'model'
-        ? { modelOptions: nextList }
+        ? {
+            modelOptionsByBrand: nextModelMap,
+            modelOptions: []
+          }
         : { brandOptions: nextList })
   };
 
@@ -11622,7 +11746,7 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
     filterType === 'factory'
       ? '공장 필터가 추가되었습니다.'
       : filterType === 'model'
-        ? '모델 필터가 추가되었습니다.'
+        ? '모델 필터가 추가되었습니다. (브랜드별)'
         : '브랜드 필터가 추가되었습니다.'
   );
   return res.redirect(backPath);
@@ -11633,6 +11757,7 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
   const filterType = String(req.body.filterType || 'brand').trim().toLowerCase();
   const optionValue = normalizeProductFilterOption(req.body.optionValue || '');
+  const brandValue = normalizeProductFilterOption(req.body.brandValue || '');
 
   if (!groupKey || !optionValue || !['brand', 'factory', 'model'].includes(filterType)) {
     setFlash(req, 'error', '필터 삭제 요청값을 확인해 주세요.');
@@ -11647,14 +11772,21 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   }
 
   const targetGroup = configs[targetIndex];
+  const brandOptions = getGroupBrandOptions(targetGroup);
+  const selectedBrand = brandOptions.find((item) => item.toLowerCase() === brandValue.toLowerCase()) || '';
+  if (filterType === 'model' && !selectedBrand) {
+    setFlash(req, 'error', '삭제할 모델의 브랜드를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
   const currentList = (() => {
     if (filterType === 'factory') {
       return getGroupFactoryOptions(targetGroup);
     }
     if (filterType === 'model') {
-      return getGroupModelOptions(targetGroup);
+      return getGroupModelOptionsForBrand(targetGroup, selectedBrand);
     }
-    return getGroupBrandOptions(targetGroup);
+    return brandOptions;
   })();
   const nextList = currentList.filter((item) => item.toLowerCase() !== optionValue.toLowerCase());
 
@@ -11664,13 +11796,37 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   }
 
   const nextGroups = [...configs];
+  const currentModelMap = getGroupModelOptionsByBrand(targetGroup);
+  const nextModelMap = { ...currentModelMap };
+  if (filterType === 'model') {
+    if (nextList.length === 0) {
+      delete nextModelMap[selectedBrand];
+    } else {
+      nextModelMap[selectedBrand] = normalizeProductFilterOptionList(nextList);
+    }
+  }
+  if (filterType === 'brand') {
+    const matchedBrandKey = Object.keys(nextModelMap).find(
+      (item) => item.toLowerCase() === optionValue.toLowerCase()
+    );
+    if (matchedBrandKey) {
+      delete nextModelMap[matchedBrandKey];
+    }
+  }
+
   nextGroups[targetIndex] = {
     ...targetGroup,
     ...(filterType === 'factory'
       ? { factoryOptions: nextList }
       : filterType === 'model'
-        ? { modelOptions: nextList }
-        : { brandOptions: nextList })
+        ? {
+            modelOptionsByBrand: nextModelMap,
+            modelOptions: []
+          }
+        : {
+            brandOptions: nextList,
+            modelOptionsByBrand: nextModelMap
+          })
   };
 
   setProductGroupConfigs(nextGroups);
@@ -11930,6 +12086,7 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     brandOptions: defaultFilterSeeds.simple.brandOptions,
     factoryOptions: [],
     modelOptions: defaultFilterSeeds.simple.modelOptions,
+    modelOptionsByBrand: defaultFilterSeeds.simple.modelOptionsByBrand,
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const categoryGroup = selectedGroup.key;
@@ -12054,6 +12211,7 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     brandOptions: defaultFilterSeeds.simple.brandOptions,
     factoryOptions: [],
     modelOptions: defaultFilterSeeds.simple.modelOptions,
+    modelOptionsByBrand: defaultFilterSeeds.simple.modelOptionsByBrand,
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const selectableBadgeDefs = getProductBadgeDefinitions();

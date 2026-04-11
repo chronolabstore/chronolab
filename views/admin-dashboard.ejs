@@ -1688,7 +1688,12 @@
             <%
               const brandFilters = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const factoryFilters = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
-              const modelFilters = Array.isArray(group.modelOptions) ? group.modelOptions : [];
+              const modelFilterMap =
+                group.modelOptionsByBrand && typeof group.modelOptionsByBrand === 'object' && !Array.isArray(group.modelOptionsByBrand)
+                  ? group.modelOptionsByBrand
+                  : {};
+              const modelFilterBrandKeys = Object.keys(modelFilterMap);
+              const legacyModelFilters = Array.isArray(group.modelOptions) ? group.modelOptions : [];
               const supportsFactoryFilterGroup =
                 String(group.key || '').trim() === '공장제' ||
                 String(group.key || '').trim() === '현지중고' ||
@@ -1771,33 +1776,60 @@
 
                 <section class="kpi-card">
                   <h4><%= isEn ? 'Model Filters' : '모델 필터' %></h4>
-                  <% if (modelFilters.length === 0) { %>
-                    <p class="muted-label"><%= isEn ? 'No model filter options yet.' : '등록된 모델 필터가 없습니다.' %></p>
+                  <% if (brandFilters.length === 0) { %>
+                    <p class="muted-label"><%= isEn ? 'Add brand filters first, then register models by brand.' : '브랜드 필터를 먼저 등록한 뒤, 브랜드별 모델을 추가해 주세요.' %></p>
                   <% } else { %>
-                    <div class="admin-list">
-                      <% modelFilters.forEach((optionValue) => { %>
-                        <div class="admin-list-item">
-                          <div class="menu-manage-item-row">
-                            <strong><%= optionValue %></strong>
-                            <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
-                              <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                              <input type="hidden" name="filterType" value="model" />
-                              <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                              <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                            </form>
+                    <% if (modelFilterBrandKeys.length === 0 && legacyModelFilters.length === 0) { %>
+                      <p class="muted-label"><%= isEn ? 'No model filter options yet.' : '등록된 모델 필터가 없습니다.' %></p>
+                    <% } else { %>
+                      <div class="admin-list">
+                        <% brandFilters.forEach((brandOption) => { %>
+                          <% const brandModels = Array.isArray(modelFilterMap[brandOption]) ? modelFilterMap[brandOption] : []; %>
+                          <div class="admin-list-item">
+                            <div class="menu-manage-item-row">
+                              <strong><%= brandOption %></strong>
+                            </div>
+                            <% if (brandModels.length === 0) { %>
+                              <p class="muted-label"><%= isEn ? 'No model options for this brand.' : '이 브랜드에 등록된 모델이 없습니다.' %></p>
+                            <% } else { %>
+                              <div class="admin-list">
+                                <% brandModels.forEach((optionValue) => { %>
+                                  <div class="admin-list-item">
+                                    <div class="menu-manage-item-row">
+                                      <strong><%= optionValue %></strong>
+                                      <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                        <input type="hidden" name="filterType" value="model" />
+                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                        <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                      </form>
+                                    </div>
+                                  </div>
+                                <% }) %>
+                              </div>
+                            <% } %>
                           </div>
-                        </div>
-                      <% }) %>
-                    </div>
+                        <% }) %>
+                      </div>
+                    <% } %>
                   <% } %>
 
                   <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
                     <input type="hidden" name="groupKey" value="<%= group.key %>" />
                     <input type="hidden" name="filterType" value="model" />
-                    <label><%= isEn ? 'Add Model Option' : '모델 옵션 추가' %>
-                      <input type="text" name="optionValue" required />
+                    <label><%= isEn ? 'Target Brand' : '대상 브랜드' %>
+                      <select name="brandValue" required <%= brandFilters.length === 0 ? 'disabled' : '' %>>
+                        <option value=""><%= isEn ? 'Select Brand' : '브랜드 선택' %></option>
+                        <% brandFilters.forEach((brandOption) => { %>
+                          <option value="<%= brandOption %>"><%= brandOption %></option>
+                        <% }) %>
+                      </select>
                     </label>
-                    <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Model' : '모델 추가' %></button>
+                    <label><%= isEn ? 'Add Model Option' : '모델 옵션 추가' %>
+                      <input type="text" name="optionValue" required <%= brandFilters.length === 0 ? 'disabled' : '' %> />
+                    </label>
+                    <button type="submit" class="chip dark filter-chip" <%= brandFilters.length === 0 ? 'disabled' : '' %>><%= isEn ? 'Add Model' : '모델 추가' %></button>
                   </form>
                 </section>
               </div>
@@ -2054,6 +2086,29 @@
               const groupBrandOptions = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const groupFactoryOptions = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
               const groupModelOptions = Array.isArray(group.modelOptions) ? group.modelOptions : [];
+              const rawGroupModelOptionMap =
+                group.modelOptionsByBrand && typeof group.modelOptionsByBrand === 'object' && !Array.isArray(group.modelOptionsByBrand)
+                  ? group.modelOptionsByBrand
+                  : {};
+              const groupModelOptionMap = {};
+              Object.entries(rawGroupModelOptionMap).forEach(([brandName, modelList]) => {
+                const safeBrandName = String(brandName || '').trim();
+                if (!safeBrandName) return;
+                const normalizedModels = [];
+                const seenModels = new Set();
+                (Array.isArray(modelList) ? modelList : []).forEach((value) => {
+                  const safeValue = String(value || '').trim();
+                  if (!safeValue) return;
+                  const dedupeKey = safeValue.toLowerCase();
+                  if (seenModels.has(dedupeKey)) return;
+                  seenModels.add(dedupeKey);
+                  normalizedModels.push(safeValue);
+                });
+                if (normalizedModels.length > 0) {
+                  groupModelOptionMap[safeBrandName] = normalizedModels;
+                }
+              });
+              const groupHasModelOptionMap = Object.keys(groupModelOptionMap).length > 0;
               const supportsFactorySelectionGroup =
                 String(group.mode || '').toLowerCase() === 'factory' ||
                 String(group.key || '').trim() === '공장제' ||
@@ -2094,7 +2149,22 @@
               const resolvedModelOptions = (() => {
                 const list = [];
                 const seen = new Set();
-                [...groupModelOptions, editModelValue].forEach((value) => {
+                const seededOptions = (() => {
+                  if (!groupHasModelOptionMap) {
+                    return groupModelOptions;
+                  }
+                  if (!editBrandValue) {
+                    return [];
+                  }
+                  const matchedBrandKey = Object.keys(groupModelOptionMap).find(
+                    (optionValue) => String(optionValue || '').trim().toLowerCase() === editBrandValue.toLowerCase()
+                  );
+                  if (!matchedBrandKey) {
+                    return [];
+                  }
+                  return Array.isArray(groupModelOptionMap[matchedBrandKey]) ? groupModelOptionMap[matchedBrandKey] : [];
+                })();
+                [...seededOptions, editModelValue].forEach((value) => {
                   const safeValue = String(value || '').trim();
                   if (!safeValue) return;
                   const dedupeKey = safeValue.toLowerCase();
@@ -2104,7 +2174,7 @@
                 });
                 return list;
               })();
-              const shouldUseModelSelect = resolvedModelOptions.length > 0;
+              const shouldUseModelSelect = groupHasModelOptionMap || resolvedModelOptions.length > 0;
             %>
             <label>
               <%= isEn ? 'Brand Filter' : '브랜드 필터' %>
@@ -2144,9 +2214,17 @@
                 name="selectedModelOption"
                 data-admin-field-input
                 data-group="<%= group.key %>"
-                data-required="<%= shouldUseModelSelect ? '1' : '0' %>"
+                data-required="<%= resolvedModelOptions.length > 0 ? '1' : '0' %>"
+                data-has-model-map="<%= groupHasModelOptionMap ? '1' : '0' %>"
+                data-initial-model-value="<%= editModelValue %>"
               >
-                <option value=""><%= shouldUseModelSelect ? (isEn ? 'Select Model' : '모델 선택') : (isEn ? 'No model options' : '등록된 모델 옵션 없음') %></option>
+                <option value="">
+                  <%= groupHasModelOptionMap
+                    ? (editBrandValue
+                        ? (resolvedModelOptions.length > 0 ? (isEn ? 'Select Model' : '모델 선택') : (isEn ? 'No model options for this brand' : '이 브랜드에 등록된 모델 옵션 없음'))
+                        : (isEn ? 'Select brand first' : '브랜드를 먼저 선택하세요'))
+                    : (shouldUseModelSelect ? (isEn ? 'Select Model' : '모델 선택') : (isEn ? 'No model options' : '등록된 모델 옵션 없음')) %>
+                </option>
                 <% resolvedModelOptions.forEach((optionValue) => { %>
                   <option value="<%= optionValue %>" <%= editModelValue === optionValue ? 'selected' : '' %>><%= optionValue %></option>
                 <% }) %>
@@ -2218,6 +2296,24 @@
           const imageOverLimitMessage = '<%= isEn ? 'Some files exceed 100MB per image. Please reduce file size and try again.' : '이미지 1개당 최대 100MB까지 업로드할 수 있습니다. 용량을 줄여 다시 시도해 주세요.' %>';
           const removeImageLabel = '<%= isEn ? 'Remove image' : '이미지 선택 취소' %>';
           const browserUnsupportedFileEditMessage = '<%= isEn ? 'Your browser does not support file reordering/removal for this input. Please reselect images.' : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.' %>';
+          const selectBrandFirstLabel = '<%= isEn ? 'Select brand first' : '브랜드를 먼저 선택하세요' %>';
+          const selectModelLabel = '<%= isEn ? 'Select Model' : '모델 선택' %>';
+          const emptyBrandModelLabel = '<%= isEn ? 'No model options for this brand' : '이 브랜드에 등록된 모델 옵션 없음' %>';
+          const noModelOptionsLabel = '<%= isEn ? 'No model options' : '등록된 모델 옵션 없음' %>';
+          const parsedProductGroups = (() => {
+            try {
+              const decoded = decodeURIComponent(form.dataset.productGroups || '');
+              const parsed = JSON.parse(decoded);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+              return [];
+            }
+          })();
+          const productGroupConfigMap = new Map(
+            parsedProductGroups
+              .filter((item) => item && typeof item === 'object')
+              .map((item) => [String(item.key || ''), item])
+          );
           let watermarkImage = null;
           let watermarkImagePromise = null;
           let selectedImageFiles = [];
@@ -2227,6 +2323,119 @@
           let dragStartY = 0;
           let dragMoved = false;
           let lastDragFinishedAt = 0;
+
+          const normalizeSelectValue = (value) => String(value || '').trim();
+          const dedupeOptionList = (rawList = []) => {
+            const list = [];
+            const seen = new Set();
+            (Array.isArray(rawList) ? rawList : []).forEach((item) => {
+              const value = normalizeSelectValue(item);
+              if (!value) return;
+              const dedupeKey = value.toLowerCase();
+              if (seen.has(dedupeKey)) return;
+              seen.add(dedupeKey);
+              list.push(value);
+            });
+            return list;
+          };
+          const getGroupModelMap = (groupKey) => {
+            const groupConfig = productGroupConfigMap.get(String(groupKey || '')) || {};
+            const rawMap =
+              groupConfig.modelOptionsByBrand &&
+              typeof groupConfig.modelOptionsByBrand === 'object' &&
+              !Array.isArray(groupConfig.modelOptionsByBrand)
+                ? groupConfig.modelOptionsByBrand
+                : {};
+            const modelMap = {};
+            Object.entries(rawMap).forEach(([rawBrand, rawModels]) => {
+              const brand = normalizeSelectValue(rawBrand);
+              if (!brand) return;
+              const models = dedupeOptionList(rawModels);
+              if (models.length === 0) return;
+              modelMap[brand] = models;
+            });
+            return modelMap;
+          };
+          const getModelOptionsForBrand = (groupKey, selectedBrand) => {
+            const groupConfig = productGroupConfigMap.get(String(groupKey || '')) || {};
+            const modelMap = getGroupModelMap(groupKey);
+            const mapKeys = Object.keys(modelMap);
+            const normalizedBrand = normalizeSelectValue(selectedBrand);
+            if (normalizedBrand) {
+              const matchedKey = mapKeys.find((item) => item.toLowerCase() === normalizedBrand.toLowerCase());
+              if (matchedKey) {
+                return { hasBrandMap: mapKeys.length > 0, options: modelMap[matchedKey] };
+              }
+              if (mapKeys.length > 0) {
+                return { hasBrandMap: true, options: [] };
+              }
+            }
+            if (!normalizedBrand && mapKeys.length > 0) {
+              return { hasBrandMap: true, options: [] };
+            }
+            return {
+              hasBrandMap: false,
+              options: dedupeOptionList(groupConfig.modelOptions)
+            };
+          };
+          const refreshModelSelectForGroup = (groupKey) => {
+            const safeGroupKey = String(groupKey || '');
+            if (!safeGroupKey) return;
+            const fieldBox = fieldBoxes.find((box) => box.dataset.adminProductFields === safeGroupKey);
+            if (!fieldBox) return;
+
+            const brandSelect = fieldBox.querySelector('select[name="selectedBrandOption"]');
+            const modelSelect = fieldBox.querySelector('select[name="selectedModelOption"]');
+            if (!modelSelect) return;
+
+            const selectedBrand = normalizeSelectValue(brandSelect?.value || '');
+            const currentValue = normalizeSelectValue(modelSelect.value || modelSelect.dataset.initialModelValue || '');
+            const initialModelValue = normalizeSelectValue(modelSelect.dataset.initialModelValue || '');
+            const lastResolvedBrand = normalizeSelectValue(modelSelect.dataset.lastResolvedBrand || '');
+            const isFirstRefresh = modelSelect.dataset.modelRefreshInitialized !== '1';
+            const brandChanged = !isFirstRefresh && lastResolvedBrand !== selectedBrand;
+            const resolved = getModelOptionsForBrand(safeGroupKey, selectedBrand);
+            let modelOptions = dedupeOptionList(resolved.options || []);
+
+            if (
+              !brandChanged &&
+              currentValue &&
+              !modelOptions.some((item) => item.toLowerCase() === currentValue.toLowerCase())
+            ) {
+              modelOptions = [...modelOptions, currentValue];
+            } else if (
+              isFirstRefresh &&
+              initialModelValue &&
+              !modelOptions.some((item) => item.toLowerCase() === initialModelValue.toLowerCase())
+            ) {
+              modelOptions = [...modelOptions, initialModelValue];
+            }
+
+            const placeholder = resolved.hasBrandMap
+              ? (selectedBrand
+                  ? (modelOptions.length > 0 ? selectModelLabel : emptyBrandModelLabel)
+                  : selectBrandFirstLabel)
+              : (modelOptions.length > 0 ? selectModelLabel : noModelOptionsLabel);
+
+            modelSelect.innerHTML = '';
+            const baseOption = document.createElement('option');
+            baseOption.value = '';
+            baseOption.textContent = placeholder;
+            modelSelect.appendChild(baseOption);
+            modelOptions.forEach((item) => {
+              const option = document.createElement('option');
+              option.value = item;
+              option.textContent = item;
+              modelSelect.appendChild(option);
+            });
+
+            const matchedValue = modelOptions.find((item) => item.toLowerCase() === currentValue.toLowerCase()) || '';
+            modelSelect.value = matchedValue;
+            modelSelect.dataset.required = modelOptions.length > 0 ? '1' : '0';
+            modelSelect.required = !modelSelect.disabled && modelSelect.dataset.required === '1';
+            modelSelect.dataset.lastResolvedBrand = selectedBrand;
+            modelSelect.dataset.modelRefreshInitialized = '1';
+          };
 
           const clearWatermarkPreview = () => {
             if (!previewGrid) return;
@@ -2620,7 +2829,21 @@
               .forEach((input) => {
                 input.disabled = false;
               });
+
+            refreshModelSelectForGroup(groupKey);
           };
+
+          fieldBoxes.forEach((box) => {
+            const groupKey = box.dataset.adminProductFields || '';
+            if (!groupKey) return;
+            const brandSelect = box.querySelector('select[name="selectedBrandOption"]');
+            if (brandSelect) {
+              brandSelect.addEventListener('change', () => {
+                refreshModelSelectForGroup(groupKey);
+              });
+            }
+            refreshModelSelectForGroup(groupKey);
+          });
 
           const initialGroup = decodeURIComponent(form.dataset.initialGroup || '') || (buttons[0] && buttons[0].dataset.adminProductGroupBtn) || '';
           if (initialGroup) {
