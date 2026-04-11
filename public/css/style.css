@@ -157,6 +157,17 @@ body.theme-night input[type='file']::file-selector-button {
   margin-right: 8px;
 }
 
+body.theme-night .password-toggle-btn {
+  background: var(--color-white);
+  border-color: #7d90b0;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+body.theme-night .password-toggle-btn:hover,
+body.theme-night .password-toggle-btn.is-visible {
+  color: var(--color-black);
+}
+
 body.theme-night .chip,
 body.theme-night .menu-pill,
 body.theme-night .icon-action,
@@ -1468,6 +1479,56 @@ textarea {
   border-radius: 10px;
   padding: 10px;
   background: var(--card);
+  color: var(--text);
+}
+
+.password-field-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.password-field-wrap .with-password-toggle {
+  padding-right: 44px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.password-toggle-btn svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.password-toggle-btn.is-visible {
   color: var(--text);
 }
 

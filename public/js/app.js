@@ -684,12 +684,94 @@
     });
   }
 
+  function initPasswordVisibilityToggles() {
+    var isEn = document.documentElement.lang === 'en';
+
+    function getEyeSvg(isVisible) {
+      if (isVisible) {
+        return (
+          '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+          '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"></path>' +
+          '<circle cx="12" cy="12" r="2.6"></circle>' +
+          '</svg>'
+        );
+      }
+      return (
+        '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M3 12s3.5-6 9-6c2.25 0 4.17 1 5.67 2.2"></path>' +
+        '<path d="M21 12s-3.5 6-9 6c-2.25 0-4.17-1-5.67-2.2"></path>' +
+        '<path d="M4 4l16 16"></path>' +
+        '<circle cx="12" cy="12" r="2.6"></circle>' +
+        '</svg>'
+      );
+    }
+
+    function bindPasswordInput(input) {
+      if (!input || input.tagName !== 'INPUT') {
+        return;
+      }
+      if (input.dataset.passwordToggleBound === '1') {
+        return;
+      }
+      if (!input.parentNode) {
+        return;
+      }
+
+      var wrapper = document.createElement('div');
+      wrapper.className = 'password-field-wrap';
+      input.parentNode.insertBefore(wrapper, input);
+      wrapper.appendChild(input);
+
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'password-toggle-btn';
+      button.setAttribute('aria-label', isEn ? 'Show password' : '비밀번호 보기');
+      button.setAttribute('aria-pressed', 'false');
+      button.innerHTML = getEyeSvg(false);
+      wrapper.appendChild(button);
+
+      input.classList.add('with-password-toggle');
+      input.dataset.passwordToggleBound = '1';
+
+      button.addEventListener('click', function () {
+        var shouldShow = input.type === 'password';
+        input.type = shouldShow ? 'text' : 'password';
+        button.classList.toggle('is-visible', shouldShow);
+        button.setAttribute('aria-pressed', shouldShow ? 'true' : 'false');
+        button.setAttribute('aria-label', shouldShow
+          ? (isEn ? 'Hide password' : '비밀번호 숨기기')
+          : (isEn ? 'Show password' : '비밀번호 보기'));
+        button.innerHTML = getEyeSvg(shouldShow);
+      });
+    }
+
+    document.querySelectorAll('input[type="password"]').forEach(bindPasswordInput);
+
+    var observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        Array.prototype.forEach.call(mutation.addedNodes || [], function (node) {
+          if (!node || node.nodeType !== 1) {
+            return;
+          }
+          if (node.matches && node.matches('input[type="password"]')) {
+            bindPasswordInput(node);
+          }
+          if (node.querySelectorAll) {
+            node.querySelectorAll('input[type="password"]').forEach(bindPasswordInput);
+          }
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   function initApp() {
     initNoticePopup();
     initFlashPopup();
     initProductGallery();
     initAdminInlineImagePreviews();
     initImageLightbox();
+    initPasswordVisibilityToggles();
   }
 
   if (document.readyState === 'loading') {
