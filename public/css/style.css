@@ -3809,6 +3809,13 @@ th {
   color: var(--muted);
 }
 
+.order-tracking-link {
+  margin-top: 5px;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+}
+
 .order-requested-cell {
   white-space: nowrap;
 }

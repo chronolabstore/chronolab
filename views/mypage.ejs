@@ -291,6 +291,9 @@
               const pointsText = Number(item.awarded_points || 0) > 0 ? `${ctx.formatPrice(item.awarded_points)}P` : '-';
               const trackingCheckedDate = item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 10) : '';
               const trackingCheckedTime = item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(11, 16) : '';
+              const trackingLookupUrl = item.tracking_number
+                ? `https://tracker.delivery/#/${encodeURIComponent(item.tracking_carrier || 'kr.cjlogistics')}/${encodeURIComponent(item.tracking_number)}`
+                : '';
             %>
             <tr>
               <td class="order-no-cell">
@@ -330,6 +333,7 @@
                   <small><%= isEn ? 'Tracking No.' : '송장번호' %>: <%= item.tracking_number %></small>
                   <small><%= isEn ? 'Last Event' : '배송상태' %>: <%= item.tracking_last_event || '-' %></small>
                   <small><%= isEn ? 'Last Check' : '조회시각' %>: <%= trackingCheckedDate && trackingCheckedTime ? `${trackingCheckedDate} ${trackingCheckedTime}` : '-' %></small>
+                  <a href="<%= trackingLookupUrl %>" class="chip order-tracking-link" target="_blank" rel="noreferrer"><%= isEn ? 'Track Package' : '송장 조회' %></a>
                 <% } else { %>
                   <small class="order-tracking-empty">-</small>
                 <% } %>
