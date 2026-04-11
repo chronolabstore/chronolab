@@ -87,6 +87,7 @@ const FUNNEL_EVENT = Object.freeze({
 const ADMIN_MENUS = Object.freeze([
   { id: 'admin-dashboard', labelKo: '대시보드', labelEn: 'Dashboard', path: '/admin/dashboard' },
   { id: 'admin-security', labelKo: '보안', labelEn: 'Security', path: '/admin/security' },
+  { id: 'admin-otp', labelKo: 'OTP', labelEn: 'OTP', path: '/admin/otp' },
   { id: 'admin-site', labelKo: '사이트설정', labelEn: 'Site', path: '/admin/site' },
   { id: 'admin-menus', labelKo: '메뉴관리', labelEn: 'Menus', path: '/admin/menus' },
   { id: 'admin-members', labelKo: '회원관리', labelEn: 'Members', path: '/admin/members' },
@@ -246,6 +247,14 @@ const EMAIL_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
 const EMAIL_VERIFICATION_MAX_ATTEMPTS = 6;
 const PASSWORD_RESET_TICKET_TTL_MS = 15 * 60 * 1000;
+const ADMIN_OTP_DIGITS = 6;
+const ADMIN_OTP_PERIOD_SECONDS = 30;
+const ADMIN_OTP_DRIFT_WINDOWS = 1;
+const ADMIN_OTP_PENDING_TTL_MS = 10 * 60 * 1000;
+const ADMIN_OTP_SETUP_TTL_MS = 15 * 60 * 1000;
+const ADMIN_OTP_SECRET_LENGTH = 32;
+const ADMIN_OTP_BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const ADMIN_OTP_ISSUER = String(process.env.ADMIN_OTP_ISSUER || 'Chrono LAB').trim() || 'Chrono LAB';
 const emailVerificationStore = new Map();
 const passwordResetTicketStore = new Map();
 const DASHBOARD_STATS_CACHE_TTL_MS = Math.max(5000, Number(process.env.DASHBOARD_STATS_CACHE_TTL_MS || 30000));
@@ -1516,8 +1525,17 @@ async function applyChronoLabWatermarkToAllProductImages() {
 
 function getAdminMenus(currentUser = null) {
   const isPrimaryAdmin = Boolean(currentUser?.isPrimaryAdmin);
+  const isAdminOtpEnabled = Boolean(currentUser?.isAdminOtpEnabled);
   return ADMIN_MENUS
-    .filter((menu) => (menu.id === 'admin-security' ? isPrimaryAdmin : true))
+    .filter((menu) => {
+      if (menu.id === 'admin-security') {
+        return isPrimaryAdmin;
+      }
+      if (menu.id === 'admin-otp') {
+        return !isAdminOtpEnabled;
+      }
+      return true;
+    })
     .map((menu) => ({ ...menu }));
 }
 
@@ -1703,6 +1721,181 @@ function consumePasswordResetTicket(token = '') {
     return;
   }
   passwordResetTicketStore.delete(normalizedToken);
+}
+
+function normalizeAdminOtpCode(raw = '') {
+  const digitsOnly = String(raw || '').replace(/[^0-9]/g, '').slice(0, ADMIN_OTP_DIGITS);
+  return digitsOnly;
+}
+
+function normalizeBase32Secret(raw = '') {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z2-7]/g, '');
+}
+
+function createAdminOtpSecret(length = ADMIN_OTP_SECRET_LENGTH) {
+  const safeLength = Math.max(16, Number.parseInt(String(length || ADMIN_OTP_SECRET_LENGTH), 10) || ADMIN_OTP_SECRET_LENGTH);
+  const randomBytes = crypto.randomBytes(safeLength);
+  let output = '';
+  for (let idx = 0; idx < safeLength; idx += 1) {
+    output += ADMIN_OTP_BASE32_ALPHABET[randomBytes[idx] % ADMIN_OTP_BASE32_ALPHABET.length];
+  }
+  return output;
+}
+
+function decodeBase32ToBuffer(secret = '') {
+  const normalized = normalizeBase32Secret(secret);
+  if (!normalized) {
+    return Buffer.alloc(0);
+  }
+
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (let idx = 0; idx < normalized.length; idx += 1) {
+    const current = ADMIN_OTP_BASE32_ALPHABET.indexOf(normalized[idx]);
+    if (current < 0) {
+      return Buffer.alloc(0);
+    }
+    value = (value << 5) | current;
+    bits += 5;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((value >> bits) & 0xff);
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function buildAdminOtpAuthUri({ username = '', secret = '' } = {}) {
+  const safeUser = normalizeAccountName(username) || 'admin';
+  const safeSecret = normalizeBase32Secret(secret);
+  const label = `${ADMIN_OTP_ISSUER}:${safeUser}`;
+  return `otpauth://totp/${encodeURIComponent(label)}?secret=${safeSecret}&issuer=${encodeURIComponent(ADMIN_OTP_ISSUER)}&algorithm=SHA1&digits=${ADMIN_OTP_DIGITS}&period=${ADMIN_OTP_PERIOD_SECONDS}`;
+}
+
+function generateTotpCode(secret = '', epochMs = Date.now()) {
+  const key = decodeBase32ToBuffer(secret);
+  if (!key.length) {
+    return '';
+  }
+
+  const epochSeconds = Math.floor(Number(epochMs || Date.now()) / 1000);
+  const counter = Math.floor(epochSeconds / ADMIN_OTP_PERIOD_SECONDS);
+  const counterBuffer = Buffer.alloc(8);
+  counterBuffer.writeBigUInt64BE(BigInt(Math.max(counter, 0)));
+  const digest = crypto.createHmac('sha1', key).update(counterBuffer).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binaryCode = (
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff)
+  );
+  const modulo = 10 ** ADMIN_OTP_DIGITS;
+  return String(binaryCode % modulo).padStart(ADMIN_OTP_DIGITS, '0');
+}
+
+function verifyTotpCode(secret = '', code = '') {
+  const safeCode = normalizeAdminOtpCode(code);
+  if (!safeCode || safeCode.length !== ADMIN_OTP_DIGITS) {
+    return false;
+  }
+  const safeSecret = normalizeBase32Secret(secret);
+  if (!safeSecret) {
+    return false;
+  }
+
+  const now = Date.now();
+  for (let drift = -ADMIN_OTP_DRIFT_WINDOWS; drift <= ADMIN_OTP_DRIFT_WINDOWS; drift += 1) {
+    const targetEpoch = now + drift * ADMIN_OTP_PERIOD_SECONDS * 1000;
+    if (generateTotpCode(safeSecret, targetEpoch) === safeCode) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function clearAdminOtpPending(req) {
+  if (req?.session?.adminOtpPending) {
+    delete req.session.adminOtpPending;
+  }
+}
+
+function readAdminOtpPending(req) {
+  const pending = req?.session?.adminOtpPending;
+  if (!pending || typeof pending !== 'object') {
+    return null;
+  }
+
+  const userId = Number(pending.userId || 0);
+  const issuedAt = Number(pending.issuedAt || 0);
+  if (!Number.isInteger(userId) || userId <= 0 || issuedAt <= 0) {
+    clearAdminOtpPending(req);
+    return null;
+  }
+
+  if (Date.now() - issuedAt > ADMIN_OTP_PENDING_TTL_MS) {
+    clearAdminOtpPending(req);
+    return null;
+  }
+
+  return {
+    userId,
+    issuedAt,
+    username: String(pending.username || '').trim()
+  };
+}
+
+function setAdminOtpPending(req, userRow) {
+  if (!req?.session || !userRow) {
+    return;
+  }
+  req.session.adminOtpPending = {
+    userId: Number(userRow.id),
+    username: String(userRow.username || '').trim(),
+    issuedAt: Date.now()
+  };
+}
+
+function clearAdminOtpSetup(req) {
+  if (req?.session?.adminOtpSetup) {
+    delete req.session.adminOtpSetup;
+  }
+}
+
+function readAdminOtpSetup(req) {
+  const setup = req?.session?.adminOtpSetup;
+  if (!setup || typeof setup !== 'object') {
+    return null;
+  }
+
+  const userId = Number(setup.userId || 0);
+  const secret = normalizeBase32Secret(setup.secret || '');
+  const issuedAt = Number(setup.issuedAt || 0);
+  if (!Number.isInteger(userId) || userId <= 0 || !secret || issuedAt <= 0) {
+    clearAdminOtpSetup(req);
+    return null;
+  }
+
+  if (Date.now() - issuedAt > ADMIN_OTP_SETUP_TTL_MS) {
+    clearAdminOtpSetup(req);
+    return null;
+  }
+
+  return { userId, secret, issuedAt };
+}
+
+function setAdminAuthSession(req, userRow) {
+  if (!req?.session || !userRow) {
+    return;
+  }
+  req.session.userId = Number(userRow.id);
+  req.session.isAdmin = true;
+  req.session.adminRole = normalizeAdminRole(userRow.admin_role);
+  clearAdminOtpPending(req);
 }
 
 function getMailTransporter() {
@@ -4854,6 +5047,7 @@ function loadUser(req, res, next) {
           reward_points,
           is_admin,
           admin_role,
+          admin_otp_enabled,
           is_blocked,
           blocked_reason,
           blocked_at,
@@ -4898,6 +5092,7 @@ function loadUser(req, res, next) {
     rewardPoints: Number(user.reward_points || 0),
     isAdmin: Number(user.is_admin) === 1,
     adminRole: Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '',
+    isAdminOtpEnabled: Number(user.is_admin) === 1 && Number(user.admin_otp_enabled || 0) === 1,
     isBlocked: Number(user.is_blocked) === 1,
     blockedReason: user.blocked_reason || '',
     blockedAt: user.blocked_at || null,
@@ -7420,6 +7615,11 @@ app.post(
     return res.redirect('/login');
   }
 
+  if (Number(user.is_admin) === 1) {
+    setFlash(req, 'error', '관리자 계정은 어드민 로그인 페이지를 이용해 주세요.');
+    return res.redirect('/admin/login');
+  }
+
   if (Number(user.is_blocked) === 1) {
     const blockedReason = String(user.blocked_reason || '').trim();
     setFlash(
@@ -7456,6 +7656,9 @@ app.get('/admin/login', (req, res) => {
   if (req.user?.isAdmin) {
     return res.redirect('/admin/dashboard');
   }
+  if (readAdminOtpPending(req)) {
+    return res.redirect('/admin/otp/verify');
+  }
   res.render('admin-login', { title: 'Admin Login' });
 });
 
@@ -7465,10 +7668,25 @@ app.post(
   asyncRoute(async (req, res) => {
   const account = String(req.body.account || req.body.username || '').trim();
   const password = String(req.body.password || '');
+  clearAdminOtpPending(req);
 
   const user = db
     .prepare(
-      'SELECT id, username, password_hash, is_admin, admin_role, is_blocked, blocked_reason FROM users WHERE username = ? LIMIT 1'
+      `
+        SELECT
+          id,
+          username,
+          password_hash,
+          is_admin,
+          admin_role,
+          is_blocked,
+          blocked_reason,
+          admin_otp_secret,
+          admin_otp_enabled
+        FROM users
+        WHERE username = ?
+        LIMIT 1
+      `
     )
     .get(account);
 
@@ -7493,15 +7711,115 @@ app.post(
     return res.redirect('/admin/login');
   }
 
-  req.session.userId = Number(user.id);
-  req.session.isAdmin = true;
-  req.session.adminRole = normalizeAdminRole(user.admin_role);
+  const hasOtpEnabled =
+    Number(user.admin_otp_enabled || 0) === 1 &&
+    normalizeBase32Secret(user.admin_otp_secret || '').length >= 16;
+  if (hasOtpEnabled) {
+    setAdminOtpPending(req, user);
+    logAdminActivityByUser(user, req, 'LOGIN_OTP_PENDING', 'password verified; otp required');
+    setFlash(req, 'success', '구글 OTP 인증번호를 입력해 주세요.');
+    return res.redirect('/admin/otp/verify');
+  }
+
+  setAdminAuthSession(req, user);
   resetAuthAttempt(req, 'admin-login');
 
   logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success');
 
   res.redirect('/admin/dashboard');
   })
+);
+
+app.get('/admin/otp/verify', (req, res) => {
+  if (req.user?.isAdmin) {
+    return res.redirect('/admin/dashboard');
+  }
+
+  const pending = readAdminOtpPending(req);
+  if (!pending) {
+    setFlash(req, 'error', 'OTP 인증이 만료되었습니다. 다시 로그인해 주세요.');
+    return res.redirect('/admin/login');
+  }
+
+  return res.render('admin-otp-verify', {
+    title: 'Admin OTP Verify',
+    pending
+  });
+});
+
+app.post(
+  '/admin/otp/verify',
+  authAttemptGuard({ key: 'admin-otp-verify', redirectPath: '/admin/otp/verify', limit: 12 }),
+  (req, res) => {
+    const pending = readAdminOtpPending(req);
+    if (!pending) {
+      setFlash(req, 'error', 'OTP 인증이 만료되었습니다. 다시 로그인해 주세요.');
+      return res.redirect('/admin/login');
+    }
+
+    const code = normalizeAdminOtpCode(req.body.code || '');
+    if (code.length !== ADMIN_OTP_DIGITS) {
+      setFlash(req, 'error', '6자리 OTP 인증번호를 입력해 주세요.');
+      return res.redirect('/admin/otp/verify');
+    }
+
+    const user = db
+      .prepare(
+        `
+          SELECT
+            id,
+            username,
+            admin_role,
+            is_admin,
+            is_blocked,
+            blocked_reason,
+            admin_otp_secret,
+            admin_otp_enabled
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(pending.userId);
+
+    if (!user || Number(user.is_admin || 0) !== 1) {
+      clearAdminOtpPending(req);
+      setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다. 다시 로그인해 주세요.');
+      return res.redirect('/admin/login');
+    }
+
+    if (Number(user.is_blocked || 0) === 1) {
+      clearAdminOtpPending(req);
+      const blockedReason = String(user.blocked_reason || '').trim();
+      setFlash(
+        req,
+        'error',
+        blockedReason ? `차단된 계정입니다. (${blockedReason})` : '차단된 계정입니다. 메인관리자에게 문의해 주세요.'
+      );
+      return res.redirect('/admin/login');
+    }
+
+    const secret = normalizeBase32Secret(user.admin_otp_secret || '');
+    const isOtpEnabled = Number(user.admin_otp_enabled || 0) === 1 && secret.length >= 16;
+    if (!isOtpEnabled) {
+      clearAdminOtpPending(req);
+      setFlash(req, 'error', 'OTP 설정을 찾을 수 없습니다. 다시 로그인해 주세요.');
+      return res.redirect('/admin/login');
+    }
+
+    const verified = verifyTotpCode(secret, code);
+    if (!verified) {
+      setFlash(req, 'error', 'OTP 인증번호가 올바르지 않습니다.');
+      return res.redirect('/admin/otp/verify');
+    }
+
+    setAdminAuthSession(req, user);
+    resetAuthAttempt(req, 'admin-login');
+    resetAuthAttempt(req, 'admin-otp-verify');
+    logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success via otp');
+    setFlash(req, 'success', '관리자 로그인되었습니다.');
+    return res.redirect('/admin/dashboard');
+  }
 );
 
 app.post('/admin/change-password', requirePrimaryAdmin, asyncRoute(async (req, res) => {
@@ -8216,6 +8534,7 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
           u.email,
           u.phone,
           u.admin_role,
+          u.admin_otp_enabled,
           u.created_at,
           (
             SELECT MAX(l.created_at)
@@ -8240,7 +8559,8 @@ function buildSecurityPanelData(lang = 'ko', options = {}) {
           role === ADMIN_ROLE.PRIMARY
             ? (isEn ? 'Primary Admin' : '메인관리자')
             : (isEn ? 'Sub Admin' : '서브관리자'),
-        is_primary: role === ADMIN_ROLE.PRIMARY
+        is_primary: role === ADMIN_ROLE.PRIMARY,
+        otp_enabled: Number(row.admin_otp_enabled || 0) === 1
       };
     });
 
@@ -9093,6 +9413,9 @@ app.get('/admin', (req, res) => {
   if (req.user?.isAdmin) {
     return res.redirect('/admin/dashboard');
   }
+  if (readAdminOtpPending(req)) {
+    return res.redirect('/admin/otp/verify');
+  }
   return res.render('admin-login', { title: 'Admin Login' });
 });
 
@@ -9391,6 +9714,65 @@ app.post('/admin/security/admin/:id/password', requirePrimaryAdmin, asyncRoute(a
   return res.redirect(backPath);
 }));
 
+app.post('/admin/security/admin/:id/otp-reset', requirePrimaryAdmin, (req, res) => {
+  const backPath = '/admin/security?section=admins';
+  const targetId = Number(req.params.id);
+
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    setFlash(req, 'error', '유효하지 않은 관리자입니다.');
+    return res.redirect(backPath);
+  }
+
+  const target = db
+    .prepare(
+      `
+        SELECT
+          id,
+          username,
+          admin_role,
+          admin_otp_enabled,
+          admin_otp_secret
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(targetId);
+
+  if (!target) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const otpEnabled =
+    Number(target.admin_otp_enabled || 0) === 1 &&
+    normalizeBase32Secret(target.admin_otp_secret || '').length >= 16;
+  if (!otpEnabled) {
+    setFlash(req, 'error', '이미 OTP가 비활성화된 계정입니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE users
+      SET
+        admin_otp_secret = '',
+        admin_otp_enabled = 0,
+        admin_otp_enabled_at = NULL
+      WHERE id = ? AND is_admin = 1
+    `
+  ).run(targetId);
+
+  if (targetId === Number(req.user?.id || 0)) {
+    clearAdminOtpSetup(req);
+    clearAdminOtpPending(req);
+  }
+
+  logAdminActivity(req, 'SECURITY_ADMIN_OTP_RESET', `reset otp for admin:${target.username || targetId}`);
+  setFlash(req, 'success', '관리자 OTP가 초기화되었습니다.');
+  return res.redirect(backPath);
+});
+
 app.post('/admin/security/admin/:id/delete', requirePrimaryAdmin, (req, res) => {
   const backPath = '/admin/security?section=admins';
   const targetId = Number(req.params.id);
@@ -9452,6 +9834,191 @@ app.post('/admin/security/alert/:id/resolve', requirePrimaryAdmin, (req, res) =>
   setFlash(req, 'success', '보안 알림을 확인 처리했습니다.');
   return res.redirect(backPath);
 });
+
+app.get('/admin/otp', requireAdmin, (req, res) => {
+  const setupState = readAdminOtpSetup(req);
+  const adminRow = db
+    .prepare(
+      `
+        SELECT
+          id,
+          username,
+          admin_otp_enabled,
+          admin_otp_secret,
+          admin_otp_enabled_at
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(req.user.id);
+
+  if (!adminRow) {
+    req.session.userId = null;
+    req.session.isAdmin = false;
+    req.session.adminRole = '';
+    clearAdminOtpSetup(req);
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect('/admin/login');
+  }
+
+  const otpEnabled = Number(adminRow.admin_otp_enabled || 0) === 1
+    && normalizeBase32Secret(adminRow.admin_otp_secret || '').length >= 16;
+  if (otpEnabled && setupState) {
+    clearAdminOtpSetup(req);
+  }
+
+  const activeSetup = !otpEnabled ? readAdminOtpSetup(req) : null;
+  const otpAuthUri = activeSetup
+    ? buildAdminOtpAuthUri({ username: adminRow.username, secret: activeSetup.secret })
+    : '';
+
+  return res.render('admin-otp', {
+    title: 'Admin OTP',
+    otpState: {
+      enabled: otpEnabled,
+      enabledAt: adminRow.admin_otp_enabled_at || '',
+      setupSecret: activeSetup?.secret || '',
+      setupUri: otpAuthUri
+    }
+  });
+});
+
+app.post('/admin/otp/setup/start', requireAdmin, (req, res) => {
+  const backPath = '/admin/otp';
+  const adminRow = db
+    .prepare(
+      `
+        SELECT id, username, admin_otp_enabled, admin_otp_secret
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(req.user.id);
+  if (!adminRow) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect('/admin/login');
+  }
+
+  const otpEnabled = Number(adminRow.admin_otp_enabled || 0) === 1
+    && normalizeBase32Secret(adminRow.admin_otp_secret || '').length >= 16;
+  if (otpEnabled) {
+    setFlash(req, 'error', '이미 OTP가 활성화되어 있습니다. 해제 후 다시 설정해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  req.session.adminOtpSetup = {
+    userId: Number(adminRow.id),
+    secret: createAdminOtpSecret(),
+    issuedAt: Date.now()
+  };
+  setFlash(req, 'success', 'OTP 설정 키가 생성되었습니다. 인증 앱에 등록 후 6자리 코드를 입력해 주세요.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/otp/setup/cancel', requireAdmin, (req, res) => {
+  clearAdminOtpSetup(req);
+  setFlash(req, 'success', 'OTP 설정이 취소되었습니다.');
+  return res.redirect('/admin/otp');
+});
+
+app.post('/admin/otp/setup/confirm', requireAdmin, (req, res) => {
+  const backPath = '/admin/otp';
+  const setupState = readAdminOtpSetup(req);
+  if (!setupState || setupState.userId !== Number(req.user.id)) {
+    clearAdminOtpSetup(req);
+    setFlash(req, 'error', 'OTP 설정 세션이 만료되었습니다. 다시 시작해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const code = normalizeAdminOtpCode(req.body.code || '');
+  if (code.length !== ADMIN_OTP_DIGITS) {
+    setFlash(req, 'error', '6자리 OTP 인증번호를 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  if (!verifyTotpCode(setupState.secret, code)) {
+    setFlash(req, 'error', 'OTP 인증번호가 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE users
+      SET
+        admin_otp_secret = ?,
+        admin_otp_enabled = 1,
+        admin_otp_enabled_at = datetime('now')
+      WHERE id = ? AND is_admin = 1
+    `
+  ).run(setupState.secret, req.user.id);
+
+  clearAdminOtpSetup(req);
+  logAdminActivity(req, 'SECURITY_OTP_ENABLE', 'google otp enabled');
+  setFlash(req, 'success', '구글 OTP 연동이 완료되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/otp/disable', requireAdmin, asyncRoute(async (req, res) => {
+  const backPath = '/admin/otp';
+  const currentPassword = String(req.body.currentPassword || '');
+  const code = normalizeAdminOtpCode(req.body.code || '');
+  if (!currentPassword || code.length !== ADMIN_OTP_DIGITS) {
+    setFlash(req, 'error', '현재 비밀번호와 6자리 OTP 인증번호를 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const adminRow = db
+    .prepare(
+      `
+        SELECT id, password_hash, admin_otp_enabled, admin_otp_secret
+        FROM users
+        WHERE id = ? AND is_admin = 1
+        LIMIT 1
+      `
+    )
+    .get(req.user.id);
+
+  if (!adminRow) {
+    setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
+    return res.redirect('/admin/login');
+  }
+
+  const otpSecret = normalizeBase32Secret(adminRow.admin_otp_secret || '');
+  const otpEnabled = Number(adminRow.admin_otp_enabled || 0) === 1 && otpSecret.length >= 16;
+  if (!otpEnabled) {
+    setFlash(req, 'error', '활성화된 OTP 설정이 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const validCurrentPassword = await bcrypt.compare(currentPassword, adminRow.password_hash);
+  if (!validCurrentPassword) {
+    setFlash(req, 'error', '현재 비밀번호가 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  if (!verifyTotpCode(otpSecret, code)) {
+    setFlash(req, 'error', 'OTP 인증번호가 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  db.prepare(
+    `
+      UPDATE users
+      SET
+        admin_otp_secret = '',
+        admin_otp_enabled = 0,
+        admin_otp_enabled_at = NULL
+      WHERE id = ? AND is_admin = 1
+    `
+  ).run(req.user.id);
+
+  clearAdminOtpSetup(req);
+  logAdminActivity(req, 'SECURITY_OTP_DISABLE', 'google otp disabled');
+  setFlash(req, 'success', '구글 OTP가 해제되었습니다.');
+  return res.redirect(backPath);
+}));
 
 app.get('/admin/members', requireAdmin, (req, res) => {
   return renderAdminDashboard(req, res, 'members', {
@@ -11835,13 +12402,22 @@ app.use((error, req, res, next) => {
 
   const isUnsupportedType = Boolean(error?.message?.includes('지원되지 않는 파일 형식'));
   const isFileTooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+  const acceptHeader = String(req.get('accept') || '').toLowerCase();
+  const contentTypeHeader = String(req.get('content-type') || '').toLowerCase();
+  const wantsJsonResponse = (
+    req.path === '/health' ||
+    req.path.startsWith('/api/') ||
+    req.xhr === true ||
+    acceptHeader.includes('application/json') ||
+    contentTypeHeader.includes('application/json')
+  );
   const message = isUnsupportedType
     ? error.message
     : isFileTooLarge
       ? `업로드 파일은 최대 ${MAX_UPLOAD_FILE_SIZE_MB}MB까지 가능합니다. 파일 크기를 줄여 다시 시도해 주세요.`
       : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 
-  if (req.path === '/health' || req.accepts('json') === 'json') {
+  if (wantsJsonResponse) {
     if (isFileTooLarge) {
       return res.status(413).json({ ok: false, error: 'file_too_large', message, maxMb: MAX_UPLOAD_FILE_SIZE_MB });
     }
