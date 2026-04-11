@@ -464,6 +464,15 @@ function normalizeProductFilterOptionList(rawList) {
     normalized.push(value);
   });
 
+  const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+  normalized.sort((a, b) => {
+    const compared = collator.compare(a, b);
+    if (compared !== 0) {
+      return compared;
+    }
+    return String(a).localeCompare(String(b), 'en');
+  });
+
   return normalized;
 }
 
@@ -5540,8 +5549,9 @@ app.get('/shop', (req, res) => {
     .all(group)
     .map((row) => normalizeProductFilterOption(row.brand))
     .filter(Boolean);
+  const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
   const configuredBrands = getGroupBrandOptions(selectedGroupConfig);
-  const brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrands;
+  const brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
 
   const discoveredFactories = supportsFactoryFilter
     ? db
@@ -5557,11 +5567,12 @@ app.get('/shop', (req, res) => {
         .map((row) => normalizeProductFilterOption(row.factory_name))
         .filter(Boolean)
     : [];
+  const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
   const configuredFactories = groupFactorySeedOptions;
   const factories = supportsFactoryFilter
     ? configuredFactories.length > 0
       ? configuredFactories
-      : discoveredFactories
+      : discoveredFactoryOptions
     : [];
 
   const brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
