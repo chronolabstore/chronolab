@@ -460,13 +460,29 @@ function normalizeProductFilterOption(rawOption = '') {
     .slice(0, 80);
 }
 
+function resolveRawProductFilterOptionValue(rawOption = '') {
+  if (rawOption && typeof rawOption === 'object' && !Array.isArray(rawOption)) {
+    return (
+      rawOption.value ||
+      rawOption.key ||
+      rawOption.labelEn ||
+      rawOption.label_en ||
+      rawOption.labelKo ||
+      rawOption.label_ko ||
+      rawOption.label ||
+      ''
+    );
+  }
+  return rawOption;
+}
+
 function normalizeProductFilterOptionList(rawList) {
   const source = Array.isArray(rawList) ? rawList : [];
   const normalized = [];
   const seen = new Set();
 
   source.forEach((item) => {
-    const value = normalizeProductFilterOption(item);
+    const value = normalizeProductFilterOption(resolveRawProductFilterOptionValue(item));
     if (!value) {
       return;
     }
@@ -490,12 +506,27 @@ function normalizeProductFilterOptionList(rawList) {
   return normalized;
 }
 
+function findMatchingProductFilterKey(source = {}, rawKey = '') {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return '';
+  }
+  const normalizedNeedle = normalizeProductFilterOption(rawKey);
+  if (!normalizedNeedle) {
+    return '';
+  }
+  return (
+    Object.keys(source).find(
+      (key) => normalizeProductFilterOption(key).toLowerCase() === normalizedNeedle.toLowerCase()
+    ) || ''
+  );
+}
+
 function normalizeProductFilterOptionMap(rawMap, allowedKeys = []) {
   const source = rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap) ? rawMap : {};
   const allowedLookup = new Map();
   if (Array.isArray(allowedKeys) && allowedKeys.length > 0) {
     allowedKeys.forEach((item) => {
-      const normalized = normalizeProductFilterOption(item);
+      const normalized = normalizeProductFilterOption(resolveRawProductFilterOptionValue(item));
       if (!normalized) {
         return;
       }
@@ -505,7 +536,7 @@ function normalizeProductFilterOptionMap(rawMap, allowedKeys = []) {
 
   const mapped = {};
   Object.entries(source).forEach(([rawKey, rawList]) => {
-    const normalizedKeySeed = normalizeProductFilterOption(rawKey);
+    const normalizedKeySeed = normalizeProductFilterOption(resolveRawProductFilterOptionValue(rawKey));
     if (!normalizedKeySeed) {
       return;
     }
@@ -538,6 +569,83 @@ function normalizeProductFilterOptionMap(rawMap, allowedKeys = []) {
     }, {});
 }
 
+function normalizeProductFilterOptionLabelEntry(rawEntry, fallbackValue = '') {
+  const fallback = normalizeProductFilterOption(fallbackValue);
+  if (rawEntry && typeof rawEntry === 'object' && !Array.isArray(rawEntry)) {
+    const labelKo = normalizeProductFilterOption(
+      rawEntry.labelKo || rawEntry.label_ko || rawEntry.ko || rawEntry.label || ''
+    );
+    const labelEn = normalizeProductFilterOption(
+      rawEntry.labelEn || rawEntry.label_en || rawEntry.en || rawEntry.label || ''
+    );
+    return {
+      labelKo: labelKo || fallback,
+      labelEn: labelEn || fallback
+    };
+  }
+
+  const normalizedLabel = normalizeProductFilterOption(rawEntry);
+  const fallbackLabel = normalizedLabel || fallback;
+  return {
+    labelKo: fallbackLabel,
+    labelEn: fallbackLabel
+  };
+}
+
+function normalizeProductFilterOptionLabelMap(rawMap, allowedValues = []) {
+  const source = rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap) ? rawMap : {};
+  const normalizedValues = normalizeProductFilterOptionList(allowedValues);
+  const mapped = {};
+
+  normalizedValues.forEach((value) => {
+    const matchedKey = findMatchingProductFilterKey(source, value);
+    mapped[value] = normalizeProductFilterOptionLabelEntry(
+      matchedKey ? source[matchedKey] : null,
+      value
+    );
+  });
+
+  return mapped;
+}
+
+function normalizeProductFilterOptionLabelMapByBrand(rawMap, modelOptionMap = {}, brandOptions = []) {
+  const source = rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap) ? rawMap : {};
+  const normalizedModelMap = normalizeProductFilterOptionMap(modelOptionMap, brandOptions);
+  const mapped = {};
+
+  Object.entries(normalizedModelMap).forEach(([brandValue, modelValues]) => {
+    const matchedBrandKey = findMatchingProductFilterKey(source, brandValue);
+    const rawBrandMap =
+      matchedBrandKey && source[matchedBrandKey] && typeof source[matchedBrandKey] === 'object' && !Array.isArray(source[matchedBrandKey])
+        ? source[matchedBrandKey]
+        : {};
+    mapped[brandValue] = normalizeProductFilterOptionLabelMap(rawBrandMap, modelValues);
+  });
+
+  return mapped;
+}
+
+function getProductFilterLabelByLang(labelMap = {}, rawValue = '', lang = 'ko') {
+  const value = normalizeProductFilterOption(rawValue);
+  if (!value) {
+    return '';
+  }
+  const matchedKey = findMatchingProductFilterKey(labelMap, value);
+  if (!matchedKey) {
+    return value;
+  }
+  const entry = normalizeProductFilterOptionLabelEntry(labelMap[matchedKey], value);
+  return lang === 'en' ? entry.labelEn || entry.labelKo || value : entry.labelKo || entry.labelEn || value;
+}
+
+function getProductFilterOptionItems(values = [], labelMap = {}, lang = 'ko') {
+  const normalizedValues = normalizeProductFilterOptionList(values);
+  return normalizedValues.map((value) => ({
+    value,
+    label: getProductFilterLabelByLang(labelMap, value, lang)
+  }));
+}
+
 function getGroupBrandOptions(groupConfig = null) {
   if (!groupConfig || typeof groupConfig !== 'object') {
     return [];
@@ -545,11 +653,27 @@ function getGroupBrandOptions(groupConfig = null) {
   return normalizeProductFilterOptionList(groupConfig.brandOptions);
 }
 
+function getGroupBrandOptionLabels(groupConfig = null) {
+  const brandOptions = getGroupBrandOptions(groupConfig);
+  if (!groupConfig || typeof groupConfig !== 'object' || brandOptions.length === 0) {
+    return {};
+  }
+  return normalizeProductFilterOptionLabelMap(groupConfig.brandOptionLabels, brandOptions);
+}
+
 function getGroupFactoryOptions(groupConfig = null) {
   if (!groupConfig || typeof groupConfig !== 'object') {
     return [];
   }
   return normalizeProductFilterOptionList(groupConfig.factoryOptions);
+}
+
+function getGroupFactoryOptionLabels(groupConfig = null) {
+  const factoryOptions = getGroupFactoryOptions(groupConfig);
+  if (!groupConfig || typeof groupConfig !== 'object' || factoryOptions.length === 0) {
+    return {};
+  }
+  return normalizeProductFilterOptionLabelMap(groupConfig.factoryOptionLabels, factoryOptions);
 }
 
 function getGroupModelOptions(groupConfig = null) {
@@ -568,6 +692,29 @@ function getGroupModelOptionsByBrand(groupConfig = null) {
     return {};
   }
   return normalizeProductFilterOptionMap(groupConfig.modelOptionsByBrand, brandOptions);
+}
+
+function getGroupModelOptionLabelsByBrand(groupConfig = null) {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return {};
+  }
+  const brandOptions = getGroupBrandOptions(groupConfig);
+  const modelOptionMap = getGroupModelOptionsByBrand(groupConfig);
+  return normalizeProductFilterOptionLabelMapByBrand(
+    groupConfig.modelOptionLabelsByBrand,
+    modelOptionMap,
+    brandOptions
+  );
+}
+
+function getGroupModelOptionLabelsForBrand(groupConfig = null, rawBrandOption = '') {
+  const modelLabelMapByBrand = getGroupModelOptionLabelsByBrand(groupConfig);
+  const matchedBrandKey = findMatchingProductFilterKey(modelLabelMapByBrand, rawBrandOption);
+  if (!matchedBrandKey) {
+    return {};
+  }
+  const source = modelLabelMapByBrand[matchedBrandKey];
+  return source && typeof source === 'object' && !Array.isArray(source) ? source : {};
 }
 
 function getGroupModelOptionsForBrand(groupConfig = null, rawBrandOption = '') {
@@ -625,6 +772,22 @@ function getDefaultGroupFilterSeeds() {
       modelOptionsByBrand: normalizeProductFilterOptionMap(
         factorySource.modelOptionsByBrand,
         normalizeProductFilterOptionList(factorySource.brandOptions)
+      ),
+      brandOptionLabels: normalizeProductFilterOptionLabelMap(
+        factorySource.brandOptionLabels,
+        normalizeProductFilterOptionList(factorySource.brandOptions)
+      ),
+      factoryOptionLabels: normalizeProductFilterOptionLabelMap(
+        factorySource.factoryOptionLabels,
+        normalizeProductFilterOptionList(factorySource.factoryOptions)
+      ),
+      modelOptionLabelsByBrand: normalizeProductFilterOptionLabelMapByBrand(
+        factorySource.modelOptionLabelsByBrand,
+        normalizeProductFilterOptionMap(
+          factorySource.modelOptionsByBrand,
+          normalizeProductFilterOptionList(factorySource.brandOptions)
+        ),
+        normalizeProductFilterOptionList(factorySource.brandOptions)
       )
     },
     simple: {
@@ -633,6 +796,19 @@ function getDefaultGroupFilterSeeds() {
       modelOptions: normalizeProductFilterOptionList(simpleSource.modelOptions),
       modelOptionsByBrand: normalizeProductFilterOptionMap(
         simpleSource.modelOptionsByBrand,
+        normalizeProductFilterOptionList(simpleSource.brandOptions)
+      ),
+      brandOptionLabels: normalizeProductFilterOptionLabelMap(
+        simpleSource.brandOptionLabels,
+        normalizeProductFilterOptionList(simpleSource.brandOptions)
+      ),
+      factoryOptionLabels: {},
+      modelOptionLabelsByBrand: normalizeProductFilterOptionLabelMapByBrand(
+        simpleSource.modelOptionLabelsByBrand,
+        normalizeProductFilterOptionMap(
+          simpleSource.modelOptionsByBrand,
+          normalizeProductFilterOptionList(simpleSource.brandOptions)
+        ),
         normalizeProductFilterOptionList(simpleSource.brandOptions)
       )
     }
@@ -940,6 +1116,9 @@ function normalizeProductGroupConfigs(rawValue) {
     const hasExplicitFactoryOptions = Object.prototype.hasOwnProperty.call(group, 'factoryOptions');
     const hasExplicitModelOptions = Object.prototype.hasOwnProperty.call(group, 'modelOptions');
     const hasExplicitModelOptionsByBrand = Object.prototype.hasOwnProperty.call(group, 'modelOptionsByBrand');
+    const hasExplicitBrandOptionLabels = Object.prototype.hasOwnProperty.call(group, 'brandOptionLabels');
+    const hasExplicitFactoryOptionLabels = Object.prototype.hasOwnProperty.call(group, 'factoryOptionLabels');
+    const hasExplicitModelOptionLabelsByBrand = Object.prototype.hasOwnProperty.call(group, 'modelOptionLabelsByBrand');
     const fallbackBrandOptions = normalizeProductFilterOptionList(fallbackGroup.brandOptions);
     const fallbackFactoryOptions = normalizeProductFilterOptionList(fallbackGroup.factoryOptions);
     const fallbackModelOptions = normalizeProductFilterOptionList(fallbackGroup.modelOptions);
@@ -1019,6 +1198,32 @@ function normalizeProductGroupConfigs(rawValue) {
     if (Object.keys(modelOptionsByBrand).length > 0) {
       modelOptions = [];
     }
+    const fallbackBrandOptionLabels = normalizeProductFilterOptionLabelMap(
+      fallbackGroup.brandOptionLabels,
+      brandOptions
+    );
+    const fallbackFactoryOptionLabels = normalizeProductFilterOptionLabelMap(
+      fallbackGroup.factoryOptionLabels,
+      factoryOptions
+    );
+    const fallbackModelOptionLabelsByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      fallbackGroup.modelOptionLabelsByBrand,
+      modelOptionsByBrand,
+      brandOptions
+    );
+    const brandOptionLabels = hasExplicitBrandOptionLabels
+      ? normalizeProductFilterOptionLabelMap(group.brandOptionLabels, brandOptions)
+      : fallbackBrandOptionLabels;
+    const factoryOptionLabels = hasExplicitFactoryOptionLabels
+      ? normalizeProductFilterOptionLabelMap(group.factoryOptionLabels, factoryOptions)
+      : fallbackFactoryOptionLabels;
+    const modelOptionLabelsByBrand = hasExplicitModelOptionLabelsByBrand
+      ? normalizeProductFilterOptionLabelMapByBrand(
+          group.modelOptionLabelsByBrand,
+          modelOptionsByBrand,
+          brandOptions
+        )
+      : fallbackModelOptionLabelsByBrand;
 
     normalizedGroups.push({
       key,
@@ -1029,6 +1234,9 @@ function normalizeProductGroupConfigs(rawValue) {
       factoryOptions,
       modelOptions,
       modelOptionsByBrand,
+      brandOptionLabels,
+      factoryOptionLabels,
+      modelOptionLabelsByBrand,
       customFields
     });
   });
@@ -6119,6 +6327,9 @@ app.get('/shop', (req, res) => {
     factoryOptions: [],
     modelOptions: [],
     modelOptionsByBrand: {},
+    brandOptionLabels: {},
+    factoryOptionLabels: {},
+    modelOptionLabelsByBrand: {},
     customFields: []
   };
   const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
@@ -6148,6 +6359,7 @@ app.get('/shop', (req, res) => {
     .filter(Boolean);
   const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
   const configuredBrands = getGroupBrandOptions(selectedGroupConfig);
+  const configuredBrandLabels = getGroupBrandOptionLabels(selectedGroupConfig);
   const brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
 
   const discoveredFactories = supportsFactoryFilter
@@ -6166,6 +6378,7 @@ app.get('/shop', (req, res) => {
     : [];
   const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
   const configuredFactories = groupFactorySeedOptions;
+  const configuredFactoryLabels = getGroupFactoryOptionLabels(selectedGroupConfig);
   const factories = supportsFactoryFilter
     ? configuredFactories.length > 0
       ? configuredFactories
@@ -6185,6 +6398,10 @@ app.get('/shop', (req, res) => {
       ? []
       : fallbackModelOptions;
   const model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
+  const modelOptionLabels = getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand);
+  const brandItems = getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang);
+  const factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
+  const modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
 
   const where = ['is_active = 1', 'category_group = ?'];
   const params = [group];
@@ -6246,6 +6463,9 @@ app.get('/shop', (req, res) => {
     brands,
     factories,
     models,
+    brandItems,
+    factoryItems,
+    modelItems,
     products
   });
 });
@@ -6371,6 +6591,9 @@ app.get('/shop/item/:id', (req, res) => {
     factoryOptions: [],
     modelOptions: [],
     modelOptionsByBrand: {},
+    brandOptionLabels: {},
+    factoryOptionLabels: {},
+    modelOptionLabelsByBrand: {},
     customFields: []
   };
 
@@ -9895,6 +10118,9 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
         factoryOptions: [],
         modelOptions: [],
         modelOptionsByBrand: {},
+        brandOptionLabels: {},
+        factoryOptionLabels: {},
+        modelOptionLabelsByBrand: {},
         customFields: []
       };
       const imageRows = db
@@ -11514,6 +11740,15 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
     modelOptionsByBrand: useFactoryTemplate
       ? filterSeeds.factory.modelOptionsByBrand
       : filterSeeds.simple.modelOptionsByBrand,
+    brandOptionLabels: useFactoryTemplate
+      ? filterSeeds.factory.brandOptionLabels
+      : filterSeeds.simple.brandOptionLabels,
+    factoryOptionLabels: useFactoryTemplate
+      ? filterSeeds.factory.factoryOptionLabels
+      : {},
+    modelOptionLabelsByBrand: useFactoryTemplate
+      ? filterSeeds.factory.modelOptionLabelsByBrand
+      : filterSeeds.simple.modelOptionLabelsByBrand,
     customFields: useFactoryTemplate ? getFactoryDefaultFields() : getCompactDefaultFields()
   }];
   setProductGroupConfigs(nextConfigs);
@@ -11703,7 +11938,11 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/menus?section=group-filters');
   const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
   const filterType = String(req.body.filterType || 'brand').trim().toLowerCase();
-  const optionValue = normalizeProductFilterOption(req.body.optionValue || '');
+  const optionLabelKo = normalizeProductFilterOption(req.body.optionLabelKo || req.body.labelKo || '');
+  const optionLabelEn = normalizeProductFilterOption(req.body.optionLabelEn || req.body.labelEn || '');
+  const optionValue = normalizeProductFilterOption(
+    req.body.optionValue || optionLabelEn || optionLabelKo || ''
+  );
   const brandValue = normalizeProductFilterOption(req.body.brandValue || '');
 
   if (!groupKey || !optionValue) {
@@ -11755,20 +11994,76 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   const nextGroups = [...configs];
   const currentModelMap = getGroupModelOptionsByBrand(targetGroup);
   const nextModelMap = { ...currentModelMap };
+  const currentBrandLabelMap = getGroupBrandOptionLabels(targetGroup);
+  const currentFactoryLabelMap = getGroupFactoryOptionLabels(targetGroup);
+  const currentModelLabelMapByBrand = getGroupModelOptionLabelsByBrand(targetGroup);
+  const nextLabelEntry = {
+    labelKo: optionLabelKo || optionValue,
+    labelEn: optionLabelEn || optionValue
+  };
+  let nextBrandLabelMap = currentBrandLabelMap;
+  let nextFactoryLabelMap = currentFactoryLabelMap;
+  let nextModelLabelMapByBrand = currentModelLabelMapByBrand;
+
   if (filterType === 'model') {
     nextModelMap[selectedBrand] = normalizeProductFilterOptionList(nextList);
+    const matchedBrandKey = findMatchingProductFilterKey(currentModelLabelMapByBrand, selectedBrand);
+    const currentBrandModelLabelMap =
+      matchedBrandKey &&
+      currentModelLabelMapByBrand[matchedBrandKey] &&
+      typeof currentModelLabelMapByBrand[matchedBrandKey] === 'object' &&
+      !Array.isArray(currentModelLabelMapByBrand[matchedBrandKey])
+        ? currentModelLabelMapByBrand[matchedBrandKey]
+        : {};
+    const rawNextModelLabelMapByBrand = {
+      ...currentModelLabelMapByBrand,
+      [selectedBrand]: {
+        ...currentBrandModelLabelMap,
+        [optionValue]: nextLabelEntry
+      }
+    };
+    nextModelLabelMapByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      rawNextModelLabelMapByBrand,
+      nextModelMap,
+      brandOptions
+    );
+  } else if (filterType === 'brand') {
+    const rawNextBrandLabelMap = {
+      ...currentBrandLabelMap,
+      [optionValue]: nextLabelEntry
+    };
+    nextBrandLabelMap = normalizeProductFilterOptionLabelMap(rawNextBrandLabelMap, nextList);
+    nextModelLabelMapByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      currentModelLabelMapByBrand,
+      nextModelMap,
+      nextList
+    );
+  } else if (filterType === 'factory') {
+    const rawNextFactoryLabelMap = {
+      ...currentFactoryLabelMap,
+      [optionValue]: nextLabelEntry
+    };
+    nextFactoryLabelMap = normalizeProductFilterOptionLabelMap(rawNextFactoryLabelMap, nextList);
   }
 
   nextGroups[targetIndex] = {
     ...targetGroup,
     ...(filterType === 'factory'
-      ? { factoryOptions: nextList }
+      ? {
+          factoryOptions: nextList,
+          factoryOptionLabels: nextFactoryLabelMap
+        }
       : filterType === 'model'
         ? {
             modelOptionsByBrand: nextModelMap,
-            modelOptions: []
+            modelOptions: [],
+            modelOptionLabelsByBrand: nextModelLabelMapByBrand
           }
-        : { brandOptions: nextList })
+        : {
+            brandOptions: nextList,
+            brandOptionLabels: nextBrandLabelMap,
+            modelOptionLabelsByBrand: nextModelLabelMapByBrand
+          })
   };
 
   setProductGroupConfigs(nextGroups);
@@ -11830,12 +12125,46 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   const nextGroups = [...configs];
   const currentModelMap = getGroupModelOptionsByBrand(targetGroup);
   const nextModelMap = { ...currentModelMap };
+  const currentBrandLabelMap = getGroupBrandOptionLabels(targetGroup);
+  const currentFactoryLabelMap = getGroupFactoryOptionLabels(targetGroup);
+  const currentModelLabelMapByBrand = getGroupModelOptionLabelsByBrand(targetGroup);
+  let nextBrandLabelMap = currentBrandLabelMap;
+  let nextFactoryLabelMap = currentFactoryLabelMap;
+  let nextModelLabelMapByBrand = currentModelLabelMapByBrand;
+
   if (filterType === 'model') {
     if (nextList.length === 0) {
       delete nextModelMap[selectedBrand];
     } else {
       nextModelMap[selectedBrand] = normalizeProductFilterOptionList(nextList);
     }
+    const matchedBrandKey = findMatchingProductFilterKey(currentModelLabelMapByBrand, selectedBrand);
+    const currentBrandModelLabelMap =
+      matchedBrandKey &&
+      currentModelLabelMapByBrand[matchedBrandKey] &&
+      typeof currentModelLabelMapByBrand[matchedBrandKey] === 'object' &&
+      !Array.isArray(currentModelLabelMapByBrand[matchedBrandKey])
+        ? currentModelLabelMapByBrand[matchedBrandKey]
+        : {};
+    const rawBrandModelLabelMap = { ...currentBrandModelLabelMap };
+    const matchedModelLabelKey = findMatchingProductFilterKey(rawBrandModelLabelMap, optionValue);
+    if (matchedModelLabelKey) {
+      delete rawBrandModelLabelMap[matchedModelLabelKey];
+    }
+    const rawNextModelLabelMapByBrand = { ...currentModelLabelMapByBrand };
+    if (nextList.length === 0) {
+      const matchedBrandLabelKey = findMatchingProductFilterKey(rawNextModelLabelMapByBrand, selectedBrand);
+      if (matchedBrandLabelKey) {
+        delete rawNextModelLabelMapByBrand[matchedBrandLabelKey];
+      }
+    } else {
+      rawNextModelLabelMapByBrand[selectedBrand] = rawBrandModelLabelMap;
+    }
+    nextModelLabelMapByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      rawNextModelLabelMapByBrand,
+      nextModelMap,
+      brandOptions
+    );
   }
   if (filterType === 'brand') {
     const matchedBrandKey = Object.keys(nextModelMap).find(
@@ -11844,20 +12173,51 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
     if (matchedBrandKey) {
       delete nextModelMap[matchedBrandKey];
     }
+    const matchedBrandLabelKey = findMatchingProductFilterKey(currentBrandLabelMap, optionValue);
+    const rawNextBrandLabelMap = { ...currentBrandLabelMap };
+    if (matchedBrandLabelKey) {
+      delete rawNextBrandLabelMap[matchedBrandLabelKey];
+    }
+    nextBrandLabelMap = normalizeProductFilterOptionLabelMap(rawNextBrandLabelMap, nextList);
+
+    const rawNextModelLabelMapByBrand = { ...currentModelLabelMapByBrand };
+    const matchedModelBrandLabelKey = findMatchingProductFilterKey(rawNextModelLabelMapByBrand, optionValue);
+    if (matchedModelBrandLabelKey) {
+      delete rawNextModelLabelMapByBrand[matchedModelBrandLabelKey];
+    }
+    nextModelLabelMapByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      rawNextModelLabelMapByBrand,
+      nextModelMap,
+      nextList
+    );
+  }
+  if (filterType === 'factory') {
+    const matchedFactoryLabelKey = findMatchingProductFilterKey(currentFactoryLabelMap, optionValue);
+    const rawNextFactoryLabelMap = { ...currentFactoryLabelMap };
+    if (matchedFactoryLabelKey) {
+      delete rawNextFactoryLabelMap[matchedFactoryLabelKey];
+    }
+    nextFactoryLabelMap = normalizeProductFilterOptionLabelMap(rawNextFactoryLabelMap, nextList);
   }
 
   nextGroups[targetIndex] = {
     ...targetGroup,
     ...(filterType === 'factory'
-      ? { factoryOptions: nextList }
+      ? {
+          factoryOptions: nextList,
+          factoryOptionLabels: nextFactoryLabelMap
+        }
       : filterType === 'model'
         ? {
             modelOptionsByBrand: nextModelMap,
-            modelOptions: []
+            modelOptions: [],
+            modelOptionLabelsByBrand: nextModelLabelMapByBrand
           }
         : {
             brandOptions: nextList,
-            modelOptionsByBrand: nextModelMap
+            modelOptionsByBrand: nextModelMap,
+            brandOptionLabels: nextBrandLabelMap,
+            modelOptionLabelsByBrand: nextModelLabelMapByBrand
           })
   };
 
@@ -11870,6 +12230,185 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
       : filterType === 'model'
         ? '모델 필터가 삭제되었습니다.'
         : '브랜드 필터가 삭제되었습니다.'
+  );
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/filter/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=group-filters');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const filterType = String(req.body.filterType || 'brand').trim().toLowerCase();
+  const optionValue = normalizeProductFilterOption(req.body.optionValue || '');
+  const optionLabelKo = normalizeProductFilterOption(req.body.optionLabelKo || req.body.labelKo || '');
+  const optionLabelEn = normalizeProductFilterOption(req.body.optionLabelEn || req.body.labelEn || '');
+  const nextOptionValue = normalizeProductFilterOption(
+    req.body.nextOptionValue || optionLabelEn || optionLabelKo || optionValue
+  );
+  const brandValue = normalizeProductFilterOption(req.body.brandValue || '');
+
+  if (!groupKey || !optionValue || !nextOptionValue || !['brand', 'factory', 'model'].includes(filterType)) {
+    setFlash(req, 'error', '필터 수정 요청값을 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const targetGroup = configs[targetIndex];
+  const brandOptions = getGroupBrandOptions(targetGroup);
+  const selectedBrand = brandOptions.find((item) => item.toLowerCase() === brandValue.toLowerCase()) || '';
+  if (filterType === 'model' && !selectedBrand) {
+    setFlash(req, 'error', '수정할 모델의 브랜드를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const currentList = (() => {
+    if (filterType === 'factory') {
+      return getGroupFactoryOptions(targetGroup);
+    }
+    if (filterType === 'model') {
+      return getGroupModelOptionsForBrand(targetGroup, selectedBrand);
+    }
+    return brandOptions;
+  })();
+
+  const matchedCurrentValue = currentList.find(
+    (item) => item.toLowerCase() === optionValue.toLowerCase()
+  ) || '';
+  if (!matchedCurrentValue) {
+    setFlash(req, 'error', '수정할 필터 값을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const duplicated = currentList.some(
+    (item) =>
+      item.toLowerCase() === nextOptionValue.toLowerCase() &&
+      item.toLowerCase() !== matchedCurrentValue.toLowerCase()
+  );
+  if (duplicated) {
+    setFlash(req, 'error', '같은 값의 필터가 이미 존재합니다.');
+    return res.redirect(backPath);
+  }
+
+  const replacedList = currentList.map((item) =>
+    item.toLowerCase() === matchedCurrentValue.toLowerCase() ? nextOptionValue : item
+  );
+  const nextList = normalizeProductFilterOptionList(replacedList);
+  const nextLabelEntry = {
+    labelKo: optionLabelKo || nextOptionValue,
+    labelEn: optionLabelEn || nextOptionValue
+  };
+
+  const currentBrandLabelMap = getGroupBrandOptionLabels(targetGroup);
+  const currentFactoryLabelMap = getGroupFactoryOptionLabels(targetGroup);
+  const currentModelMap = getGroupModelOptionsByBrand(targetGroup);
+  const currentModelLabelMapByBrand = getGroupModelOptionLabelsByBrand(targetGroup);
+  const nextGroups = [...configs];
+
+  if (filterType === 'brand') {
+    const rawNextBrandLabelMap = { ...currentBrandLabelMap };
+    const matchedBrandLabelKey = findMatchingProductFilterKey(rawNextBrandLabelMap, matchedCurrentValue);
+    if (matchedBrandLabelKey) {
+      delete rawNextBrandLabelMap[matchedBrandLabelKey];
+    }
+    rawNextBrandLabelMap[nextOptionValue] = nextLabelEntry;
+
+    const rawNextModelMap = {};
+    Object.entries(currentModelMap).forEach(([brandKey, modelList]) => {
+      const normalizedBrandKey = normalizeProductFilterOption(brandKey);
+      if (!normalizedBrandKey) {
+        return;
+      }
+      const nextBrandKey =
+        normalizedBrandKey.toLowerCase() === matchedCurrentValue.toLowerCase()
+          ? nextOptionValue
+          : normalizedBrandKey;
+      rawNextModelMap[nextBrandKey] = normalizeProductFilterOptionList(modelList);
+    });
+    const nextModelMap = normalizeProductFilterOptionMap(rawNextModelMap, nextList);
+
+    const rawNextModelLabelMapByBrand = { ...currentModelLabelMapByBrand };
+    const matchedModelBrandKey = findMatchingProductFilterKey(rawNextModelLabelMapByBrand, matchedCurrentValue);
+    const matchedTargetBrandKey = findMatchingProductFilterKey(rawNextModelLabelMapByBrand, nextOptionValue);
+    if (matchedModelBrandKey && matchedModelBrandKey !== matchedTargetBrandKey) {
+      const movingLabelMap = rawNextModelLabelMapByBrand[matchedModelBrandKey];
+      delete rawNextModelLabelMapByBrand[matchedModelBrandKey];
+      rawNextModelLabelMapByBrand[nextOptionValue] = movingLabelMap;
+    }
+
+    nextGroups[targetIndex] = {
+      ...targetGroup,
+      brandOptions: nextList,
+      modelOptionsByBrand: nextModelMap,
+      brandOptionLabels: normalizeProductFilterOptionLabelMap(rawNextBrandLabelMap, nextList),
+      modelOptionLabelsByBrand: normalizeProductFilterOptionLabelMapByBrand(
+        rawNextModelLabelMapByBrand,
+        nextModelMap,
+        nextList
+      )
+    };
+  } else if (filterType === 'factory') {
+    const rawNextFactoryLabelMap = { ...currentFactoryLabelMap };
+    const matchedFactoryLabelKey = findMatchingProductFilterKey(rawNextFactoryLabelMap, matchedCurrentValue);
+    if (matchedFactoryLabelKey) {
+      delete rawNextFactoryLabelMap[matchedFactoryLabelKey];
+    }
+    rawNextFactoryLabelMap[nextOptionValue] = nextLabelEntry;
+
+    nextGroups[targetIndex] = {
+      ...targetGroup,
+      factoryOptions: nextList,
+      factoryOptionLabels: normalizeProductFilterOptionLabelMap(rawNextFactoryLabelMap, nextList)
+    };
+  } else {
+    const nextModelMap = {
+      ...currentModelMap,
+      [selectedBrand]: nextList
+    };
+    const matchedBrandModelLabelKey = findMatchingProductFilterKey(currentModelLabelMapByBrand, selectedBrand);
+    const currentBrandModelLabelMap =
+      matchedBrandModelLabelKey &&
+      currentModelLabelMapByBrand[matchedBrandModelLabelKey] &&
+      typeof currentModelLabelMapByBrand[matchedBrandModelLabelKey] === 'object' &&
+      !Array.isArray(currentModelLabelMapByBrand[matchedBrandModelLabelKey])
+        ? currentModelLabelMapByBrand[matchedBrandModelLabelKey]
+        : {};
+    const rawNextBrandModelLabelMap = { ...currentBrandModelLabelMap };
+    const matchedModelLabelKey = findMatchingProductFilterKey(rawNextBrandModelLabelMap, matchedCurrentValue);
+    if (matchedModelLabelKey) {
+      delete rawNextBrandModelLabelMap[matchedModelLabelKey];
+    }
+    rawNextBrandModelLabelMap[nextOptionValue] = nextLabelEntry;
+    const rawNextModelLabelMapByBrand = {
+      ...currentModelLabelMapByBrand,
+      [selectedBrand]: rawNextBrandModelLabelMap
+    };
+
+    nextGroups[targetIndex] = {
+      ...targetGroup,
+      modelOptionsByBrand: nextModelMap,
+      modelOptions: [],
+      modelOptionLabelsByBrand: normalizeProductFilterOptionLabelMapByBrand(
+        rawNextModelLabelMapByBrand,
+        nextModelMap,
+        brandOptions
+      )
+    };
+  }
+
+  setProductGroupConfigs(nextGroups);
+  setFlash(
+    req,
+    'success',
+    filterType === 'factory'
+      ? '공장 필터가 수정되었습니다.'
+      : filterType === 'model'
+        ? '모델 필터가 수정되었습니다.'
+        : '브랜드 필터가 수정되었습니다.'
   );
   return res.redirect(backPath);
 });
@@ -12119,6 +12658,9 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
     factoryOptions: [],
     modelOptions: defaultFilterSeeds.simple.modelOptions,
     modelOptionsByBrand: defaultFilterSeeds.simple.modelOptionsByBrand,
+    brandOptionLabels: defaultFilterSeeds.simple.brandOptionLabels,
+    factoryOptionLabels: {},
+    modelOptionLabelsByBrand: defaultFilterSeeds.simple.modelOptionLabelsByBrand,
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const categoryGroup = selectedGroup.key;
@@ -12244,6 +12786,9 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     factoryOptions: [],
     modelOptions: defaultFilterSeeds.simple.modelOptions,
     modelOptionsByBrand: defaultFilterSeeds.simple.modelOptionsByBrand,
+    brandOptionLabels: defaultFilterSeeds.simple.brandOptionLabels,
+    factoryOptionLabels: {},
+    modelOptionLabelsByBrand: defaultFilterSeeds.simple.modelOptionLabelsByBrand,
     customFields: getGroupDefaultFields({ key: fallbackGroupKey, labelKo: fallbackGroupKey, labelEn: fallbackGroupKey })
   };
   const selectableBadgeDefs = getProductBadgeDefinitions();
