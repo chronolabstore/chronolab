@@ -6041,6 +6041,9 @@ app.get('/shop', (req, res) => {
   const discoveredModelOptions = normalizeProductFilterOptionList(discoveredModels);
   const configuredModels = groupModelSeedOptions;
   const models = (() => {
+    if (brand || factory) {
+      return discoveredModelOptions;
+    }
     if (configuredModels.length === 0) {
       return discoveredModelOptions;
     }
