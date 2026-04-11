@@ -6212,7 +6212,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
-    supportsModelFilter: hasModelOptionMap || fallbackModelOptions.length > 0,
+    supportsModelFilter: hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0,
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,
