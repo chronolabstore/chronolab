@@ -2339,6 +2339,52 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   margin-top: 8px;
 }
 
+.menu-group-filter-grid {
+  align-items: flex-start;
+}
+
+.menu-brand-model-wrap {
+  gap: 8px;
+}
+
+.menu-brand-model-item {
+  padding: 0;
+}
+
+.menu-brand-model-summary {
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.menu-brand-model-item[open] > .menu-brand-model-summary {
+  border-bottom: 1px solid var(--line);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.menu-brand-model-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.menu-brand-model-list {
+  margin-top: 0;
+}
+
+.menu-brand-model-list .admin-list-item {
+  padding: 8px;
+}
+
+.menu-brand-model-add-form {
+  margin-top: 4px;
+}
+
+.menu-brand-model-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
 .menu-manage-item-row {
   display: flex;
   align-items: center;
@@ -4420,6 +4466,10 @@ body.theme-night .inline-file-preview-image {
 
   .admin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .menu-group-filter-grid {
+    grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr);
   }
 
   .admin-grid.single {

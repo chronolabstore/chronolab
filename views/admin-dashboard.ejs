@@ -1708,26 +1708,76 @@
               </div>
 
               <div class="admin-grid two-col menu-group-filter-grid">
-                <section class="kpi-card">
-                  <h4><%= isEn ? 'Brand Filters' : '브랜드 필터' %></h4>
+                <section class="kpi-card menu-brand-filter-card">
+                  <h4><%= isEn ? 'Brand + Models' : '브랜드 + 모델' %></h4>
                   <% if (brandFilters.length === 0) { %>
                     <p class="muted-label"><%= isEn ? 'No brand filter options yet.' : '등록된 브랜드 필터가 없습니다.' %></p>
                   <% } else { %>
-                    <div class="admin-list">
-                      <% brandFilters.forEach((optionValue) => { %>
-                        <div class="admin-list-item">
-                          <div class="menu-manage-item-row">
-                            <strong><%= optionValue %></strong>
-                            <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                    <div class="admin-list menu-brand-model-wrap">
+                      <% brandFilters.forEach((brandOption) => { %>
+                        <%
+                          const matchedBrandKey = Object.keys(modelFilterMap).find(
+                            (optionValue) => String(optionValue || '').trim().toLowerCase() === String(brandOption || '').trim().toLowerCase()
+                          );
+                          const brandModels = matchedBrandKey && Array.isArray(modelFilterMap[matchedBrandKey])
+                            ? modelFilterMap[matchedBrandKey]
+                            : [];
+                        %>
+                        <details class="admin-list-item menu-brand-model-item">
+                          <summary class="menu-brand-model-summary">
+                            <strong><%= brandOption %></strong>
+                            <small><%= isEn ? `${brandModels.length} models` : `모델 ${brandModels.length}개` %></small>
+                          </summary>
+                          <div class="menu-brand-model-body">
+                            <div class="admin-account-actions menu-brand-model-actions">
+                              <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                <input type="hidden" name="filterType" value="brand" />
+                                <input type="hidden" name="optionValue" value="<%= brandOption %>" />
+                                <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete Brand' : '브랜드 삭제' %></button>
+                              </form>
+                            </div>
+
+                            <% if (brandModels.length === 0) { %>
+                              <p class="muted-label"><%= isEn ? 'No models for this brand yet.' : '이 브랜드에 등록된 모델이 없습니다.' %></p>
+                            <% } else { %>
+                              <div class="admin-list menu-brand-model-list">
+                                <% brandModels.forEach((optionValue) => { %>
+                                  <div class="admin-list-item">
+                                    <div class="menu-manage-item-row">
+                                      <strong><%= optionValue %></strong>
+                                      <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                        <input type="hidden" name="filterType" value="model" />
+                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                        <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                      </form>
+                                    </div>
+                                  </div>
+                                <% }) %>
+                              </div>
+                            <% } %>
+
+                            <form method="post" action="/admin/product-group/filter/add" class="form-grid compact menu-brand-model-add-form">
                               <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                              <input type="hidden" name="filterType" value="brand" />
-                              <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                              <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                              <input type="hidden" name="filterType" value="model" />
+                              <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                              <label><%= isEn ? `Add model to ${brandOption}` : `${brandOption} 모델 추가` %>
+                                <input type="text" name="optionValue" required />
+                              </label>
+                              <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Add Model' : '모델 추가' %></button>
                             </form>
                           </div>
-                        </div>
+                        </details>
                       <% }) %>
                     </div>
+
+                    <% if (modelFilterBrandKeys.length === 0 && legacyModelFilters.length > 0) { %>
+                      <p class="muted-label">
+                        <%= isEn ? 'Legacy shared models exist. Please re-add models under each brand.' : '기존 공용 모델 데이터가 남아있습니다. 브랜드를 펼쳐서 브랜드별 모델로 다시 추가해 주세요.' %>
+                      </p>
+                    <% } %>
                   <% } %>
 
                   <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
@@ -1741,7 +1791,7 @@
                 </section>
 
                 <% if (supportsFactoryFilterGroup) { %>
-                  <section class="kpi-card">
+                  <section class="kpi-card menu-factory-filter-card">
                     <h4><%= isEn ? 'Factory Filters' : '공장 필터' %></h4>
                     <% if (factoryFilters.length === 0) { %>
                       <p class="muted-label"><%= isEn ? 'No factory filter options yet.' : '등록된 공장 필터가 없습니다.' %></p>
@@ -1773,65 +1823,6 @@
                     </form>
                   </section>
                 <% } %>
-
-                <section class="kpi-card">
-                  <h4><%= isEn ? 'Model Filters' : '모델 필터' %></h4>
-                  <% if (brandFilters.length === 0) { %>
-                    <p class="muted-label"><%= isEn ? 'Add brand filters first, then register models by brand.' : '브랜드 필터를 먼저 등록한 뒤, 브랜드별 모델을 추가해 주세요.' %></p>
-                  <% } else { %>
-                    <% if (modelFilterBrandKeys.length === 0 && legacyModelFilters.length === 0) { %>
-                      <p class="muted-label"><%= isEn ? 'No model filter options yet.' : '등록된 모델 필터가 없습니다.' %></p>
-                    <% } else { %>
-                      <div class="admin-list">
-                        <% brandFilters.forEach((brandOption) => { %>
-                          <% const brandModels = Array.isArray(modelFilterMap[brandOption]) ? modelFilterMap[brandOption] : []; %>
-                          <div class="admin-list-item">
-                            <div class="menu-manage-item-row">
-                              <strong><%= brandOption %></strong>
-                            </div>
-                            <% if (brandModels.length === 0) { %>
-                              <p class="muted-label"><%= isEn ? 'No model options for this brand.' : '이 브랜드에 등록된 모델이 없습니다.' %></p>
-                            <% } else { %>
-                              <div class="admin-list">
-                                <% brandModels.forEach((optionValue) => { %>
-                                  <div class="admin-list-item">
-                                    <div class="menu-manage-item-row">
-                                      <strong><%= optionValue %></strong>
-                                      <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
-                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                        <input type="hidden" name="filterType" value="model" />
-                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                        <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                                      </form>
-                                    </div>
-                                  </div>
-                                <% }) %>
-                              </div>
-                            <% } %>
-                          </div>
-                        <% }) %>
-                      </div>
-                    <% } %>
-                  <% } %>
-
-                  <form method="post" action="/admin/product-group/filter/add" class="form-grid compact">
-                    <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                    <input type="hidden" name="filterType" value="model" />
-                    <label><%= isEn ? 'Target Brand' : '대상 브랜드' %>
-                      <select name="brandValue" required <%= brandFilters.length === 0 ? 'disabled' : '' %>>
-                        <option value=""><%= isEn ? 'Select Brand' : '브랜드 선택' %></option>
-                        <% brandFilters.forEach((brandOption) => { %>
-                          <option value="<%= brandOption %>"><%= brandOption %></option>
-                        <% }) %>
-                      </select>
-                    </label>
-                    <label><%= isEn ? 'Add Model Option' : '모델 옵션 추가' %>
-                      <input type="text" name="optionValue" required <%= brandFilters.length === 0 ? 'disabled' : '' %> />
-                    </label>
-                    <button type="submit" class="chip dark filter-chip" <%= brandFilters.length === 0 ? 'disabled' : '' %>><%= isEn ? 'Add Model' : '모델 추가' %></button>
-                  </form>
-                </section>
               </div>
             </div>
           <% }) %>
