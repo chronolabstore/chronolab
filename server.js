@@ -6040,7 +6040,18 @@ app.get('/shop', (req, res) => {
     .filter(Boolean);
   const discoveredModelOptions = normalizeProductFilterOptionList(discoveredModels);
   const configuredModels = groupModelSeedOptions;
-  const models = configuredModels.length > 0 ? configuredModels : discoveredModelOptions;
+  const models = (() => {
+    if (configuredModels.length === 0) {
+      return discoveredModelOptions;
+    }
+    if (discoveredModelOptions.length === 0) {
+      return configuredModels;
+    }
+
+    const configuredModelSet = new Set(configuredModels.map((item) => item.toLowerCase()));
+    const matchedModels = discoveredModelOptions.filter((item) => configuredModelSet.has(item.toLowerCase()));
+    return matchedModels.length > 0 ? matchedModels : discoveredModelOptions;
+  })();
   const model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
 
   const where = ['is_active = 1', 'category_group = ?'];
