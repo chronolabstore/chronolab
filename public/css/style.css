@@ -351,6 +351,7 @@ img {
   display: flex;
   align-items: center;
   gap: 10px;
+  line-height: 0;
 }
 
 .brand-symbol {
@@ -378,11 +379,12 @@ img {
 }
 
 .brand-logo {
-  width: min(200px, 48vw);
-  height: 30px;
+  width: min(150px, 36vw);
+  height: 22px;
   object-fit: contain;
   object-position: left center;
   display: block;
+  align-self: center;
 }
 
 .brand-text {
