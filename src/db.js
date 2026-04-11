@@ -907,6 +907,20 @@ function ensureAdminSecurityTables() {
       resolved_at TEXT,
       FOREIGN KEY (actor_admin_user_id) REFERENCES users(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS ip_geolocation_cache (
+      ip_address TEXT PRIMARY KEY,
+      country TEXT NOT NULL DEFAULT '',
+      region TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      district TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      latitude REAL,
+      longitude REAL,
+      location_display TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   db.prepare(
@@ -920,6 +934,13 @@ function ensureAdminSecurityTables() {
     `
       CREATE INDEX IF NOT EXISTS idx_admin_security_alerts_created
       ON admin_security_alerts (created_at DESC, id DESC)
+    `
+  ).run();
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_ip_geolocation_cache_updated
+      ON ip_geolocation_cache (updated_at DESC)
     `
   ).run();
 }
