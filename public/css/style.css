@@ -3289,7 +3289,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-mode-card {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .sales-manage-head h3 {
@@ -3297,11 +3297,11 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-tab-nav {
-  margin-top: 8px;
+  margin-top: 4px;
   display: flex;
   flex-wrap: wrap;
   overflow: visible;
-  gap: 8px;
+  gap: 6px;
 }
 
 .sales-price-sheet-groups {
@@ -3429,7 +3429,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-scope-toolbar {
-  margin-top: 12px;
+  margin-top: 6px;
   display: grid;
   gap: 8px;
 }
@@ -3463,9 +3463,9 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--chip);
-  padding: 10px;
+  padding: 9px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .sales-price-tip {
@@ -3541,6 +3541,10 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 .sales-date-action-separator {
   color: var(--muted);
   font-weight: 700;
+}
+
+.admin-grid.admin-grid-sales {
+  gap: 10px;
 }
 
 @media (max-width: 900px) {
