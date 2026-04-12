@@ -3927,7 +3927,13 @@ function normalizeSalesDate(value = '') {
 
 function getSalesScopeMode(tabKey = '') {
   const key = String(tabKey || '').trim();
-  if (key === 'price') return 'factory';
+  if (!key) {
+    return 'date';
+  }
+  const matchedTab = getSalesMainTabs().find((tab) => String(tab?.key || '').trim() === key);
+  if (matchedTab?.scopeType === 'factory') return 'factory';
+  if (matchedTab?.scopeType === 'round') return 'round';
+  if (matchedTab?.scopeType === 'date') return 'date';
   if (key === 'preorder') return 'round';
   return 'date';
 }
@@ -3952,6 +3958,9 @@ const SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
   '\uc820\ud30c\uce20': 'genparts',
   '\ud604\uc9c0\uc911\uace0': 'used'
 });
+const SALES_PRICE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
+  '\uacf5\uc7a5\uc81c': 'price'
+});
 
 const SALES_DYNAMIC_TAB_KEY_PREFIX = 'group';
 const SALES_DYNAMIC_TAB_SLUG_REGEX = /[^a-z0-9\uac00-\ud7a3]+/g;
@@ -3975,6 +3984,27 @@ function buildSalesDateTabKeyByGroupKey(rawGroupKey = '') {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
   return slug ? `${SALES_DYNAMIC_TAB_KEY_PREFIX}-${slug}` : '';
+}
+
+function buildSalesPriceTabKeyByGroupKey(rawGroupKey = '') {
+  const groupKey = normalizeProductGroupKey(rawGroupKey || '');
+  if (!groupKey) {
+    return '';
+  }
+
+  const legacyKey = SALES_PRICE_TAB_LEGACY_GROUP_KEY_MAP[groupKey];
+  if (legacyKey) {
+    return legacyKey;
+  }
+
+  const slug = String(groupKey)
+    .trim()
+    .toLowerCase()
+    .replace(SALES_DYNAMIC_TAB_SLUG_REGEX, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug ? `price-${slug}` : '';
 }
 
 function getObservedProductGroupKeys() {
@@ -4038,10 +4068,11 @@ function getSalesMainTabs(groupConfigs = null) {
   });
   const mergedGroups = [...safeGroupMap.values()];
 
-  const baseTabs = SALES_MAIN_TABS.filter((item) => item.key === 'price' || item.key === 'preorder')
-    .map((item) => ({ ...item }));
+  const roundTabs = SALES_MAIN_TABS.filter((item) => item.scopeType === 'round').map((item) => ({ ...item }));
+  const priceTabs = [];
+  const dateTabs = [];
   const legacyTabByKey = new Map(SALES_MAIN_TABS.map((item) => [item.key, item]));
-  const usedTabKeys = new Set(baseTabs.map((item) => String(item.key || '').trim()).filter(Boolean));
+  const usedTabKeys = new Set(roundTabs.map((item) => String(item.key || '').trim()).filter(Boolean));
 
   mergedGroups.forEach((group, index) => {
     const groupKey = normalizeProductGroupKey(group?.key || '');
@@ -4049,22 +4080,40 @@ function getSalesMainTabs(groupConfigs = null) {
       return;
     }
 
-    const defaultTabKey = buildSalesDateTabKeyByGroupKey(groupKey) || `${SALES_DYNAMIC_TAB_KEY_PREFIX}-${index + 1}`;
-    let tabKey = defaultTabKey;
-    let suffix = 2;
-    while (usedTabKeys.has(tabKey)) {
-      tabKey = `${defaultTabKey}-${suffix}`;
-      suffix += 1;
-    }
-    usedTabKeys.add(tabKey);
-
-    const legacyKey = SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP[groupKey] || '';
-    const legacyTab = legacyKey ? legacyTabByKey.get(legacyKey) : null;
     const labelKoBase = String(group?.labelKo || groupKey).trim() || groupKey;
     const labelEnBase = String(group?.labelEn || labelKoBase).trim() || labelKoBase;
 
-    baseTabs.push({
-      key: tabKey,
+    const defaultPriceTabKey = buildSalesPriceTabKeyByGroupKey(groupKey) || `price-${index + 1}`;
+    let priceTabKey = defaultPriceTabKey;
+    let priceKeySuffix = 2;
+    while (usedTabKeys.has(priceTabKey)) {
+      priceTabKey = `${defaultPriceTabKey}-${priceKeySuffix}`;
+      priceKeySuffix += 1;
+    }
+    usedTabKeys.add(priceTabKey);
+
+    const legacyPriceKey = SALES_PRICE_TAB_LEGACY_GROUP_KEY_MAP[groupKey] || '';
+    const legacyPriceTab = legacyPriceKey ? legacyTabByKey.get(legacyPriceKey) : null;
+    priceTabs.push({
+      key: priceTabKey,
+      labelKo: String(legacyPriceTab?.labelKo || `${labelKoBase} 가격표`),
+      labelEn: String(legacyPriceTab?.labelEn || `${labelEnBase} Price Table`),
+      scopeType: 'factory',
+      groupKey
+    });
+
+    const defaultDateTabKey = buildSalesDateTabKeyByGroupKey(groupKey) || `${SALES_DYNAMIC_TAB_KEY_PREFIX}-${index + 1}`;
+    let dateTabKey = defaultDateTabKey;
+    let dateKeySuffix = 2;
+    while (usedTabKeys.has(dateTabKey)) {
+      dateTabKey = `${defaultDateTabKey}-${dateKeySuffix}`;
+      dateKeySuffix += 1;
+    }
+    usedTabKeys.add(dateTabKey);
+    const legacyKey = SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP[groupKey] || '';
+    const legacyTab = legacyKey ? legacyTabByKey.get(legacyKey) : null;
+    dateTabs.push({
+      key: dateTabKey,
       labelKo: String(legacyTab?.labelKo || `${labelKoBase} 매출`),
       labelEn: String(legacyTab?.labelEn || `${labelEnBase} Sales`),
       scopeType: 'date',
@@ -4072,7 +4121,7 @@ function getSalesMainTabs(groupConfigs = null) {
     });
   });
 
-  return baseTabs;
+  return [...priceTabs, ...roundTabs, ...dateTabs];
 }
 
 function normalizeSalesSettingValues(raw = {}, fallback = {}) {
@@ -4252,9 +4301,13 @@ function normalizeSalesScopeTaxonomy(rawTaxonomy = {}, rows = []) {
   return { brands };
 }
 
-function buildDefaultPriceScopes() {
+function buildDefaultPriceScopes(groupKey = '') {
   const groupConfigs = getProductGroupConfigs();
+  const normalizedGroupKey = normalizeProductGroupKey(groupKey || '');
   const factoryLikeGroup =
+    (normalizedGroupKey
+      ? groupConfigs.find((group) => normalizeProductGroupKey(group?.key || '') === normalizedGroupKey)
+      : null) ||
     groupConfigs.find((group) => String(group.key || '') === '공장제') ||
     groupConfigs.find((group) => String(group.mode || '') === PRODUCT_GROUP_MODE.FACTORY) ||
     null;
@@ -4301,7 +4354,7 @@ function buildDefaultSalesWorkbook() {
         labelEn: tab.labelEn,
         scopeType: tab.scopeType,
         settings: tabSettings,
-        groups: buildDefaultPriceScopes()
+        groups: buildDefaultPriceScopes(tab.groupKey || '')
       };
       continue;
     }
@@ -4648,7 +4701,7 @@ function getSalesTabKeyForCategoryGroup(categoryGroup = '', groupConfigs = null)
   }
 
   const matched = getSalesMainTabs(groupConfigs).find(
-    (tab) => normalizeProductGroupKey(tab?.groupKey || '') === normalized
+    (tab) => String(tab?.scopeType || '') === 'date' && normalizeProductGroupKey(tab?.groupKey || '') === normalized
   );
   return String(matched?.key || '').trim();
 }
