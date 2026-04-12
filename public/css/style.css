@@ -3739,6 +3739,26 @@ th {
   min-width: 148px;
 }
 
+.member-admin-table .member-manage-col,
+.member-admin-table .member-manage-cell {
+  text-align: center;
+}
+
+.member-admin-table td.member-manage-cell {
+  min-width: 148px;
+}
+
+.member-admin-table .member-block-reason-col {
+  text-align: center;
+}
+
+.member-admin-table td.member-block-reason-cell {
+  min-width: 180px;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .member-admin-actions {
   justify-content: center;
 }

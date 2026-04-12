@@ -2,15 +2,16 @@
       <%- include('./footer') %>
     </div>
 
-    <% if (ctx.popupFlash && ctx.popupFlash.message) { %>
+    <% const popupFlashState = (ctx.popupFlash && ctx.popupFlash.message) ? ctx.popupFlash : ((ctx.flash && ctx.flash.message) ? ctx.flash : null); %>
+    <% if (popupFlashState) { %>
       <div id="flashPopup" class="popup-backdrop popup-alert-backdrop hidden">
-        <div class="popup-card popup-alert-card <%= ctx.popupFlash.type === 'error' ? 'error' : 'success' %>">
+        <div class="popup-card popup-alert-card <%= popupFlashState.type === 'error' ? 'error' : 'success' %>">
           <h3>
-            <%= ctx.popupFlash.type === 'error'
+            <%= popupFlashState.type === 'error'
               ? (ctx.lang === 'en' ? 'Action Failed' : '작업 실패')
               : (ctx.lang === 'en' ? 'Upload Complete' : '업로드 완료') %>
           </h3>
-          <p><%= ctx.popupFlash.message %></p>
+          <p><%= popupFlashState.message %></p>
           <div class="popup-actions">
             <button type="button" data-flash-popup-action="confirm" class="chip dark"><%= ctx.lang === 'en' ? 'OK' : '확인' %></button>
           </div>

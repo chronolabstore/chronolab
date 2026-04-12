@@ -1938,8 +1938,12 @@ function getAdminMenus(currentUser = null) {
     .map((menu) => ({ ...menu }));
 }
 
+const BLOCKED_ACCOUNT_NOTICE = '차단된 계정입니다. 관리자에게 문의하세요.';
+
 function setFlash(req, type, message) {
-  req.session.flash = { type, message };
+  const payload = { type, message };
+  req.session.flash = payload;
+  req.session.popupFlash = payload;
 }
 
 function getFlash(req) {
@@ -6064,7 +6068,7 @@ function loadUser(req, res, next) {
     req.session.isAdmin = false;
     req.session.adminRole = '';
     req.user = null;
-    setFlash(req, 'error', '차단된 계정입니다. 관리자에게 문의해 주세요.');
+    setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return next();
   }
 
@@ -6973,7 +6977,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const purchasePointRate = memberPointProfile.pointRate;
 
   const renderWithError = (message) => {
-    res.locals.ctx.flash = { type: 'error', message };
+    res.locals.ctx.popupFlash = { type: 'error', message };
     return res.render('purchase-form', {
       title: 'Purchase',
       product,
@@ -8668,12 +8672,7 @@ app.post(
   }
 
   if (Number(user.is_blocked) === 1) {
-    const blockedReason = String(user.blocked_reason || '').trim();
-    setFlash(
-      req,
-      'error',
-      blockedReason ? `차단된 계정입니다. (${blockedReason})` : '차단된 계정입니다. 관리자에게 문의해 주세요.'
-    );
+    setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return res.redirect('/login');
   }
 
@@ -8743,12 +8742,7 @@ app.post(
   }
 
   if (Number(user.is_blocked) === 1) {
-    const blockedReason = String(user.blocked_reason || '').trim();
-    setFlash(
-      req,
-      'error',
-      blockedReason ? `차단된 계정입니다. (${blockedReason})` : '차단된 계정입니다. 메인관리자에게 문의해 주세요.'
-    );
+    setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return res.redirect('/admin/login');
   }
 
@@ -8837,12 +8831,7 @@ app.post(
 
     if (Number(user.is_blocked || 0) === 1) {
       clearAdminOtpPending(req);
-      const blockedReason = String(user.blocked_reason || '').trim();
-      setFlash(
-        req,
-        'error',
-        blockedReason ? `차단된 계정입니다. (${blockedReason})` : '차단된 계정입니다. 메인관리자에게 문의해 주세요.'
-      );
+      setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
       return res.redirect('/admin/login');
     }
 
