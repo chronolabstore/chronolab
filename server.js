@@ -63,6 +63,10 @@ const DIGIT_PHONE_REGEX = /^[0-9]+$/;
 const CUSTOMS_NO_REGEX = /^[A-Za-z0-9-]{6,30}$/;
 const TRACKING_NUMBER_REGEX = /^[A-Za-z0-9-]{6,40}$/;
 const PHONE_REGEX = /^[0-9]{8,20}$/;
+const LOG_REDACTED_KEY_REGEX = /(password|pass|token|secret|otp|captcha|code|cookie|session|authorization)/i;
+const LOG_MAX_STRING_LENGTH = 320;
+const LOG_MAX_ARRAY_LENGTH = 30;
+const LOG_MAX_OBJECT_KEYS = 40;
 
 const ADMIN_ROLE = Object.freeze({
   PRIMARY: 'PRIMARY',
@@ -360,6 +364,13 @@ app.use(
     }
   })
 );
+app.use((req, res, next) => {
+  const incomingRequestId = String(req.get('x-request-id') || '').trim();
+  const requestId = incomingRequestId && incomingRequestId.length <= 120 ? incomingRequestId : crypto.randomUUID();
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+  return next();
+});
 
 function toKstDate() {
   const now = new Date();
@@ -1968,6 +1979,206 @@ function normalizeEmailAddress(raw = '') {
 
 function normalizeAccountName(raw = '') {
   return String(raw || '').trim();
+}
+
+function sanitizeLogValue(value, depth = 0, keyName = '') {
+  if (keyName && LOG_REDACTED_KEY_REGEX.test(String(keyName))) {
+    return '[redacted]';
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (typeof value === 'string') {
+    return value.length > LOG_MAX_STRING_LENGTH ? `${value.slice(0, LOG_MAX_STRING_LENGTH)}...[truncated]` : value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    return String(value);
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (value instanceof Error) {
+    return {
+      name: String(value.name || 'Error'),
+      message: String(value.message || ''),
+      code: String(value.code || ''),
+      errno: Number.isFinite(Number(value.errno)) ? Number(value.errno) : null,
+      stack: String(value.stack || '').slice(0, 4000)
+    };
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return `[buffer:${value.length}]`;
+  }
+
+  if (depth >= 3) {
+    return '[max-depth]';
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, LOG_MAX_ARRAY_LENGTH).map((item) => sanitizeLogValue(item, depth + 1));
+    if (value.length > LOG_MAX_ARRAY_LENGTH) {
+      items.push(`[+${value.length - LOG_MAX_ARRAY_LENGTH} more]`);
+    }
+    return items;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    const sanitized = {};
+    entries.slice(0, LOG_MAX_OBJECT_KEYS).forEach(([entryKey, entryValue]) => {
+      sanitized[entryKey] = sanitizeLogValue(entryValue, depth + 1, entryKey);
+    });
+    if (entries.length > LOG_MAX_OBJECT_KEYS) {
+      sanitized.__truncatedKeys = entries.length - LOG_MAX_OBJECT_KEYS;
+    }
+    return sanitized;
+  }
+
+  return String(value);
+}
+
+function buildRequestLogContext(req) {
+  if (!req) {
+    return {};
+  }
+
+  return {
+    requestId: String(req.requestId || ''),
+    method: String(req.method || ''),
+    path: String(req.path || ''),
+    url: String(req.originalUrl || req.url || ''),
+    ip: getClientIp(req),
+    userId: Number(req.user?.id || 0) || null,
+    isAdmin: Boolean(req.user?.isAdmin),
+    adminRole: String(req.user?.adminRole || ''),
+    userAgent: String(req.get('user-agent') || '').slice(0, 280),
+    contentType: String(req.get('content-type') || '').slice(0, 120),
+    referer: String(req.get('referer') || '').slice(0, 280),
+    params: sanitizeLogValue(req.params || {}),
+    query: sanitizeLogValue(req.query || {}),
+    body: sanitizeLogValue(req.body || {})
+  };
+}
+
+function buildErrorSnapshot(error) {
+  const source = error instanceof Error ? error : new Error(String(error || 'unknown error'));
+  return {
+    name: String(source.name || 'Error'),
+    message: String(source.message || ''),
+    code: String(source.code || ''),
+    errno: Number.isFinite(Number(source.errno)) ? Number(source.errno) : null,
+    stack: String(source.stack || '').slice(0, 4000)
+  };
+}
+
+function logDetailedError(scope, error, meta = {}) {
+  const payload = {
+    at: new Date().toISOString(),
+    scope: String(scope || 'error'),
+    error: buildErrorSnapshot(error),
+    meta: sanitizeLogValue(meta || {})
+  };
+
+  try {
+    // eslint-disable-next-line no-console
+    console.error(`[chronolab:${payload.scope}]`, JSON.stringify(payload, null, 2));
+  } catch (loggingError) {
+    // eslint-disable-next-line no-console
+    console.error(`[chronolab:${payload.scope}]`, payload);
+    // eslint-disable-next-line no-console
+    console.error('[chronolab:logging-failed]', loggingError);
+  }
+}
+
+function isSqliteUniqueConstraintError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '');
+  return (
+    (code.includes('SQLITE_CONSTRAINT') && (code.includes('UNIQUE') || code.includes('PRIMARYKEY'))) ||
+    /UNIQUE constraint failed/i.test(message)
+  );
+}
+
+function extractSqliteUniqueConstraintColumns(error) {
+  const message = String(error?.message || '');
+  const matched = message.match(/UNIQUE constraint failed:\s*(.+)$/i);
+  if (!matched) {
+    return [];
+  }
+
+  return String(matched[1] || '')
+    .split(',')
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .map((part) => part.split('.').slice(-1)[0])
+    .map((part) => String(part || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function resolveSignupDuplicateFieldFromSqliteError(error) {
+  const columns = extractSqliteUniqueConstraintColumns(error);
+  if (columns.includes('username')) {
+    return 'account';
+  }
+  if (columns.includes('nickname')) {
+    return 'nickname';
+  }
+  if (columns.includes('email')) {
+    return 'email';
+  }
+  return '';
+}
+
+function getSignupDuplicateState({ account = '', nickname = '', email = '' } = {}) {
+  const normalizedAccount = normalizeAccountName(account).toLowerCase();
+  const normalizedNickname = String(nickname || '').trim();
+  const normalizedEmail = normalizeEmailAddress(email);
+
+  const accountExists = normalizedAccount
+    ? Boolean(db.prepare('SELECT id FROM users WHERE lower(username) = lower(?) LIMIT 1').get(normalizedAccount))
+    : false;
+  const nicknameExists = normalizedNickname
+    ? Boolean(db.prepare('SELECT id FROM users WHERE lower(nickname) = lower(?) LIMIT 1').get(normalizedNickname))
+    : false;
+  const emailExists = normalizedEmail
+    ? Boolean(db.prepare('SELECT id FROM users WHERE lower(email) = lower(?) LIMIT 1').get(normalizedEmail))
+    : false;
+
+  return {
+    accountExists,
+    nicknameExists,
+    emailExists
+  };
+}
+
+function pickSignupDuplicateField(state = {}) {
+  if (Boolean(state.accountExists)) return 'account';
+  if (Boolean(state.nicknameExists)) return 'nickname';
+  if (Boolean(state.emailExists)) return 'email';
+  return '';
+}
+
+function getSignupDuplicateMessage(field, isEn = false) {
+  if (field === 'account') {
+    return isEn ? 'This account is already in use.' : '이미 사용중인 계정입니다.';
+  }
+  if (field === 'nickname') {
+    return isEn ? 'This nickname is already in use.' : '이미 사용중인 닉네임입니다.';
+  }
+  if (field === 'email') {
+    return isEn ? 'This email is already in use.' : '이미 사용중인 이메일입니다.';
+  }
+  return isEn ? 'This account information is already in use.' : '이미 사용중인 회원 정보입니다.';
 }
 
 function buildEmailVerificationKey(purpose = '', email = '', account = '') {
@@ -8115,12 +8326,65 @@ app.get('/signup', (req, res) => {
   });
 });
 
+app.get('/api/signup/availability', (req, res) => {
+  try {
+    const account = normalizeAccountName(req.query.account || '').toLowerCase();
+    const nickname = String(req.query.nickname || '').trim();
+    const email = normalizeEmailAddress(req.query.email || '');
+
+    const shouldCheckAccount = Boolean(account) && USERNAME_REGEX.test(account);
+    const shouldCheckNickname = Boolean(nickname) && nickname.length >= 2 && nickname.length <= 40;
+    const shouldCheckEmail = Boolean(email) && EMAIL_REGEX.test(email);
+
+    const duplicateState = getSignupDuplicateState({
+      account: shouldCheckAccount ? account : '',
+      nickname: shouldCheckNickname ? nickname : '',
+      email: shouldCheckEmail ? email : ''
+    });
+
+    const checks = {};
+    if (account) {
+      checks.account = {
+        value: account,
+        valid: shouldCheckAccount,
+        exists: shouldCheckAccount ? Boolean(duplicateState.accountExists) : false
+      };
+    }
+    if (nickname) {
+      checks.nickname = {
+        value: nickname,
+        valid: shouldCheckNickname,
+        exists: shouldCheckNickname ? Boolean(duplicateState.nicknameExists) : false
+      };
+    }
+    if (email) {
+      checks.email = {
+        value: email,
+        valid: shouldCheckEmail,
+        exists: shouldCheckEmail ? Boolean(duplicateState.emailExists) : false
+      };
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ ok: true, checks });
+  } catch (error) {
+    logDetailedError('signup-availability-failed', error, {
+      request: buildRequestLogContext(req)
+    });
+    return res.status(500).json({
+      ok: false,
+      error: 'availability_check_failed',
+      message: '중복 확인 중 오류가 발생했습니다.'
+    });
+  }
+});
+
 app.post(
   '/signup',
   authAttemptGuard({ key: 'signup', redirectPath: '/signup', limit: 12 }),
   asyncRoute(async (req, res) => {
-  const email = String(req.body.email || '').trim();
-  const account = String(req.body.account || req.body.username || '').trim();
+  const email = normalizeEmailAddress(req.body.email || '');
+  const account = normalizeAccountName(req.body.account || req.body.username || '').toLowerCase();
   const nickname = String(req.body.nickname || '').trim();
   const phone = normalizePhone(req.body.phone || '');
   const password = String(req.body.password || '');
@@ -8185,6 +8449,13 @@ app.post(
     return res.redirect('/signup');
   }
 
+  const duplicateState = getSignupDuplicateState({ account, nickname, email });
+  const duplicateField = pickSignupDuplicateField(duplicateState);
+  if (duplicateField) {
+    setFlash(req, 'error', getSignupDuplicateMessage(duplicateField, false));
+    return res.redirect('/signup');
+  }
+
   try {
     const hash = await bcrypt.hash(password, 10);
     const signupBonusPoints = getSignupBonusPointsSetting();
@@ -8220,10 +8491,23 @@ app.post(
           ? 'Sign up complete.'
           : '회원가입이 완료되었습니다.';
     setFlash(req, 'success', successMessage);
-    res.redirect('/main');
-  } catch {
-    setFlash(req, 'error', '이미 사용 중인 이메일 또는 계정입니다.');
-    res.redirect('/signup');
+    return res.redirect('/main');
+  } catch (error) {
+    if (isSqliteUniqueConstraintError(error)) {
+      const duplicateFieldFromDb = resolveSignupDuplicateFieldFromSqliteError(error);
+      setFlash(req, 'error', getSignupDuplicateMessage(duplicateFieldFromDb, false));
+      logDetailedError('signup-duplicate-race', error, {
+        request: buildRequestLogContext(req),
+        duplicateField: duplicateFieldFromDb || 'unknown'
+      });
+      return res.redirect('/signup');
+    }
+
+    logDetailedError('signup-create-failed', error, {
+      request: buildRequestLogContext(req)
+    });
+    setFlash(req, 'error', '회원가입 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    return res.redirect('/signup');
   }
   })
 );
@@ -13927,8 +14211,9 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  // eslint-disable-next-line no-console
-  console.error('[chronolab:error]', error);
+  logDetailedError('request-failed', error, {
+    request: buildRequestLogContext(req)
+  });
 
   const isUnsupportedType = Boolean(error?.message?.includes('지원되지 않는 파일 형식'));
   const isFileTooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
@@ -13963,6 +14248,12 @@ app.use((error, req, res, next) => {
   }
 
   return res.status(500).render('simple-error', { title: 'Error', message });
+});
+
+process.on('unhandledRejection', (reason) => {
+  logDetailedError('unhandled-rejection', reason instanceof Error ? reason : new Error(String(reason)), {
+    reason: sanitizeLogValue(reason)
+  });
 });
 
 app.listen(PORT, () => {

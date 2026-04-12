@@ -55,6 +55,7 @@
         <input type="checkbox" name="agreedTerms" />
         <span><%= isEn ? 'I agree to the terms.' : '약관에 동의합니다.' %></span>
       </label>
+      <small class="field-error" data-error-for="agreedTerms"></small>
       <button type="submit" class="cta-main"><%= isEn ? 'Sign up' : '회원가입' %></button>
       <% if (Number(ctx.settings.signupBonusPoints || 0) > 0) { %>
         <small class="muted-label">
@@ -73,6 +74,8 @@
     const form = document.getElementById('signupForm');
     if (!form) return;
 
+    const fieldOrder = ['account', 'nickname', 'email', 'phone', 'password', 'passwordConfirm', 'captchaAnswer', 'agreedTerms'];
+    const duplicateFieldOrder = ['account', 'nickname', 'email'];
     const accountInput = form.querySelector('input[name="account"]');
     const nicknameInput = form.querySelector('input[name="nickname"]');
     const emailInput = form.querySelector('input[name="email"]');
@@ -80,13 +83,63 @@
     const passwordInput = form.querySelector('input[name="password"]');
     const passwordConfirmInput = form.querySelector('input[name="passwordConfirm"]');
     const captchaInput = form.querySelector('input[name="captchaAnswer"]');
+    const agreedTermsInput = form.querySelector('input[name="agreedTerms"]');
 
     const errorByName = (name) => form.querySelector(`[data-error-for="${name}"]`);
     const isEn = <%= isEn ? 'true' : 'false' %>;
+    const duplicateMessage = {
+      account: isEn ? 'This account is already in use.' : '이미 사용중인 계정입니다.',
+      nickname: isEn ? 'This nickname is already in use.' : '이미 사용중인 닉네임입니다.',
+      email: isEn ? 'This email is already in use.' : '이미 사용중인 이메일입니다.'
+    };
+    const availabilityCheckFailMessage = isEn
+      ? 'Could not verify duplication. Please try again.'
+      : '중복 여부를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+    const availabilityRequestSeq = {
+      account: 0,
+      nickname: 0,
+      email: 0
+    };
+    const availabilityCache = {
+      account: { value: '', exists: false },
+      nickname: { value: '', exists: false },
+      email: { value: '', exists: false }
+    };
+    const duplicateDebounceTimers = {
+      account: 0,
+      nickname: 0,
+      email: 0
+    };
+
+    const getInputByName = (name) => form.querySelector(`[name="${name}"]`);
+    const getFieldContainer = (name) => {
+      const input = getInputByName(name);
+      if (!input) return null;
+      if (input.type === 'checkbox') {
+        return input.closest('.check-row') || input;
+      }
+      return input;
+    };
+
+    const setFieldInvalid = (name, isInvalid) => {
+      const target = getFieldContainer(name);
+      const input = getInputByName(name);
+      if (!target || !input) return;
+
+      if (input.type === 'checkbox') {
+        target.classList.toggle('field-invalid-row', isInvalid);
+      } else {
+        target.classList.toggle('field-invalid', isInvalid);
+      }
+      input.setAttribute('aria-invalid', isInvalid ? 'true' : 'false');
+    };
 
     const setError = (name, message) => {
       const el = errorByName(name);
-      if (!el) return;
+      if (!el) {
+        setFieldInvalid(name, Boolean(message));
+        return;
+      }
       if (message) {
         el.textContent = message;
         el.classList.add('show');
@@ -94,6 +147,7 @@
         el.textContent = '';
         el.classList.remove('show');
       }
+      setFieldInvalid(name, Boolean(message));
     };
 
     const validateAccount = () => {
@@ -163,6 +217,11 @@
       return '';
     };
 
+    const validateAgreedTerms = () => {
+      if (agreedTermsInput?.checked) return '';
+      return isEn ? 'Please agree to the terms.' : '약관에 동의해 주세요.';
+    };
+
     const validators = {
       account: validateAccount,
       nickname: validateNickname,
@@ -170,31 +229,162 @@
       phone: validatePhone,
       password: validatePassword,
       passwordConfirm: validatePasswordConfirm,
-      captchaAnswer: validateCaptcha
+      captchaAnswer: validateCaptcha,
+      agreedTerms: validateAgreedTerms
     };
 
-    Object.entries(validators).forEach(([name, validator]) => {
+    const resetAvailabilityCache = (name) => {
+      if (!Object.prototype.hasOwnProperty.call(availabilityCache, name)) return;
+      availabilityCache[name] = { value: '', exists: false };
+    };
+
+    const fetchAvailability = async (name, value) => {
+      const params = new URLSearchParams();
+      params.set(name, value);
+      const response = await fetch(`/api/signup/availability?${params.toString()}`, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json'
+        }
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok || !payload || payload.ok !== true) {
+        throw new Error('availability-check-failed');
+      }
+      return payload.checks || {};
+    };
+
+    const validateDuplicateField = async (name) => {
+      if (!duplicateFieldOrder.includes(name)) {
+        return '';
+      }
+
+      const input = getInputByName(name);
+      const value = String(input?.value || '').trim();
+      const syncMessage = validators[name]();
+      if (syncMessage) {
+        return syncMessage;
+      }
+      if (!value) {
+        return '';
+      }
+
+      const cached = availabilityCache[name];
+      if (cached && cached.value === value) {
+        return cached.exists ? duplicateMessage[name] : '';
+      }
+
+      availabilityRequestSeq[name] += 1;
+      const currentSeq = availabilityRequestSeq[name];
+      try {
+        const checks = await fetchAvailability(name, value);
+        if (availabilityRequestSeq[name] !== currentSeq) {
+          return '';
+        }
+        const exists = Boolean(checks?.[name]?.exists);
+        availabilityCache[name] = { value, exists };
+        return exists ? duplicateMessage[name] : '';
+      } catch {
+        if (availabilityRequestSeq[name] !== currentSeq) {
+          return '';
+        }
+        availabilityCache[name] = { value: '', exists: false };
+        return availabilityCheckFailMessage;
+      }
+    };
+
+    const validateField = async (name, options = {}) => {
+      const syncMessage = validators[name]?.() || '';
+      if (syncMessage) {
+        setError(name, syncMessage);
+        return syncMessage;
+      }
+
+      if (options.checkDuplicate === true && duplicateFieldOrder.includes(name)) {
+        const duplicateError = await validateDuplicateField(name);
+        setError(name, duplicateError);
+        return duplicateError;
+      }
+
+      setError(name, '');
+      return '';
+    };
+
+    const focusFirstInvalidField = (firstInvalidName) => {
+      const target = getFieldContainer(firstInvalidName);
+      const input = getInputByName(firstInvalidName);
+      if (!target || !input) return;
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.setTimeout(() => {
+        try {
+          input.focus({ preventScroll: true });
+        } catch {
+          input.focus();
+        }
+      }, 80);
+    };
+
+    Object.entries(validators).forEach(([name]) => {
       const input = form.querySelector(`[name="${name}"]`);
       if (!input) return;
+
       input.addEventListener('blur', () => {
-        setError(name, validator());
+        void validateField(name, { checkDuplicate: duplicateFieldOrder.includes(name) });
       });
+
       input.addEventListener('input', () => {
+        resetAvailabilityCache(name);
         if (!errorByName(name)?.classList.contains('show')) return;
-        setError(name, validator());
+
+        const syncMessage = validators[name]?.() || '';
+        setError(name, syncMessage);
+
+        if (syncMessage || !duplicateFieldOrder.includes(name)) return;
+        window.clearTimeout(duplicateDebounceTimers[name]);
+        duplicateDebounceTimers[name] = window.setTimeout(() => {
+          void validateField(name, { checkDuplicate: true });
+        }, 220);
       });
     });
 
-    form.addEventListener('submit', (event) => {
-      let hasError = false;
-      Object.entries(validators).forEach(([name, validator]) => {
-        const message = validator();
-        setError(name, message);
-        if (message) hasError = true;
-      });
-      if (hasError) {
-        event.preventDefault();
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      let firstInvalidName = '';
+      for (const name of fieldOrder) {
+        const syncMessage = validators[name]?.() || '';
+        setError(name, syncMessage);
+        if (!firstInvalidName && syncMessage) {
+          firstInvalidName = name;
+        }
       }
+
+      await Promise.all(
+        duplicateFieldOrder.map(async (name) => {
+          if (validators[name]?.()) return;
+          const duplicateError = await validateDuplicateField(name);
+          setError(name, duplicateError);
+          if (!firstInvalidName && duplicateError) {
+            firstInvalidName = name;
+          }
+        })
+      );
+
+      if (firstInvalidName) {
+        focusFirstInvalidField(firstInvalidName);
+        return;
+      }
+
+      form.submit();
     });
   })();
 </script>
