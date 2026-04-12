@@ -3460,17 +3460,25 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-price-taxonomy-grid {
-  border: 1px dashed var(--line);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--card);
+  background: var(--chip);
   padding: 10px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+}
+
+.sales-price-tip {
+  margin: 0;
 }
 
 .sales-price-taxonomy-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 8px;
   display: grid;
-  grid-template-columns: auto minmax(150px, 210px) minmax(140px, 1fr) repeat(3, auto);
+  grid-template-columns: minmax(80px, auto) minmax(150px, 210px) minmax(160px, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -3483,11 +3491,43 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 .sales-price-taxonomy-row select,
 .sales-price-taxonomy-row input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  padding: 0 10px;
+}
+
+.sales-price-taxonomy-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sales-price-taxonomy-actions .chip {
   min-height: 36px;
 }
 
-.sales-price-taxonomy-row .chip {
-  min-height: 36px;
+.sales-price-taxonomy-row-actions {
+  grid-template-columns: minmax(80px, auto) 1fr;
+}
+
+.sales-price-row-action-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-price-row-action-wrap #salesRowActionHost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .sales-date-action-group {
@@ -3511,11 +3551,17 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   }
 
   .sales-price-taxonomy-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .sales-price-taxonomy-row-title {
-    grid-column: 1 / -1;
+    margin-bottom: 2px;
+  }
+
+  .sales-price-taxonomy-actions,
+  .sales-price-row-action-wrap #salesRowActionHost {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 
@@ -3651,8 +3697,20 @@ body.theme-night .sales-price-taxonomy-grid {
   border-color: #7d95bc;
 }
 
+body.theme-night .sales-price-taxonomy-row {
+  background: #162743;
+  border-color: #7d95bc;
+}
+
 body.theme-night .sales-price-taxonomy-row-title {
   color: #c5d7ff;
+}
+
+body.theme-night .sales-price-taxonomy-row select,
+body.theme-night .sales-price-taxonomy-row input {
+  background: #0f1b31;
+  border-color: #60769c;
+  color: #f8fbff;
 }
 
 body.theme-night .sales-error {
