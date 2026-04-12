@@ -1906,12 +1906,12 @@ textarea {
 
 .form-grid {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .form-grid label {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   font-size: 0.88rem;
 }
 
@@ -2843,39 +2843,39 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .admin-filter-row {
-  margin: 10px 0;
+  margin: 8px 0;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
 .admin-filter-item {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   font-size: 0.78rem;
   color: var(--muted);
 }
 
 .admin-filter-item input,
 .admin-filter-item select {
-  min-width: 140px;
+  min-width: 112px;
 }
 
 .member-filter-row .member-search-item input {
-  min-width: 360px;
-  width: min(56vw, 560px);
+  min-width: 240px;
+  width: min(52vw, 420px);
 }
 
 .admin-filter-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   align-self: flex-end;
 }
 
 .admin-filter-actions .chip {
-  min-height: 38px;
+  min-height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2900,7 +2900,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .admin-order-actions .form-grid.compact {
-  gap: 7px;
+  gap: 6px;
 }
 
 .admin-order-actions .muted-label {
@@ -3238,9 +3238,12 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 .status-mini-list {
   margin: 4px 0 0;
-  padding-left: 14px;
+  padding: 0;
+  list-style: none;
   display: grid;
   gap: 2px;
+  justify-items: center;
+  text-align: center;
 }
 
 .status-mini-list li {
@@ -3284,7 +3287,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-daily-table {
-  min-width: 1080px;
+  min-width: 920px;
 }
 
 .sales-daily-table th,
@@ -3294,7 +3297,9 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 .sales-daily-metric-cell {
   display: grid;
-  gap: 4px;
+  gap: 3px;
+  justify-items: center;
+  text-align: center;
 }
 
 .sales-daily-metric-cell small {
@@ -3310,7 +3315,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--chip);
-  padding: 8px;
+  padding: 6px;
 }
 
 .sales-global-settings {
@@ -3469,13 +3474,13 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-data-table {
-  min-width: 1200px;
+  min-width: 1040px;
 }
 
 .sales-data-table th,
 .sales-data-table td {
-  font-size: 0.78rem;
-  padding: 8px 7px;
+  font-size: 0.74rem;
+  padding: 6px 5px;
 }
 
 .sales-data-table th {
@@ -3485,14 +3490,14 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 .sales-data-table td {
   vertical-align: middle;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .sales-inline-input {
   width: 100%;
-  min-width: 120px;
-  min-height: 34px;
-  padding: 6px 8px;
+  min-width: 86px;
+  min-height: 30px;
+  padding: 4px 6px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
@@ -3574,12 +3579,12 @@ body.theme-night .sales-computed-cell.is-negative {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 700px;
+  min-width: 560px;
 }
 
 .mypage-order-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 860px;
   table-layout: fixed;
 }
 
@@ -3590,7 +3595,7 @@ table {
 }
 
 .mypage-order-table td {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .mypage-order-table td small {
@@ -3601,22 +3606,24 @@ table {
 
 .mypage-order-table th,
 .mypage-order-table td {
-  padding: 8px 7px;
+  padding: 6px 5px;
   vertical-align: middle;
 }
 
 .mypage-order-table th {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 
 th,
 td {
   border-bottom: 1px solid var(--line);
-  padding: 10px;
-  text-align: left;
-  vertical-align: top;
-  font-size: 0.84rem;
-  line-height: 1.45;
+  padding: 7px 6px;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 th {
@@ -3643,11 +3650,11 @@ th {
 }
 
 .product-list-table td:nth-child(3) {
-  min-width: 280px;
+  min-width: 220px;
 }
 
 .product-list-table td:nth-child(6) {
-  min-width: 240px;
+  min-width: 190px;
 }
 
 .member-admin-table-wrap {
@@ -3658,17 +3665,17 @@ th {
 }
 
 .member-admin-table {
-  min-width: 1460px;
+  min-width: 1260px;
   table-layout: fixed;
 }
 
 .member-admin-table th {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   background: var(--chip);
 }
 
 .member-admin-table td {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   vertical-align: middle;
 }
 
@@ -3682,7 +3689,7 @@ th {
 
 .member-admin-table th,
 .member-admin-table td {
-  padding: 7px 6px;
+  padding: 6px 5px;
 }
 
 .member-admin-table th:nth-child(1),
@@ -3707,13 +3714,13 @@ th {
 .member-admin-table td:nth-child(6),
 .member-admin-table td:nth-child(7),
 .member-admin-table td:nth-child(8) {
-  min-width: 96px;
+  min-width: 82px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .member-admin-table td:nth-child(9) {
-  min-width: 124px;
+  min-width: 104px;
 }
 
 .member-admin-table .member-level-inline {
@@ -3731,12 +3738,12 @@ th {
 }
 
 .member-admin-table td:nth-child(10) {
-  min-width: 112px;
-  text-align: right;
+  min-width: 96px;
+  text-align: center;
 }
 
 .member-admin-table td:nth-child(15) {
-  min-width: 148px;
+  min-width: 122px;
 }
 
 .member-admin-table .member-manage-col,
@@ -3745,7 +3752,7 @@ th {
 }
 
 .member-admin-table td.member-manage-cell {
-  min-width: 148px;
+  min-width: 122px;
 }
 
 .member-admin-table .member-block-reason-col {
@@ -3753,8 +3760,8 @@ th {
 }
 
 .member-admin-table td.member-block-reason-cell {
-  min-width: 180px;
-  max-width: 280px;
+  min-width: 140px;
+  max-width: 220px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -3772,15 +3779,15 @@ th {
 .member-admin-editor-row .admin-account-editor {
   border-top: none;
   background: var(--card);
-  padding: 12px;
-  max-width: 980px;
+  padding: 10px;
+  max-width: 900px;
   margin: 0 auto;
   border: 1px solid var(--line);
   border-radius: 12px;
 }
 
 .member-admin-editor-row .admin-account-editor .form-grid.compact {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   align-items: end;
 }
 
@@ -3791,7 +3798,7 @@ th {
 
 @media (max-width: 767px) {
   .member-admin-table {
-    min-width: 1240px;
+    min-width: 1040px;
   }
 
   .member-admin-editor-row .admin-account-editor {
