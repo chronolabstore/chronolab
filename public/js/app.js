@@ -38,87 +38,318 @@
       }
       popup.classList.remove('hidden');
       popupCards = [popup];
-    } else {
-      var now = Date.now();
-      var visibleCards = 0;
-      popupCards.forEach(function (card) {
-        var popupId = card.getAttribute('data-popup-id');
-        if (!popupId) {
-          card.classList.add('hidden');
+      popup.addEventListener('click', function (event) {
+        var actionTarget = event.target.closest('[data-popup-action]');
+        if (!actionTarget) {
+          if (event.target === popup) {
+            closeNoticePopup();
+          }
           return;
         }
-        var hideKey = 'chronolab-popup-hide-' + popupId;
-        var sessionKey = 'chronolab-popup-session-' + popupId;
-        var savedUntil = Number(localStorage.getItem(hideKey) || '0');
-        var hiddenForSevenDays = savedUntil > now;
-        var shownInSession = sessionStorage.getItem(sessionKey) === '1';
-        if (hiddenForSevenDays || shownInSession) {
-          card.classList.add('hidden');
-          return;
-        }
-        card.classList.remove('hidden');
-        visibleCards += 1;
-      });
 
-      if (!visibleCards) {
-        return;
-      }
-      popup.classList.remove('hidden');
+        var action = actionTarget.getAttribute('data-popup-action');
+        var sessionKey = 'chronolab-popup-session-' + legacyPopupId;
+        var hideKey = 'chronolab-popup-hide-' + legacyPopupId;
+        if (action === 'hide7') {
+          localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
+        }
+        sessionStorage.setItem(sessionKey, '1');
+        closeNoticePopup();
+      });
+      return;
     }
 
-    function closeNoticeCard(card) {
-      if (!card) return;
-      card.classList.add('hidden');
-      var hasVisibleCard = popup.querySelector('[data-popup-card]:not(.hidden)');
-      if (!hasVisibleCard) {
-        closeNoticePopup();
+    var navPrev = popup.querySelector('[data-popup-nav="prev"]');
+    var navNext = popup.querySelector('[data-popup-nav="next"]');
+    var popupViewport = popup.querySelector('[data-popup-viewport]') || popup;
+    var popupMeta = popup.querySelector('[data-popup-meta]');
+    var popupCurrent = popup.querySelector('[data-popup-current]');
+    var popupTotal = popup.querySelector('[data-popup-total]');
+
+    var now = Date.now();
+    var visibleCards = popupCards.filter(function (card) {
+      var popupId = card.getAttribute('data-popup-id');
+      if (!popupId) {
+        card.classList.add('hidden');
+        return false;
       }
+      var hideKey = 'chronolab-popup-hide-' + popupId;
+      var sessionKey = 'chronolab-popup-session-' + popupId;
+      var savedUntil = Number(localStorage.getItem(hideKey) || '0');
+      var hiddenForSevenDays = savedUntil > now;
+      var shownInSession = sessionStorage.getItem(sessionKey) === '1';
+      if (hiddenForSevenDays || shownInSession) {
+        card.classList.add('hidden');
+        return false;
+      }
+      card.classList.remove('hidden');
+      return true;
+    });
+
+    if (!visibleCards.length) {
+      return;
+    }
+    popup.classList.remove('hidden');
+
+    var currentIndex = 0;
+    var wheelLockUntil = 0;
+    var swipePointerId = null;
+    var swipeStartX = 0;
+    var swipeStartY = 0;
+    var swipeDeltaX = 0;
+    var swipeDeltaY = 0;
+    var swipeTracking = false;
+
+    function canGoPrev() {
+      return currentIndex > 0;
+    }
+
+    function canGoNext() {
+      return currentIndex < visibleCards.length - 1;
+    }
+
+    function updateDeckMeta() {
+      if (popupTotal) {
+        popupTotal.textContent = String(visibleCards.length);
+      }
+      if (popupCurrent) {
+        popupCurrent.textContent = String(currentIndex + 1);
+      }
+      if (popupMeta) {
+        popupMeta.hidden = visibleCards.length <= 1;
+      }
+      if (navPrev) {
+        navPrev.hidden = visibleCards.length <= 1;
+        navPrev.disabled = !canGoPrev();
+      }
+      if (navNext) {
+        navNext.hidden = visibleCards.length <= 1;
+        navNext.disabled = !canGoNext();
+      }
+    }
+
+    function updateDeckCards() {
+      visibleCards.forEach(function (card, index) {
+        card.classList.remove('is-active', 'is-next', 'is-next-2', 'is-previous');
+        if (index === currentIndex) {
+          card.classList.add('is-active');
+          return;
+        }
+        if (index === currentIndex + 1) {
+          card.classList.add('is-next');
+          return;
+        }
+        if (index === currentIndex + 2) {
+          card.classList.add('is-next-2');
+          return;
+        }
+        if (index < currentIndex) {
+          card.classList.add('is-previous');
+        }
+      });
+      updateDeckMeta();
+    }
+
+    function goPrev() {
+      if (!canGoPrev()) {
+        return;
+      }
+      currentIndex -= 1;
+      updateDeckCards();
+    }
+
+    function goNext() {
+      if (!canGoNext()) {
+        return;
+      }
+      currentIndex += 1;
+      updateDeckCards();
+    }
+
+    function dismissNoticeCard(card, hideForSevenDays) {
+      if (!card) {
+        return;
+      }
+      var popupId = card.getAttribute('data-popup-id');
+      if (!popupId) {
+        return;
+      }
+      var hideKey = 'chronolab-popup-hide-' + popupId;
+      var sessionKey = 'chronolab-popup-session-' + popupId;
+      if (hideForSevenDays) {
+        localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
+      }
+      sessionStorage.setItem(sessionKey, '1');
+      card.classList.add('hidden');
+
+      var removedIndex = visibleCards.indexOf(card);
+      if (removedIndex !== -1) {
+        visibleCards.splice(removedIndex, 1);
+      }
+
+      if (!visibleCards.length) {
+        closeNoticePopup();
+        return;
+      }
+      if (currentIndex > visibleCards.length - 1) {
+        currentIndex = visibleCards.length - 1;
+      }
+      updateDeckCards();
     }
 
     popup.addEventListener('click', function (event) {
-      var actionTarget = event.target.closest('[data-popup-action]');
-      if (!actionTarget) {
-        if (event.target === popup) {
-          closeNoticePopup();
-        }
-        return;
-      }
-
-      var popupCard = actionTarget.closest('[data-popup-card]');
-      var action = actionTarget.getAttribute('data-popup-action');
-      var popupId = popupCard
-        ? popupCard.getAttribute('data-popup-id')
-        : popup.getAttribute('data-popup-id');
-      var hideKey = popupId ? 'chronolab-popup-hide-' + popupId : '';
-      var sessionKey = popupId ? 'chronolab-popup-session-' + popupId : '';
-
-      if (action === 'hide7') {
-        var sevenDays = 1000 * 60 * 60 * 24 * 7;
-        if (hideKey) {
-          localStorage.setItem(hideKey, String(Date.now() + sevenDays));
-        }
-        if (sessionKey) {
-          sessionStorage.setItem(sessionKey, '1');
-        }
-        if (popupCard) {
-          closeNoticeCard(popupCard);
-        } else {
-          closeNoticePopup();
-        }
-        return;
-      }
-
-      if (action === 'close' || action === 'confirm') {
-        if (sessionKey) {
-          sessionStorage.setItem(sessionKey, '1');
-        }
-        if (popupCard) {
-          closeNoticeCard(popupCard);
-        } else {
-          closeNoticePopup();
-        }
+      if (event.target === popup) {
+        closeNoticePopup();
       }
     });
+
+    visibleCards.forEach(function (card) {
+      var buttons = Array.prototype.slice.call(card.querySelectorAll('[data-popup-action]'));
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          var action = button.getAttribute('data-popup-action');
+          if (action === 'hide7') {
+            dismissNoticeCard(card, true);
+            return;
+          }
+          if (action === 'close' || action === 'confirm') {
+            dismissNoticeCard(card, false);
+          }
+        });
+      });
+    });
+
+    if (navPrev) {
+      navPrev.addEventListener('click', function (event) {
+        event.preventDefault();
+        goPrev();
+      });
+    }
+    if (navNext) {
+      navNext.addEventListener('click', function (event) {
+        event.preventDefault();
+        goNext();
+      });
+    }
+
+    popupViewport.addEventListener(
+      'wheel',
+      function (event) {
+        if (visibleCards.length <= 1) {
+          return;
+        }
+        var contentScroller =
+          event.target && typeof event.target.closest === 'function'
+            ? event.target.closest('.popup-notice-content')
+            : null;
+        if (contentScroller && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+          var maxScrollTop = contentScroller.scrollHeight - contentScroller.clientHeight;
+          if (maxScrollTop > 1) {
+            var isScrollingDown = event.deltaY > 0;
+            var isAtTop = contentScroller.scrollTop <= 1;
+            var isAtBottom = contentScroller.scrollTop >= maxScrollTop - 1;
+            if ((isScrollingDown && !isAtBottom) || (!isScrollingDown && !isAtTop)) {
+              return;
+            }
+          }
+        }
+        var nowMs = Date.now();
+        if (nowMs < wheelLockUntil) {
+          event.preventDefault();
+          return;
+        }
+        var delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        if (Math.abs(delta) < 20) {
+          return;
+        }
+        event.preventDefault();
+        if (delta > 0) {
+          goNext();
+        } else {
+          goPrev();
+        }
+        wheelLockUntil = Date.now() + 260;
+      },
+      { passive: false }
+    );
+
+    popupViewport.addEventListener('pointerdown', function (event) {
+      if (visibleCards.length <= 1) {
+        return;
+      }
+      if (event.pointerType === 'mouse' && Number(event.button) !== 0) {
+        return;
+      }
+      if (event.target.closest('[data-popup-action]') || event.target.closest('[data-popup-nav]')) {
+        return;
+      }
+      swipePointerId = event.pointerId;
+      swipeStartX = event.clientX;
+      swipeStartY = event.clientY;
+      swipeDeltaX = 0;
+      swipeDeltaY = 0;
+      swipeTracking = true;
+    });
+
+    popupViewport.addEventListener(
+      'pointermove',
+      function (event) {
+        if (!swipeTracking || event.pointerId !== swipePointerId) {
+          return;
+        }
+        swipeDeltaX = event.clientX - swipeStartX;
+        swipeDeltaY = event.clientY - swipeStartY;
+        if (Math.abs(swipeDeltaX) > Math.abs(swipeDeltaY) && Math.abs(swipeDeltaX) > 12) {
+          event.preventDefault();
+        }
+      },
+      { passive: false }
+    );
+
+    function finishSwipe() {
+      if (!swipeTracking) {
+        return;
+      }
+      var directionX = swipeDeltaX;
+      var absX = Math.abs(swipeDeltaX);
+      var absY = Math.abs(swipeDeltaY);
+      swipeTracking = false;
+      swipePointerId = null;
+      swipeDeltaX = 0;
+      swipeDeltaY = 0;
+      if (absX < 36 || absX <= absY) {
+        return;
+      }
+      if (directionX < 0) {
+        goNext();
+      } else {
+        goPrev();
+      }
+    }
+
+    popupViewport.addEventListener('pointerup', finishSwipe);
+    popupViewport.addEventListener('pointercancel', finishSwipe);
+
+    document.addEventListener('keydown', function (event) {
+      if (popup.classList.contains('hidden')) {
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        goPrev();
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        goNext();
+        return;
+      }
+      if (event.key === 'Escape') {
+        closeNoticePopup();
+      }
+    });
+
+    updateDeckCards();
   }
 
   function initFlashPopup() {
