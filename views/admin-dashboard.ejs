@@ -162,9 +162,26 @@
     ];
     const legacyGroupTabKeyMap = { 공장제: 'factory', 젠파츠: 'genparts', 현지중고: 'used' };
     const legacyPriceTabKeyMap = { 공장제: 'price' };
+    const fallbackBaseGroups = [
+      { key: '공장제', labelKo: '공장제', labelEn: 'Factory' },
+      { key: '젠파츠', labelKo: '젠파츠', labelEn: 'Gen Parts' },
+      { key: '현지중고', labelKo: '현지중고', labelEn: 'Local Used' },
+      { key: '기타', labelKo: '기타', labelEn: 'Other' }
+    ];
+    const fallbackGroupMap = new Map();
+    const pushFallbackGroup = (group) => {
+      const groupKey = String(group?.key || '').trim();
+      if (!groupKey || fallbackGroupMap.has(groupKey)) return;
+      const labelKo = String(group?.labelKo || groupKey).trim() || groupKey;
+      const labelEn = String(group?.labelEn || labelKo).trim() || labelKo;
+      fallbackGroupMap.set(groupKey, { key: groupKey, labelKo, labelEn });
+    };
+    fallbackBaseGroups.forEach((group) => pushFallbackGroup(group));
+    productGroupConfigList.forEach((group) => pushFallbackGroup(group));
+    const fallbackGroups = [...fallbackGroupMap.values()];
     const usedTabKeys = new Set(fallbackTabs.map((tabInfo) => String(tabInfo.key || '').trim()));
 
-    productGroupConfigList.forEach((group, index) => {
+    fallbackGroups.forEach((group, index) => {
       const groupKey = String(group?.key || '').trim();
       if (!groupKey) return;
 
