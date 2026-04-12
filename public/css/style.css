@@ -2813,6 +2813,17 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   gap: 6px;
 }
 
+.notice-admin-action-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.notice-admin-action-row > .chip,
+.notice-admin-action-row > .inline-form {
+  flex: 0 0 auto;
+}
+
 .member-level-group-grid {
   gap: 8px;
 }

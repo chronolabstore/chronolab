@@ -31,9 +31,8 @@
       }
 
       var legacyHideKey = 'chronolab-popup-hide-' + legacyPopupId;
-      var legacySessionKey = 'chronolab-popup-session-' + legacyPopupId;
       var legacySavedUntil = Number(localStorage.getItem(legacyHideKey) || '0');
-      if (legacySavedUntil > Date.now() || sessionStorage.getItem(legacySessionKey) === '1') {
+      if (legacySavedUntil > Date.now()) {
         return;
       }
       popup.classList.remove('hidden');
@@ -48,12 +47,10 @@
         }
 
         var action = actionTarget.getAttribute('data-popup-action');
-        var sessionKey = 'chronolab-popup-session-' + legacyPopupId;
         var hideKey = 'chronolab-popup-hide-' + legacyPopupId;
         if (action === 'hide7') {
           localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
         }
-        sessionStorage.setItem(sessionKey, '1');
         closeNoticePopup();
       });
       return;
@@ -89,11 +86,9 @@
         return false;
       }
       var hideKey = 'chronolab-popup-hide-' + popupId;
-      var sessionKey = 'chronolab-popup-session-' + popupId;
       var savedUntil = Number(localStorage.getItem(hideKey) || '0');
       var hiddenForSevenDays = savedUntil > now;
-      var shownInSession = sessionStorage.getItem(sessionKey) === '1';
-      if (hiddenForSevenDays || shownInSession) {
+      if (hiddenForSevenDays) {
         hideCardElement(card);
         return false;
       }
@@ -190,11 +185,9 @@
         return;
       }
       var hideKey = 'chronolab-popup-hide-' + popupId;
-      var sessionKey = 'chronolab-popup-session-' + popupId;
       if (hideForSevenDays) {
         localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
       }
-      sessionStorage.setItem(sessionKey, '1');
       hideCardElement(card);
 
       var removedIndex = visibleCards.indexOf(card);
