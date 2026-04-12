@@ -5,8 +5,11 @@
   <h2><%= newsPost.title %></h2>
   <p class="muted-label"><%= newsPost.created_at.slice(0, 10) %></p>
 
-  <% if (newsPost.image_path) { %>
-    <img src="<%= newsPost.image_path %>" alt="<%= newsPost.title %>" class="notice-image" data-lightbox-enabled="1" />
+  <% const newsImages = Array.isArray(newsPost.image_paths) ? newsPost.image_paths : []; %>
+  <% if (newsImages.length > 0) { %>
+    <% newsImages.forEach((src, imageIndex) => { %>
+      <img src="<%= src %>" alt="<%= `${newsPost.title}-${imageIndex + 1}` %>" class="notice-image" data-lightbox-enabled="1" />
+    <% }) %>
   <% } %>
 
   <article class="content-article"><%= newsPost.content %></article>

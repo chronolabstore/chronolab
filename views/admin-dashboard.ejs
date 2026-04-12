@@ -3283,8 +3283,8 @@
         <label><%= isEn ? 'Content' : '내용' %>
           <textarea name="content" rows="4" required></textarea>
         </label>
-        <label><%= isEn ? 'Image' : '이미지' %>
-          <input type="file" name="image" accept="image/*" />
+        <label><%= isEn ? 'Images (multiple)' : '이미지 (여러 장 가능)' %>
+          <input type="file" name="image" accept="image/*" multiple />
         </label>
         <label class="check-row">
           <input type="checkbox" name="isPopup" />
@@ -3309,15 +3309,19 @@
               <label><span><%= isEn ? 'Content' : '내용' %></span>
                 <textarea name="content" rows="4" required><%= item.content %></textarea>
               </label>
-              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
-                <input type="file" name="image" accept="image/*" />
+              <label><span><%= isEn ? 'Replace Images' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" multiple />
               </label>
               <label class="check-row">
                 <input type="checkbox" name="isPopup" <%= item.is_popup ? 'checked' : '' %> />
                 <span><%= isEn ? 'Popup Notice' : '팝업 공지' %></span>
               </label>
-              <% if (item.image_path) { %>
-                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
+                <div class="inline-file-preview-grid">
+                  <% item.image_paths.forEach((src, imageIndex) => { %>
+                    <img src="<%= src %>" alt="<%= `${item.title}-${imageIndex + 1}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+                  <% }) %>
+                </div>
               <% } %>
               <div class="admin-field-chip-row">
                 <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
@@ -3357,8 +3361,8 @@
         <label><%= isEn ? 'Content' : '내용' %>
           <textarea name="content" rows="4" required></textarea>
         </label>
-        <label><%= isEn ? 'Image' : '이미지' %>
-          <input type="file" name="image" accept="image/*" />
+        <label><%= isEn ? 'Images (multiple)' : '이미지 (여러 장 가능)' %>
+          <input type="file" name="image" accept="image/*" multiple />
         </label>
         <button type="submit" class="cta-main"><%= isEn ? 'Add News' : '뉴스 등록' %></button>
       </form>
@@ -3378,11 +3382,15 @@
               <label><span><%= isEn ? 'Content' : '내용' %></span>
                 <textarea name="content" rows="4" required><%= item.content %></textarea>
               </label>
-              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
-                <input type="file" name="image" accept="image/*" />
+              <label><span><%= isEn ? 'Replace Images' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" multiple />
               </label>
-              <% if (item.image_path) { %>
-                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
+                <div class="inline-file-preview-grid">
+                  <% item.image_paths.forEach((src, imageIndex) => { %>
+                    <img src="<%= src %>" alt="<%= `${item.title}-${imageIndex + 1}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+                  <% }) %>
+                </div>
               <% } %>
               <div class="admin-field-chip-row">
                 <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
@@ -3419,8 +3427,8 @@
         <label><%= isEn ? 'Order No.' : '구매번호' %>
           <input type="text" name="orderNo" required />
         </label>
-        <label><%= isEn ? 'QC Image' : 'QC 이미지' %>
-          <input type="file" name="image" accept="image/*" required />
+        <label><%= isEn ? 'QC Images (multiple)' : 'QC 이미지 (여러 장 가능)' %>
+          <input type="file" name="image" accept="image/*" multiple required />
         </label>
         <label><%= isEn ? 'Memo' : '메모' %>
           <input type="text" name="note" />
@@ -3443,11 +3451,15 @@
               <label><span><%= isEn ? 'Memo' : '메모' %></span>
                 <input type="text" name="note" value="<%= item.note || '' %>" />
               </label>
-              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
-                <input type="file" name="image" accept="image/*" />
+              <label><span><%= isEn ? 'Replace Images' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" multiple />
               </label>
-              <% if (item.image_path) { %>
-                <img src="<%= item.image_path %>" alt="<%= item.order_no %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
+                <div class="inline-file-preview-grid">
+                  <% item.image_paths.forEach((src, imageIndex) => { %>
+                    <img src="<%= src %>" alt="<%= `${item.order_no}-${imageIndex + 1}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+                  <% }) %>
+                </div>
               <% } %>
               <div class="admin-field-chip-row">
                 <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
@@ -4874,8 +4886,12 @@
             <p><%= isEn ? 'Writer' : '작성자' %>: <%= item.username %></p>
             <p><%= isEn ? 'Created' : '작성일' %>: <%= item.created_at ? item.created_at.slice(0, 16) : '-' %></p>
             <p><%= isEn ? 'Content' : '내용' %>: <%= item.content %></p>
-            <% if (item.image_path) { %>
-              <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+            <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
+              <div class="inline-file-preview-grid">
+                <% item.image_paths.forEach((src, imageIndex) => { %>
+                  <img src="<%= src %>" alt="<%= `${item.title}-${imageIndex + 1}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+                <% }) %>
+              </div>
             <% } %>
             <form method="post" action="/admin/inquiry/<%= item.id %>/reply" class="form-grid">
               <label><%= isEn ? 'Reply' : '답변' %>
@@ -4909,11 +4925,15 @@
               <label><span><%= isEn ? 'Reply' : '답변' %></span>
                 <textarea name="replyContent" rows="3"><%= item.reply_content || '' %></textarea>
               </label>
-              <label><span><%= isEn ? 'Replace Image' : '이미지 교체' %></span>
-                <input type="file" name="image" accept="image/*" />
+              <label><span><%= isEn ? 'Replace Images' : '이미지 교체' %></span>
+                <input type="file" name="image" accept="image/*" multiple />
               </label>
-              <% if (item.image_path) { %>
-                <img src="<%= item.image_path %>" alt="<%= item.title %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
+                <div class="inline-file-preview-grid">
+                  <% item.image_paths.forEach((src, imageIndex) => { %>
+                    <img src="<%= src %>" alt="<%= `${item.title}-${imageIndex + 1}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+                  <% }) %>
+                </div>
               <% } %>
               <div class="admin-field-chip-row">
                 <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>

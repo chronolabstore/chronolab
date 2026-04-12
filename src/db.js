@@ -810,6 +810,18 @@ function ensureContentVisibilityColumns() {
   }
 }
 
+function ensureContentImagePathsJsonColumns() {
+  const contentTargets = ['notices', 'news_posts', 'qc_items', 'inquiries'];
+
+  for (const table of contentTargets) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+    const hasColumn = columns.some((column) => column.name === 'image_paths_json');
+    if (!hasColumn) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN image_paths_json TEXT NOT NULL DEFAULT '[]'`).run();
+    }
+  }
+}
+
 function ensureDailyFunnelEventsTable() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS daily_funnel_events (
@@ -1547,6 +1559,7 @@ export function initDb() {
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       image_path TEXT,
+      image_paths_json TEXT NOT NULL DEFAULT '[]',
       is_popup INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -1556,6 +1569,7 @@ export function initDb() {
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       image_path TEXT,
+      image_paths_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -1563,6 +1577,7 @@ export function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_no TEXT NOT NULL,
       image_path TEXT NOT NULL,
+      image_paths_json TEXT NOT NULL DEFAULT '[]',
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -1585,6 +1600,7 @@ export function initDb() {
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       image_path TEXT,
+      image_paths_json TEXT NOT NULL DEFAULT '[]',
       reply_content TEXT,
       replied_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -1626,6 +1642,7 @@ export function initDb() {
   ensureOrdersSalesSnapshotColumns();
   ensureDailyVisitSplitColumns();
   ensureContentVisibilityColumns();
+  ensureContentImagePathsJsonColumns();
   ensureDailyFunnelEventsTable();
   ensureAdminSecurityTables();
   normalizeOrderStatuses();

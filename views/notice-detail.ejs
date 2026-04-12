@@ -4,8 +4,11 @@
 <section class="block-card narrow">
   <h2><%= notice.title %></h2>
   <p class="muted-label"><%= notice.created_at.slice(0, 10) %></p>
-  <% if (notice.image_path) { %>
-    <img src="<%= notice.image_path %>" alt="notice" class="notice-image" data-lightbox-enabled="1" />
+  <% const noticeImages = Array.isArray(notice.image_paths) ? notice.image_paths : []; %>
+  <% if (noticeImages.length > 0) { %>
+    <% noticeImages.forEach((src, imageIndex) => { %>
+      <img src="<%= src %>" alt="<%= `notice-${imageIndex + 1}` %>" class="notice-image" data-lightbox-enabled="1" />
+    <% }) %>
   <% } %>
   <article class="content-article"><%= notice.content %></article>
   <a href="/notice" class="chip"><%= isEn ? 'Back to list' : '목록으로' %></a>
