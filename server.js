@@ -3961,6 +3961,12 @@ const SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
 const SALES_PRICE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
   '\uacf5\uc7a5\uc81c': 'price'
 });
+const SALES_BASE_GROUP_TAB_CONFIGS = Object.freeze([
+  { key: '공장제', labelKo: '공장제', labelEn: 'Factory' },
+  { key: '젠파츠', labelKo: '젠파츠', labelEn: 'Gen Parts' },
+  { key: '현지중고', labelKo: '현지중고', labelEn: 'Local Used' },
+  { key: '기타', labelKo: '기타', labelEn: 'Other' }
+]);
 
 const SALES_DYNAMIC_TAB_KEY_PREFIX = 'group';
 const SALES_DYNAMIC_TAB_SLUG_REGEX = /[^a-z0-9\uac00-\ud7a3]+/g;
@@ -4054,6 +4060,17 @@ function getSalesMainTabs(groupConfigs = null) {
       key,
       labelKo: String(group?.labelKo || key).trim() || key,
       labelEn: String(group?.labelEn || group?.labelKo || key).trim() || key
+    });
+  });
+  SALES_BASE_GROUP_TAB_CONFIGS.forEach((baseGroup) => {
+    const key = normalizeProductGroupKey(baseGroup?.key || '');
+    if (!key || safeGroupMap.has(key)) {
+      return;
+    }
+    safeGroupMap.set(key, {
+      key,
+      labelKo: String(baseGroup?.labelKo || key).trim() || key,
+      labelEn: String(baseGroup?.labelEn || baseGroup?.labelKo || key).trim() || key
     });
   });
   observedGroups.forEach((groupKey) => {
