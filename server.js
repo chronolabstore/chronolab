@@ -2931,10 +2931,16 @@ function normalizeProductManageSection(rawSection = '') {
 
 function normalizeSalesManageSection(rawSection = '') {
   const section = String(rawSection || '').trim().toLowerCase();
+  if (section === 'price' || section === 'factory-price' || section === 'factory') {
+    return 'price';
+  }
   if (section === 'daily' || section === 'summary') {
     return 'daily';
   }
-  return 'editor';
+  if (section === 'editor' || section === 'sheet' || section === 'workbook') {
+    return 'editor';
+  }
+  return 'price';
 }
 
 function normalizeContentManageSection(rawSection = '') {
@@ -11048,7 +11054,7 @@ function handleSecurityDenied(req, res, securitySection = 'profile', securityOpt
     activeTab: 'security',
     securitySection: normalizeSecuritySection(securitySection),
     securityAccessDenied: true,
-    salesSection: 'editor',
+    salesSection: 'price',
     pointSection: normalizePointManageSection(req.query.pointSection || req.query.section || ''),
     ...buildAdminDashboardViewData(res.locals.ctx.lang, {
       securityOptions,
