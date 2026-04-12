@@ -1148,6 +1148,7 @@
 
       <% if (memberSection === 'active' || memberSection === 'blocked') { %>
         <div class="table-wrap member-admin-table-wrap">
+          <% const memberTableColumnCount = memberSection === 'blocked' ? 16 : 15; %>
           <table class="member-admin-table">
             <thead>
               <tr>
@@ -1165,13 +1166,16 @@
                 <th><%= isEn ? 'Received Points' : '받은포인트' %></th>
                 <th><%= isEn ? 'Used Points' : '사용포인트' %></th>
                 <th><%= isEn ? 'Available Points' : '사용가능포인트' %></th>
-                <th><%= isEn ? 'Manage' : '관리' %></th>
+                <% if (memberSection === 'blocked') { %>
+                  <th class="member-block-reason-col"><%= isEn ? 'Block Reason' : '블락 사유' %></th>
+                <% } %>
+                <th class="member-manage-col"><%= isEn ? 'Manage' : '관리' %></th>
               </tr>
             </thead>
             <tbody>
               <% if (memberPanel.members.length === 0) { %>
                 <tr>
-                  <td colspan="15"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></td>
+                  <td colspan="<%= memberTableColumnCount %>"><%= isEn ? 'No members found for current filters.' : '조건에 맞는 회원이 없습니다.' %></td>
                 </tr>
               <% } %>
               <% memberPanel.members.forEach((memberItem) => { %>
@@ -1198,7 +1202,10 @@
                   <td><%= Number(memberItem.reward_points_received || 0).toLocaleString('ko-KR') %>P</td>
                   <td><%= Number(memberItem.used_points_total || 0).toLocaleString('ko-KR') %>P</td>
                   <td><%= Number(memberItem.reward_points_available || 0).toLocaleString('ko-KR') %>P</td>
-                  <td>
+                  <% if (memberSection === 'blocked') { %>
+                    <td class="member-block-reason-cell"><%= memberItem.blocked_reason || (isEn ? 'No reason' : '사유 없음') %></td>
+                  <% } %>
+                  <td class="member-manage-cell">
                     <div class="admin-account-actions member-admin-actions">
                       <% if (memberItem.is_blocked) { %>
                         <span class="chip"><%= isEn ? 'Blocked' : '블락됨' %></span>
@@ -1224,7 +1231,7 @@
                   </td>
                 </tr>
                 <tr class="member-admin-editor-row">
-                  <td colspan="15">
+                  <td colspan="<%= memberTableColumnCount %>">
                     <div class="admin-account-editor" id="member-editor-<%= memberItem.id %>">
                       <div class="admin-account-meta">
                         <small>UID: <%= memberItem.member_uid || '-' %></small>
