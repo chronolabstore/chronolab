@@ -6226,7 +6226,9 @@ app.use((req, res, next) => {
       signupBonusPoints: getSignupBonusPointsSetting(),
       purchasePointRate: getLegacyPurchasePointRateSetting(),
       contactInfo: getSetting('contactInfo', ''),
-      businessInfo: getSetting('businessInfo', '')
+      businessInfo: getSetting('businessInfo', ''),
+      footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
+      footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.')
     },
     metrics: {
       visitToday: visitCounts.today,
@@ -10186,6 +10188,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     purchasePointRate: getLegacyPurchasePointRateSetting(),
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
+    footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
+    footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
     salesSheetUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
     languageDefault: getSetting('languageDefault', 'ko'),
     menusJson: JSON.stringify(publicMenus, null, 2)
@@ -12571,12 +12575,16 @@ app.post(
       const bankAccountInfo = String(req.body.bankAccountInfo || '').trim();
       const contactInfo = String(req.body.contactInfo || '').trim();
       const businessInfo = String(req.body.businessInfo || '').trim();
+      const footerBrandCopyKo = String(req.body.footerBrandCopyKo || '').trim().slice(0, 300);
+      const footerBrandCopyEn = String(req.body.footerBrandCopyEn || '').trim().slice(0, 300);
       const languageDefault = resolveLanguage(req.body.languageDefault || getSetting('languageDefault', 'ko'), 'ko');
 
       setSetting('siteName', siteName || 'Chrono Lab');
       setSetting('bankAccountInfo', bankAccountInfo);
       setSetting('contactInfo', contactInfo);
       setSetting('businessInfo', businessInfo);
+      setSetting('footerBrandCopyKo', footerBrandCopyKo);
+      setSetting('footerBrandCopyEn', footerBrandCopyEn);
       setSetting('languageDefault', languageDefault);
 
       if (typeof req.body.menusJson === 'string') {

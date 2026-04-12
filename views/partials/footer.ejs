@@ -1,4 +1,6 @@
 <footer class="site-footer">
+  <% const footerBrandCopyKo = String(ctx.settings.footerBrandCopyKo || '').trim() || '심플하고 신뢰할 수 있는 시계 쇼핑.'; %>
+  <% const footerBrandCopyEn = String(ctx.settings.footerBrandCopyEn || '').trim() || 'Simple. Clean. Trusted watch shopping.'; %>
   <div class="footer-grid">
     <section class="footer-card footer-brand-card">
       <h4>Brand</h4>
@@ -9,7 +11,7 @@
           <div class="footer-logo-fallback">Chrono Lab</div>
         <% } %>
       </div>
-      <p class="footer-small"><%= ctx.lang === 'en' ? 'Simple. Clean. Trusted watch shopping.' : '심플하고 신뢰할 수 있는 시계 쇼핑.' %></p>
+      <p class="footer-small footer-brand-copy"><%= ctx.lang === 'en' ? footerBrandCopyEn : footerBrandCopyKo %></p>
     </section>
 
     <section class="footer-card">

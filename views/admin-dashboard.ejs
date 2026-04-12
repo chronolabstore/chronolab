@@ -1459,6 +1459,14 @@
         <textarea name="contactInfo" rows="2"><%= settings.contactInfo %></textarea>
       </label>
 
+      <label><%= isEn ? 'Footer Brand Copy (KR)' : '푸터 Brand 문구 (KR)' %>
+        <textarea name="footerBrandCopyKo" rows="2"><%= settings.footerBrandCopyKo || '' %></textarea>
+      </label>
+
+      <label><%= isEn ? 'Footer Brand Copy (EN)' : '푸터 Brand 문구 (EN)' %>
+        <textarea name="footerBrandCopyEn" rows="2"><%= settings.footerBrandCopyEn || '' %></textarea>
+      </label>
+
       <label><%= isEn ? 'Bank Account Info' : '입금 계좌 정보' %>
         <textarea name="bankAccountInfo" rows="2"><%= settings.bankAccountInfo %></textarea>
       </label>

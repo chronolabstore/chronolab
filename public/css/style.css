@@ -2221,6 +2221,10 @@ body.theme-night .watermark-preview-canvas {
   margin: 2px 0 0;
 }
 
+.footer-brand-copy {
+  white-space: pre-line;
+}
+
 .footer-links {
   list-style: none;
   margin: 0;
