@@ -36,6 +36,7 @@ const isRenderStaging =
   renderServiceName.includes('staging') ||
   renderGitBranch === 'staging';
 const defaultBootstrapEnabled = nodeEnv !== 'production' || isRenderStaging;
+
 const shouldBootstrapSeedData = parseEnvFlag(
   process.env.ENABLE_BOOTSTRAP_SEED,
   defaultBootstrapEnabled
