@@ -1190,6 +1190,10 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
   gap: 12px;
 }
 
+.detail-shell > * {
+  min-width: 0;
+}
+
 .detail-visual {
   background: var(--chip);
   border-radius: 24px;
@@ -4789,7 +4793,8 @@ body.theme-night .inline-file-preview-image {
   }
 
   .detail-shell {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
 
   .product-grid {

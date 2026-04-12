@@ -10645,11 +10645,11 @@ function buildAdminSalesDailyData(lang = 'ko', options = {}) {
   const params = [];
 
   if (dateFrom) {
-    whereParts.push("date(datetime(o.created_at, '+9 hours')) >= date(?)");
+    whereParts.push("date(datetime(COALESCE(o.checked_at, o.created_at), '+9 hours')) >= date(?)");
     params.push(dateFrom);
   }
   if (dateTo) {
-    whereParts.push("date(datetime(o.created_at, '+9 hours')) <= date(?)");
+    whereParts.push("date(datetime(COALESCE(o.checked_at, o.created_at), '+9 hours')) <= date(?)");
     params.push(dateTo);
   }
   if (groupFilter !== 'all') {
@@ -10661,7 +10661,7 @@ function buildAdminSalesDailyData(lang = 'ko', options = {}) {
     .prepare(
       `
         SELECT
-          date(datetime(o.created_at, '+9 hours')) AS sale_date,
+          date(datetime(COALESCE(o.checked_at, o.created_at), '+9 hours')) AS sale_date,
           p.category_group AS category_group,
           COUNT(*) AS order_count,
           COALESCE(SUM(o.total_price), 0) AS sales_total_krw,
