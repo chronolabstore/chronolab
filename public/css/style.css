@@ -4415,7 +4415,7 @@ body.theme-night .order-status-badge-delivered {
 }
 
 .popup-notice-deck-shell {
-  width: min(100%, 860px);
+  width: min(100%, 740px);
   position: relative;
   display: block;
 }
@@ -4452,11 +4452,11 @@ body.theme-night .order-status-badge-delivered {
 }
 
 .popup-deck-nav-prev {
-  left: 10px;
+  left: 22px;
 }
 
 .popup-deck-nav-next {
-  right: 10px;
+  right: 22px;
 }
 
 .popup-deck-nav:hover {
@@ -4475,7 +4475,7 @@ body.theme-night .order-status-badge-delivered {
   align-items: center;
   justify-content: center;
   overflow: visible;
-  padding: 4px 58px;
+  padding: 4px 52px;
 }
 
 .popup-notice-deck-meta {
