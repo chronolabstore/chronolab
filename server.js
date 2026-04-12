@@ -6730,17 +6730,19 @@ app.use((req, res, next) => {
     backgroundStyle = `background-color: ${activeThemeColors.backgroundColor} !important; background-image: url('${activeThemeAssets.backgroundImagePath}') !important; background-size: cover !important; background-position: center !important;`;
   }
 
-  const popupNotice = db
-    .prepare(
-      `
-        SELECT id, title, content, image_path
-        FROM notices
-        WHERE is_popup = 1 AND COALESCE(is_hidden, 0) = 0
-        ORDER BY id DESC
-        LIMIT 1
-      `
-    )
-    .get();
+  const shouldRenderPopupNotices = req.path === '/main';
+  const popupNoticeRows = shouldRenderPopupNotices
+    ? db
+        .prepare(
+          `
+            SELECT id, title, content, image_path
+            FROM notices
+            WHERE is_popup = 1 AND COALESCE(is_hidden, 0) = 0
+            ORDER BY id DESC
+          `
+        )
+        .all()
+    : [];
   const footerNotices = db
     .prepare(
       `
@@ -6799,14 +6801,12 @@ app.use((req, res, next) => {
       postToday: postCounts.today,
       postTotal: postCounts.total
     },
-    popupNotice: popupNotice
-      ? {
-          id: Number(popupNotice.id),
-          title: popupNotice.title,
-          content: popupNotice.content,
-          imagePath: popupNotice.image_path || ''
-        }
-      : null,
+    popupNotices: popupNoticeRows.map((popupNotice) => ({
+      id: Number(popupNotice.id),
+      title: popupNotice.title,
+      content: popupNotice.content,
+      imagePath: popupNotice.image_path || ''
+    })),
     footerNotices
   };
   res.locals.requestPath = req.path;

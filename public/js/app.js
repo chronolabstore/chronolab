@@ -1,6 +1,10 @@
 (function () {
+  function getNoticePopupRoot() {
+    return document.getElementById('noticePopupDeck') || document.getElementById('noticePopup');
+  }
+
   function closeNoticePopup() {
-    var popup = document.getElementById('noticePopup');
+    var popup = getNoticePopupRoot();
     if (popup) {
       popup.classList.add('hidden');
     }
@@ -14,23 +18,62 @@
   }
 
   function initNoticePopup() {
-    var popup = document.getElementById('noticePopup');
+    var popup = getNoticePopupRoot();
     if (!popup) {
       return;
     }
 
-    var popupId = popup.getAttribute('data-popup-id');
-    if (!popupId) {
-      return;
+    var popupCards = Array.prototype.slice.call(popup.querySelectorAll('[data-popup-card][data-popup-id]'));
+    if (!popupCards.length) {
+      var legacyPopupId = popup.getAttribute('data-popup-id');
+      if (!legacyPopupId) {
+        return;
+      }
+
+      var legacyHideKey = 'chronolab-popup-hide-' + legacyPopupId;
+      var legacySessionKey = 'chronolab-popup-session-' + legacyPopupId;
+      var legacySavedUntil = Number(localStorage.getItem(legacyHideKey) || '0');
+      if (legacySavedUntil > Date.now() || sessionStorage.getItem(legacySessionKey) === '1') {
+        return;
+      }
+      popup.classList.remove('hidden');
+      popupCards = [popup];
+    } else {
+      var now = Date.now();
+      var visibleCards = 0;
+      popupCards.forEach(function (card) {
+        var popupId = card.getAttribute('data-popup-id');
+        if (!popupId) {
+          card.classList.add('hidden');
+          return;
+        }
+        var hideKey = 'chronolab-popup-hide-' + popupId;
+        var sessionKey = 'chronolab-popup-session-' + popupId;
+        var savedUntil = Number(localStorage.getItem(hideKey) || '0');
+        var hiddenForSevenDays = savedUntil > now;
+        var shownInSession = sessionStorage.getItem(sessionKey) === '1';
+        if (hiddenForSevenDays || shownInSession) {
+          card.classList.add('hidden');
+          return;
+        }
+        card.classList.remove('hidden');
+        visibleCards += 1;
+      });
+
+      if (!visibleCards) {
+        return;
+      }
+      popup.classList.remove('hidden');
     }
 
-    var key = 'chronolab-popup-hide-' + popupId;
-    var savedUntil = Number(localStorage.getItem(key) || '0');
-    if (savedUntil > Date.now()) {
-      return;
+    function closeNoticeCard(card) {
+      if (!card) return;
+      card.classList.add('hidden');
+      var hasVisibleCard = popup.querySelector('[data-popup-card]:not(.hidden)');
+      if (!hasVisibleCard) {
+        closeNoticePopup();
+      }
     }
-
-    popup.classList.remove('hidden');
 
     popup.addEventListener('click', function (event) {
       var actionTarget = event.target.closest('[data-popup-action]');
@@ -41,15 +84,39 @@
         return;
       }
 
+      var popupCard = actionTarget.closest('[data-popup-card]');
       var action = actionTarget.getAttribute('data-popup-action');
+      var popupId = popupCard
+        ? popupCard.getAttribute('data-popup-id')
+        : popup.getAttribute('data-popup-id');
+      var hideKey = popupId ? 'chronolab-popup-hide-' + popupId : '';
+      var sessionKey = popupId ? 'chronolab-popup-session-' + popupId : '';
+
       if (action === 'hide7') {
         var sevenDays = 1000 * 60 * 60 * 24 * 7;
-        localStorage.setItem(key, String(Date.now() + sevenDays));
-        closeNoticePopup();
+        if (hideKey) {
+          localStorage.setItem(hideKey, String(Date.now() + sevenDays));
+        }
+        if (sessionKey) {
+          sessionStorage.setItem(sessionKey, '1');
+        }
+        if (popupCard) {
+          closeNoticeCard(popupCard);
+        } else {
+          closeNoticePopup();
+        }
+        return;
       }
 
       if (action === 'close' || action === 'confirm') {
-        closeNoticePopup();
+        if (sessionKey) {
+          sessionStorage.setItem(sessionKey, '1');
+        }
+        if (popupCard) {
+          closeNoticeCard(popupCard);
+        } else {
+          closeNoticePopup();
+        }
       }
     });
   }
