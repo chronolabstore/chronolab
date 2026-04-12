@@ -26,7 +26,7 @@
           <% if (ctx.popupNotice.imagePath) { %>
             <img src="<%= ctx.popupNotice.imagePath %>" alt="popup notice" class="popup-image" />
           <% } %>
-          <p><%= ctx.popupNotice.content %></p>
+          <p class="popup-notice-content"><%= ctx.popupNotice.content %></p>
           <div class="popup-actions">
             <button type="button" data-popup-action="hide7" class="chip ghost"><%= ctx.lang === 'en' ? "Don't show for 7 days" : '7일간 보지 않기' %></button>
             <button type="button" data-popup-action="close" class="chip"><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>

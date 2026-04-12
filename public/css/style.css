@@ -4215,6 +4215,11 @@ body.theme-night .order-status-badge-delivered {
   margin-bottom: 10px;
 }
 
+.popup-notice-content {
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
 .popup-actions {
   display: flex;
   justify-content: flex-end;
