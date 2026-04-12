@@ -15,13 +15,25 @@
       <li class="media-line-empty"><%= isEn ? 'No QC images found.' : '등록된 QC 이미지가 없습니다.' %></li>
     <% } %>
     <% items.forEach((item) => { %>
+      <% const qcImages = Array.isArray(item.image_paths) ? item.image_paths : []; %>
       <li class="media-line-item">
         <span class="media-line-thumb">
-          <img src="<%= item.image_path %>" alt="qc image" loading="lazy" />
+          <% if (qcImages.length > 0) { %>
+            <img src="<%= qcImages[0] %>" alt="qc image" loading="lazy" data-lightbox-enabled="1" />
+          <% } else { %>
+            <span class="media-line-fallback"><%= isEn ? 'NO IMG' : '이미지 없음' %></span>
+          <% } %>
         </span>
         <div class="media-line-body">
           <strong class="media-line-title"><%= isEn ? 'Order No.' : '구매번호' %>: <%= item.order_no %></strong>
           <p class="media-line-note"><%= item.note || '-' %></p>
+          <% if (qcImages.length > 1) { %>
+            <div class="inline-file-preview-grid">
+              <% qcImages.slice(1).forEach((src, imageIndex) => { %>
+                <img src="<%= src %>" alt="<%= `qc-${item.order_no}-${imageIndex + 2}` %>" class="inline-file-preview-image zoomable-media" data-lightbox-enabled="1" />
+              <% }) %>
+            </div>
+          <% } %>
           <small class="media-line-meta"><%= item.created_at.slice(0, 10) %></small>
         </div>
       </li>

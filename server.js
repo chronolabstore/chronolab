@@ -2358,6 +2358,98 @@ function fileUrl(file) {
   return `/uploads/${file.filename}`;
 }
 
+function normalizeImagePath(value) {
+  return String(value || '').trim();
+}
+
+function parseImagePathJson(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((item) => normalizeImagePath(item)).filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
+function uniqueImagePathList(imagePaths = []) {
+  const seen = new Set();
+  const result = [];
+  for (const imagePath of imagePaths) {
+    const normalized = normalizeImagePath(imagePath);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function getRecordImagePaths(record) {
+  if (!record || typeof record !== 'object') {
+    return [];
+  }
+
+  const fromJson = parseImagePathJson(record.image_paths_json);
+  if (fromJson.length > 0) {
+    return uniqueImagePathList(fromJson);
+  }
+
+  const fallback = normalizeImagePath(record.image_path);
+  return fallback ? [fallback] : [];
+}
+
+function withRecordImagePaths(record) {
+  if (!record || typeof record !== 'object') {
+    return record;
+  }
+  const imagePaths = getRecordImagePaths(record);
+  return {
+    ...record,
+    image_paths: imagePaths,
+    image_path: imagePaths[0] || ''
+  };
+}
+
+function withRecordImagePathsList(rows = []) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  return rows.map((row) => withRecordImagePaths(row));
+}
+
+function serializeImagePaths(imagePaths = []) {
+  return JSON.stringify(uniqueImagePathList(imagePaths));
+}
+
+function collectUploadedImageUrls(req) {
+  const files = [];
+
+  if (Array.isArray(req?.files)) {
+    files.push(...req.files);
+  } else if (req?.files && typeof req.files === 'object') {
+    Object.values(req.files).forEach((bucket) => {
+      if (Array.isArray(bucket)) {
+        files.push(...bucket);
+      }
+    });
+  }
+
+  if (req?.file) {
+    files.push(req.file);
+  }
+
+  return uniqueImagePathList(files.map((file) => fileUrl(file)).filter(Boolean));
+}
+
 function formatPrice(value) {
   return Number(value || 0).toLocaleString('ko-KR');
 }
@@ -7762,11 +7854,11 @@ app.post(
 
 app.get('/notice', (req, res) => {
   const isAdminViewer = Boolean(req.user?.isAdmin);
-  const notices = isAdminViewer
+  const noticeRows = isAdminViewer
     ? db
         .prepare(
           `
-            SELECT id, title, image_path, is_popup, created_at
+            SELECT id, title, image_path, is_popup, created_at, image_paths_json
             FROM notices
             ORDER BY id DESC
           `
@@ -7775,32 +7867,34 @@ app.get('/notice', (req, res) => {
     : db
         .prepare(
           `
-            SELECT id, title, image_path, is_popup, created_at
+            SELECT id, title, image_path, is_popup, created_at, image_paths_json
             FROM notices
             WHERE COALESCE(is_hidden, 0) = 0
             ORDER BY id DESC
           `
         )
         .all();
+  const notices = withRecordImagePathsList(noticeRows);
   res.render('notice-list', { title: 'Notice', notices });
 });
 
 app.get('/notice/:id', (req, res) => {
   const id = Number(req.params.id);
-  const notice = db.prepare('SELECT * FROM notices WHERE id = ? LIMIT 1').get(id);
-  if (!notice || (Number(notice.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
+  const noticeRow = db.prepare('SELECT * FROM notices WHERE id = ? LIMIT 1').get(id);
+  if (!noticeRow || (Number(noticeRow.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '공지사항이 없습니다.' });
   }
+  const notice = withRecordImagePaths(noticeRow);
   res.render('notice-detail', { title: 'Notice Detail', notice });
 });
 
 app.get('/news', (req, res) => {
   const isAdminViewer = Boolean(req.user?.isAdmin);
-  const newsPosts = isAdminViewer
+  const newsRows = isAdminViewer
     ? db
         .prepare(
           `
-            SELECT id, title, content, image_path, created_at
+            SELECT id, title, content, image_path, created_at, image_paths_json
             FROM news_posts
             ORDER BY id DESC
           `
@@ -7809,24 +7903,26 @@ app.get('/news', (req, res) => {
     : db
         .prepare(
           `
-            SELECT id, title, content, image_path, created_at
+            SELECT id, title, content, image_path, created_at, image_paths_json
             FROM news_posts
             WHERE COALESCE(is_hidden, 0) = 0
             ORDER BY id DESC
           `
         )
         .all();
+  const newsPosts = withRecordImagePathsList(newsRows);
 
   res.render('news-list', { title: 'News', newsPosts });
 });
 
 app.get('/news/:id', (req, res) => {
   const id = Number(req.params.id);
-  const newsPost = db.prepare('SELECT * FROM news_posts WHERE id = ? LIMIT 1').get(id);
+  const newsPostRow = db.prepare('SELECT * FROM news_posts WHERE id = ? LIMIT 1').get(id);
 
-  if (!newsPost || (Number(newsPost.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
+  if (!newsPostRow || (Number(newsPostRow.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '뉴스 게시글이 없습니다.' });
   }
+  const newsPost = withRecordImagePaths(newsPostRow);
 
   const relatedNewsWhere = req.user?.isAdmin ? 'WHERE id != ?' : 'WHERE id != ? AND COALESCE(is_hidden, 0) = 0';
   const relatedNews = db
@@ -7847,9 +7943,9 @@ app.get('/news/:id', (req, res) => {
 app.get('/qc', (req, res) => {
   const orderNo = String(req.query.orderNo || '').trim();
   const isAdminViewer = Boolean(req.user?.isAdmin);
-  let items = [];
+  let itemRows = [];
   if (orderNo) {
-    items = isAdminViewer
+    itemRows = isAdminViewer
       ? db
           .prepare('SELECT * FROM qc_items WHERE order_no = ? ORDER BY id DESC')
           .all(orderNo)
@@ -7857,10 +7953,11 @@ app.get('/qc', (req, res) => {
           .prepare('SELECT * FROM qc_items WHERE order_no = ? AND COALESCE(is_hidden, 0) = 0 ORDER BY id DESC')
           .all(orderNo);
   } else {
-    items = isAdminViewer
+    itemRows = isAdminViewer
       ? db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 30').all()
       : db.prepare('SELECT * FROM qc_items WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id DESC LIMIT 30').all();
   }
+  const items = withRecordImagePathsList(itemRows);
 
   res.render('qc', { title: 'QC', orderNo, items });
 });
@@ -7936,7 +8033,7 @@ app.get('/inquiry/new', requireAuth, (req, res) => {
   res.render('inquiry-form', { title: 'Write Inquiry' });
 });
 
-app.post('/inquiry/new', requireAuth, upload.single('image'), (req, res) => {
+app.post('/inquiry/new', requireAuth, upload.array('image', 20), (req, res) => {
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
 
@@ -7945,12 +8042,16 @@ app.post('/inquiry/new', requireAuth, upload.single('image'), (req, res) => {
     return res.redirect('/inquiry/new');
   }
 
+  const uploadedImages = collectUploadedImageUrls(req);
+  const imagePath = uploadedImages[0] || '';
+  const imagePathsJson = serializeImagePaths(uploadedImages);
+
   db.prepare(
     `
-      INSERT INTO inquiries (user_id, title, content, image_path)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO inquiries (user_id, title, content, image_path, image_paths_json)
+      VALUES (?, ?, ?, ?, ?)
     `
-  ).run(req.user.id, title, content, fileUrl(req.file));
+  ).run(req.user.id, title, content, imagePath, imagePathsJson);
 
   setFlash(req, 'success', '문의가 등록되었습니다.');
   res.redirect('/inquiry');
@@ -7958,7 +8059,7 @@ app.post('/inquiry/new', requireAuth, upload.single('image'), (req, res) => {
 
 app.get('/inquiry/:id', (req, res) => {
   const id = Number(req.params.id);
-  const inquiry = db
+  const inquiryRow = db
     .prepare(
       `
         SELECT i.*, u.username
@@ -7970,9 +8071,10 @@ app.get('/inquiry/:id', (req, res) => {
     )
     .get(id);
 
-  if (!inquiry || (Number(inquiry.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
+  if (!inquiryRow || (Number(inquiryRow.is_hidden || 0) === 1 && !req.user?.isAdmin)) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '문의를 찾을 수 없습니다.' });
   }
+  const inquiry = withRecordImagePaths(inquiryRow);
 
   const canOpen = Boolean(req.user && (req.user.isAdmin || req.user.id === Number(inquiry.user_id)));
 
@@ -10241,10 +10343,10 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     status_logs: orderTimelineMap.get(Number(order.id)) || []
   }));
 
-  const notices = db.prepare('SELECT * FROM notices ORDER BY id DESC LIMIT 50').all();
-  const newsPosts = db.prepare('SELECT * FROM news_posts ORDER BY id DESC LIMIT 50').all();
-  const qcs = db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 50').all();
-  const inquiries = db
+  const noticeRows = db.prepare('SELECT * FROM notices ORDER BY id DESC LIMIT 50').all();
+  const newsRows = db.prepare('SELECT * FROM news_posts ORDER BY id DESC LIMIT 50').all();
+  const qcRows = db.prepare('SELECT * FROM qc_items ORDER BY id DESC LIMIT 50').all();
+  const inquiryRows = db
     .prepare(
       `
         SELECT i.*, u.username
@@ -10255,6 +10357,10 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
       `
     )
     .all();
+  const notices = withRecordImagePathsList(noticeRows);
+  const newsPosts = withRecordImagePathsList(newsRows);
+  const qcs = withRecordImagePathsList(qcRows);
+  const inquiries = withRecordImagePathsList(inquiryRows);
   const securityPanelData = buildSecurityPanelData(lang, securityOptions);
   const memberManagePanelData = buildMemberManagePanelData(lang, memberOptions);
   const salesDailyData = buildAdminSalesDailyData(lang, {
@@ -13079,7 +13185,7 @@ app.post('/admin/product-badge/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/notice/create', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/notices?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
@@ -13090,10 +13196,15 @@ app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res
     return res.redirect(backPath);
   }
 
-  db.prepare('INSERT INTO notices (title, content, image_path, is_popup) VALUES (?, ?, ?, ?)').run(
+  const uploadedImages = collectUploadedImageUrls(req);
+  const imagePath = uploadedImages[0] || '';
+  const imagePathsJson = serializeImagePaths(uploadedImages);
+
+  db.prepare('INSERT INTO notices (title, content, image_path, image_paths_json, is_popup) VALUES (?, ?, ?, ?, ?)').run(
     title,
     content,
-    fileUrl(req.file),
+    imagePath,
+    imagePathsJson,
     isPopup
   );
 
@@ -13101,7 +13212,7 @@ app.post('/admin/notice/create', requireAdmin, upload.single('image'), (req, res
   res.redirect(backPath);
 });
 
-app.post('/admin/notice/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/notice/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/notices?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13109,7 +13220,7 @@ app.post('/admin/notice/:id/update', requireAdmin, upload.single('image'), (req,
     return res.redirect(backPath);
   }
 
-  const existing = db.prepare('SELECT id, image_path FROM notices WHERE id = ? LIMIT 1').get(id);
+  const existing = db.prepare('SELECT id, image_path, image_paths_json FROM notices WHERE id = ? LIMIT 1').get(id);
   if (!existing) {
     setFlash(req, 'error', '공지사항을 찾을 수 없습니다.');
     return res.redirect(backPath);
@@ -13123,14 +13234,19 @@ app.post('/admin/notice/:id/update', requireAdmin, upload.single('image'), (req,
     return res.redirect(backPath);
   }
 
-  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  const uploadedImages = collectUploadedImageUrls(req);
+  const existingImages = getRecordImagePaths(existing);
+  const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
+  const nextImagePath = nextImagePaths[0] || '';
+  const nextImagePathsJson = serializeImagePaths(nextImagePaths);
+
   db.prepare(
     `
       UPDATE notices
-      SET title = ?, content = ?, image_path = ?, is_popup = ?
+      SET title = ?, content = ?, image_path = ?, image_paths_json = ?, is_popup = ?
       WHERE id = ?
     `
-  ).run(title, content, nextImagePath, isPopup, id);
+  ).run(title, content, nextImagePath, nextImagePathsJson, isPopup, id);
 
   setFlash(req, 'success', '공지사항이 수정되었습니다.');
   return res.redirect(backPath);
@@ -13165,7 +13281,7 @@ app.post('/admin/notice/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/news/create', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
@@ -13175,17 +13291,22 @@ app.post('/admin/news/create', requireAdmin, upload.single('image'), (req, res) 
     return res.redirect(backPath);
   }
 
-  db.prepare('INSERT INTO news_posts (title, content, image_path) VALUES (?, ?, ?)').run(
+  const uploadedImages = collectUploadedImageUrls(req);
+  const imagePath = uploadedImages[0] || '';
+  const imagePathsJson = serializeImagePaths(uploadedImages);
+
+  db.prepare('INSERT INTO news_posts (title, content, image_path, image_paths_json) VALUES (?, ?, ?, ?)').run(
     title,
     content,
-    fileUrl(req.file)
+    imagePath,
+    imagePathsJson
   );
 
   setFlash(req, 'success', '뉴스가 등록되었습니다.');
   res.redirect(backPath);
 });
 
-app.post('/admin/news/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13193,7 +13314,7 @@ app.post('/admin/news/:id/update', requireAdmin, upload.single('image'), (req, r
     return res.redirect(backPath);
   }
 
-  const existing = db.prepare('SELECT id, image_path FROM news_posts WHERE id = ? LIMIT 1').get(id);
+  const existing = db.prepare('SELECT id, image_path, image_paths_json FROM news_posts WHERE id = ? LIMIT 1').get(id);
   if (!existing) {
     setFlash(req, 'error', '뉴스 게시글을 찾을 수 없습니다.');
     return res.redirect(backPath);
@@ -13206,14 +13327,19 @@ app.post('/admin/news/:id/update', requireAdmin, upload.single('image'), (req, r
     return res.redirect(backPath);
   }
 
-  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  const uploadedImages = collectUploadedImageUrls(req);
+  const existingImages = getRecordImagePaths(existing);
+  const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
+  const nextImagePath = nextImagePaths[0] || '';
+  const nextImagePathsJson = serializeImagePaths(nextImagePaths);
+
   db.prepare(
     `
       UPDATE news_posts
-      SET title = ?, content = ?, image_path = ?
+      SET title = ?, content = ?, image_path = ?, image_paths_json = ?
       WHERE id = ?
     `
-  ).run(title, content, nextImagePath, id);
+  ).run(title, content, nextImagePath, nextImagePathsJson, id);
 
   setFlash(req, 'success', '뉴스 게시글이 수정되었습니다.');
   return res.redirect(backPath);
@@ -13248,19 +13374,21 @@ app.post('/admin/news/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=create');
   const orderNo = String(req.body.orderNo || '').trim();
   const note = String(req.body.note || '').trim();
+  const uploadedImages = collectUploadedImageUrls(req);
 
-  if (!orderNo || !req.file) {
+  if (!orderNo || uploadedImages.length === 0) {
     setFlash(req, 'error', '주문번호와 이미지를 입력해 주세요.');
     return res.redirect(backPath);
   }
 
-  db.prepare('INSERT INTO qc_items (order_no, image_path, note) VALUES (?, ?, ?)').run(
+  db.prepare('INSERT INTO qc_items (order_no, image_path, image_paths_json, note) VALUES (?, ?, ?, ?)').run(
     orderNo,
-    fileUrl(req.file),
+    uploadedImages[0] || '',
+    serializeImagePaths(uploadedImages),
     note
   );
 
@@ -13268,7 +13396,7 @@ app.post('/admin/qc/create', requireAdmin, upload.single('image'), (req, res) =>
   res.redirect(backPath);
 });
 
-app.post('/admin/qc/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13276,7 +13404,7 @@ app.post('/admin/qc/:id/update', requireAdmin, upload.single('image'), (req, res
     return res.redirect(backPath);
   }
 
-  const existing = db.prepare('SELECT id, image_path FROM qc_items WHERE id = ? LIMIT 1').get(id);
+  const existing = db.prepare('SELECT id, image_path, image_paths_json FROM qc_items WHERE id = ? LIMIT 1').get(id);
   if (!existing) {
     setFlash(req, 'error', 'QC 항목을 찾을 수 없습니다.');
     return res.redirect(backPath);
@@ -13289,7 +13417,12 @@ app.post('/admin/qc/:id/update', requireAdmin, upload.single('image'), (req, res
     return res.redirect(backPath);
   }
 
-  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  const uploadedImages = collectUploadedImageUrls(req);
+  const existingImages = getRecordImagePaths(existing);
+  const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
+  const nextImagePath = nextImagePaths[0] || '';
+  const nextImagePathsJson = serializeImagePaths(nextImagePaths);
+
   if (!nextImagePath) {
     setFlash(req, 'error', 'QC 이미지를 등록해 주세요.');
     return res.redirect(backPath);
@@ -13298,10 +13431,10 @@ app.post('/admin/qc/:id/update', requireAdmin, upload.single('image'), (req, res
   db.prepare(
     `
       UPDATE qc_items
-      SET order_no = ?, note = ?, image_path = ?
+      SET order_no = ?, note = ?, image_path = ?, image_paths_json = ?
       WHERE id = ?
     `
-  ).run(orderNo, note, nextImagePath, id);
+  ).run(orderNo, note, nextImagePath, nextImagePathsJson, id);
 
   setFlash(req, 'success', 'QC 항목이 수정되었습니다.');
   return res.redirect(backPath);
@@ -13690,7 +13823,7 @@ app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
   res.redirect(backPath);
 });
 
-app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/admin/inquiry/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
   const backPath = safeBackPath(req, '/admin/inquiries?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13699,7 +13832,7 @@ app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req
   }
 
   const existing = db
-    .prepare('SELECT id, image_path FROM inquiries WHERE id = ? LIMIT 1')
+    .prepare('SELECT id, image_path, image_paths_json FROM inquiries WHERE id = ? LIMIT 1')
     .get(id);
   if (!existing) {
     setFlash(req, 'error', '문의를 찾을 수 없습니다.');
@@ -13714,7 +13847,11 @@ app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req
     return res.redirect(backPath);
   }
 
-  const nextImagePath = req.file ? fileUrl(req.file) : String(existing.image_path || '');
+  const uploadedImages = collectUploadedImageUrls(req);
+  const existingImages = getRecordImagePaths(existing);
+  const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
+  const nextImagePath = nextImagePaths[0] || '';
+  const nextImagePathsJson = serializeImagePaths(nextImagePaths);
   db.prepare(
     `
       UPDATE inquiries
@@ -13722,6 +13859,7 @@ app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req
         title = ?,
         content = ?,
         image_path = ?,
+        image_paths_json = ?,
         reply_content = ?,
         replied_at = CASE
           WHEN ? != '' THEN COALESCE(replied_at, datetime('now'))
@@ -13729,7 +13867,7 @@ app.post('/admin/inquiry/:id/update', requireAdmin, upload.single('image'), (req
         END
       WHERE id = ?
     `
-  ).run(title, content, nextImagePath, replyContent, replyContent, id);
+  ).run(title, content, nextImagePath, nextImagePathsJson, replyContent, replyContent, id);
 
   setFlash(req, 'success', '문의 항목이 수정되었습니다.');
   return res.redirect(backPath);
