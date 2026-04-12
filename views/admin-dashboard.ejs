@@ -2442,6 +2442,7 @@
           const previewWrap = form.querySelector('[data-image-watermark-preview]');
           const previewGrid = form.querySelector('[data-image-watermark-preview-grid]');
           const watermarkImageUrl = '<%= ctx.settings.watermarkLogoPath || '' %>';
+          const watermarkDomainText = 'www.chronolab.co.kr';
           const MAX_IMAGE_FILE_BYTES = 100 * 1024 * 1024;
           const MAX_IMAGE_FILE_MB = Math.round(MAX_IMAGE_FILE_BYTES / (1024 * 1024));
           const imageOverLimitMessage = '<%= isEn ? 'Some files exceed 100MB per image. Please reduce file size and try again.' : '이미지 1개당 최대 100MB까지 업로드할 수 있습니다. 용량을 줄여 다시 시도해 주세요.' %>';
@@ -2737,22 +2738,19 @@
           };
 
           const drawWatermarkText = (ctx, width, height) => {
-            const text = 'Chrono Lab';
-            const fontSize = Math.max(10, Math.round(width * 0.045));
+            const text = watermarkDomainText;
+            const fontSize = Math.max(10, Math.round(width * 0.04));
             ctx.save();
-            ctx.font = `600 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+            ctx.font = `700 ${fontSize}px "Noto Sans KR", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif`;
             ctx.textBaseline = 'middle';
             ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.12)';
-            ctx.lineWidth = Math.max(1, Math.round(fontSize * 0.06));
 
-            const textWidth = ctx.measureText(text).width || fontSize * 5;
-            const step = textWidth + Math.max(24, Math.round(fontSize * 1.8));
+            const textWidth = ctx.measureText(text).width || Math.round(fontSize * 8);
+            const step = textWidth + Math.max(18, Math.round(fontSize * 1.2));
             const rows = [height * 0.25, height * 0.5, height * 0.75];
 
             rows.forEach((y) => {
               for (let x = -textWidth; x < width + textWidth; x += step) {
-                ctx.strokeText(text, x, y);
                 ctx.fillText(text, x, y);
               }
             });
@@ -2769,14 +2767,26 @@
             const targetWidth = Math.max(48, Math.round(width * 0.12));
             const ratio = image.width / image.height;
             const targetHeight = Math.max(12, Math.round(targetWidth / Math.max(0.01, ratio)));
+            const fontSize = Math.max(10, Math.round(targetHeight * 0.82));
+            const imageTextGap = Math.max(10, Math.round(targetHeight * 0.34));
+            const textTailGap = Math.max(10, Math.round(targetHeight * 0.34));
+            const text = watermarkDomainText;
             const rows = [height * 0.25, height * 0.5, height * 0.75];
-            const xStep = Math.max(targetWidth + 6, Math.round(targetWidth * 1.04));
 
             ctx.save();
             ctx.globalAlpha = 0.18;
+            ctx.font = `700 ${fontSize}px "Noto Sans KR", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif`;
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            const textWidth = ctx.measureText(text).width || Math.round(fontSize * 8);
+            const xStep = Math.max(targetWidth + imageTextGap + textWidth + textTailGap, targetWidth + 18);
+
             rows.forEach((y) => {
               for (let x = -targetWidth; x < width + targetWidth; x += xStep) {
-                ctx.drawImage(image, Math.round(x), Math.round(y - targetHeight / 2), targetWidth, targetHeight);
+                const imageX = Math.round(x);
+                const textX = Math.round(x + targetWidth + imageTextGap);
+                ctx.drawImage(image, imageX, Math.round(y - targetHeight / 2), targetWidth, targetHeight);
+                ctx.fillText(text, textX, Math.round(y));
               }
             });
             ctx.restore();

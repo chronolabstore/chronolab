@@ -302,6 +302,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_FILE_SIZE_MB = Math.round(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024));
 const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
 const WATERMARK_IMAGE_ALPHA = 0.18;
+const WATERMARK_DOMAIN_TEXT = 'www.chronolab.co.kr';
 const WATERMARK_REMOTE_FETCH_TIMEOUT_MS = 15000;
 const WATERMARK_REMOTE_FETCH_MAX_ATTEMPTS = 4;
 const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
@@ -1432,20 +1433,20 @@ function getBrandingWatermarkUrl() {
 function buildChronoLabWatermarkSvg(width, height) {
   const safeWidth = Math.max(120, Math.floor(Number(width || 0)));
   const safeHeight = Math.max(120, Math.floor(Number(height || 0)));
-  const fontSize = Math.max(12, Math.min(26, Math.round(safeWidth / 34)));
-  const repeatCount = Math.max(4, Math.ceil(safeWidth / (fontSize * 5.2)));
-  const lineText = escapeSvgText(Array.from({ length: repeatCount }).fill('Chrono Lab').join('   '));
-  const yRows = [0.25, 0.5, 0.75];
+  const fontSize = Math.max(12, Math.min(30, Math.round(safeWidth / 33)));
+  const approxTextWidth = Math.max(Math.round(fontSize * WATERMARK_DOMAIN_TEXT.length * 0.58), fontSize * 8);
+  const xStep = Math.max(approxTextWidth + Math.round(fontSize * 1.1), approxTextWidth + 16);
+  const rowYList = [0.25, 0.5, 0.75].map((ratio) => Math.round(safeHeight * ratio));
+  const label = escapeSvgText(WATERMARK_DOMAIN_TEXT);
+  const textNodes = [];
 
-  const textLines = yRows
-    .map(
-      (ratio) => `
-        <text x="50%" y="${Math.round(safeHeight * ratio)}" text-anchor="middle" dominant-baseline="middle">
-          ${lineText}
-        </text>
-      `
-    )
-    .join('');
+  rowYList.forEach((rowY) => {
+    for (let x = -approxTextWidth; x < safeWidth + approxTextWidth; x += xStep) {
+      textNodes.push(
+        `<text x="${Math.round(x)}" y="${rowY}" text-anchor="start" dominant-baseline="middle">${label}</text>`
+      );
+    }
+  });
 
   return `
     <svg width="${safeWidth}" height="${safeHeight}" viewBox="0 0 ${safeWidth} ${safeHeight}" xmlns="http://www.w3.org/2000/svg">
@@ -1454,13 +1455,11 @@ function buildChronoLabWatermarkSvg(width, height) {
           font-family: 'Noto Sans KR', 'Noto Sans', sans-serif;
           font-size: ${fontSize}px;
           font-weight: 700;
-          letter-spacing: 0.04em;
-          fill: rgba(255, 255, 255, 0.16);
-          stroke: rgba(0, 0, 0, 0.16);
-          stroke-width: 0.6;
+          letter-spacing: 0.01em;
+          fill: rgba(255, 255, 255, ${WATERMARK_IMAGE_ALPHA});
         }
       </style>
-      ${textLines}
+      ${textNodes.join('')}
     </svg>
   `;
 }
@@ -1489,30 +1488,46 @@ async function buildChronoLabWatermarkOverlay(width, height) {
     const watermarkMeta = await sharp(watermarkBuffer).metadata();
     const watermarkWidth = Math.max(1, Math.floor(Number(watermarkMeta.width || targetWidth)));
     const watermarkHeight = Math.max(1, Math.floor(Number(watermarkMeta.height || Math.round(targetWidth * 0.22))));
-    const xStep = Math.max(Math.round(watermarkWidth * 1.04), watermarkWidth + 8);
-    const yRows = [0.25, 0.5, 0.75].map((ratio) => Math.round(safeHeight * ratio));
-    const composites = [];
+    const fontSize = Math.max(10, Math.round(watermarkHeight * 0.82));
+    const textWidth = Math.max(Math.round(fontSize * WATERMARK_DOMAIN_TEXT.length * 0.58), fontSize * 8);
+    const imageTextGap = Math.max(10, Math.round(watermarkHeight * 0.34));
+    const textTailGap = Math.max(10, Math.round(watermarkHeight * 0.34));
+    const xStep = Math.max(watermarkWidth + imageTextGap + textWidth + textTailGap, watermarkWidth + 22);
+    const rowYList = [0.25, 0.5, 0.75].map((ratio) => Math.round(safeHeight * ratio));
+    const imageY = Math.round(-watermarkHeight / 2);
+    const escapedDomainText = escapeSvgText(WATERMARK_DOMAIN_TEXT);
+    const watermarkDataUri = `data:image/png;base64,${watermarkBuffer.toString('base64')}`;
+    const patternNodes = [];
 
-    yRows.forEach((rowY) => {
+    rowYList.forEach((rowY) => {
       for (let x = -watermarkWidth; x < safeWidth + watermarkWidth; x += xStep) {
-        composites.push({
-          input: watermarkBuffer,
-          left: Math.round(x),
-          top: Math.round(rowY - watermarkHeight / 2),
-          blend: 'over'
-        });
+        const imageX = Math.round(x);
+        const textX = Math.round(x + watermarkWidth + imageTextGap);
+        patternNodes.push(
+          `<image href="${watermarkDataUri}" x="${imageX}" y="${imageY}" width="${watermarkWidth}" height="${watermarkHeight}" transform="translate(0 ${rowY})" />`
+        );
+        patternNodes.push(
+          `<text x="${textX}" y="${rowY}" text-anchor="start" dominant-baseline="middle">${escapedDomainText}</text>`
+        );
       }
     });
 
-    return await sharp({
-      create: {
-        width: safeWidth,
-        height: safeHeight,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 }
-      }
-    })
-      .composite(composites)
+    const overlaySvg = `
+      <svg width="${safeWidth}" height="${safeHeight}" viewBox="0 0 ${safeWidth} ${safeHeight}" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          text {
+            font-family: 'Noto Sans KR', 'Noto Sans', sans-serif;
+            font-size: ${fontSize}px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            fill: rgba(255, 255, 255, ${WATERMARK_IMAGE_ALPHA});
+          }
+        </style>
+        ${patternNodes.join('')}
+      </svg>
+    `;
+
+    return await sharp(Buffer.from(overlaySvg))
       .png()
       .toBuffer();
   } catch (error) {
@@ -13281,7 +13296,7 @@ app.post('/admin/notice/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/news/create', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/news/create', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
@@ -13291,6 +13306,8 @@ app.post('/admin/news/create', requireAdmin, upload.array('image', 20), (req, re
     return res.redirect(backPath);
   }
 
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  await applyChronoLabWatermarkToUploads(uploadedFiles);
   const uploadedImages = collectUploadedImageUrls(req);
   const imagePath = uploadedImages[0] || '';
   const imagePathsJson = serializeImagePaths(uploadedImages);
@@ -13304,9 +13321,9 @@ app.post('/admin/news/create', requireAdmin, upload.array('image', 20), (req, re
 
   setFlash(req, 'success', '뉴스가 등록되었습니다.');
   res.redirect(backPath);
-});
+}));
 
-app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13327,6 +13344,8 @@ app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), (req
     return res.redirect(backPath);
   }
 
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  await applyChronoLabWatermarkToUploads(uploadedFiles);
   const uploadedImages = collectUploadedImageUrls(req);
   const existingImages = getRecordImagePaths(existing);
   const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
@@ -13343,7 +13362,7 @@ app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), (req
 
   setFlash(req, 'success', '뉴스 게시글이 수정되었습니다.');
   return res.redirect(backPath);
-});
+}));
 
 app.post('/admin/news/:id/toggle', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=list');
@@ -13374,10 +13393,12 @@ app.post('/admin/news/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=create');
   const orderNo = String(req.body.orderNo || '').trim();
   const note = String(req.body.note || '').trim();
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  await applyChronoLabWatermarkToUploads(uploadedFiles);
   const uploadedImages = collectUploadedImageUrls(req);
 
   if (!orderNo || uploadedImages.length === 0) {
@@ -13394,9 +13415,9 @@ app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), (req, res)
 
   setFlash(req, 'success', 'QC 항목이 등록되었습니다.');
   res.redirect(backPath);
-});
+}));
 
-app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -13417,6 +13438,8 @@ app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), (req, 
     return res.redirect(backPath);
   }
 
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  await applyChronoLabWatermarkToUploads(uploadedFiles);
   const uploadedImages = collectUploadedImageUrls(req);
   const existingImages = getRecordImagePaths(existing);
   const nextImagePaths = uploadedImages.length > 0 ? uploadedImages : existingImages;
@@ -13438,7 +13461,7 @@ app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), (req, 
 
   setFlash(req, 'success', 'QC 항목이 수정되었습니다.');
   return res.redirect(backPath);
-});
+}));
 
 app.post('/admin/qc/:id/toggle', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=list');
