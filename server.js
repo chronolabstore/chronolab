@@ -107,6 +107,7 @@ const ADMIN_MENUS = Object.freeze([
 const SALES_SHEET_DEFAULT_URL =
   'https://docs.google.com/spreadsheets/d/1ZBZ1BvTNTEn809EllGK1W4y9pv-neHxczny5awBqKSA/edit';
 const SALES_WORKBOOK_SETTING_KEY = 'salesWorkbookV1';
+const SALES_LEGACY_SHEET_SYNC_DONE_KEY = 'salesLegacySheetSyncDoneAt';
 const SALES_MAIN_TABS = Object.freeze([
   { key: 'price', labelKo: '공장제 가격표', labelEn: 'Factory Price Table', scopeType: 'factory' },
   { key: 'preorder', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement', scopeType: 'round' },
@@ -3925,6 +3926,149 @@ function getSalesScopeMode(tabKey = '') {
   return 'date';
 }
 
+const SALES_PRICE_SHEET_CATEGORY_TYPES = Object.freeze({
+  FACTORY: 'factory',
+  BRAND: 'brand',
+  MODEL: 'model'
+});
+const SALES_PRICE_SHEET_CATEGORY_TYPE_SET = new Set(Object.values(SALES_PRICE_SHEET_CATEGORY_TYPES));
+
+function normalizeSalesPriceSheetCategoryType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (SALES_PRICE_SHEET_CATEGORY_TYPE_SET.has(normalized)) {
+    return normalized;
+  }
+  return SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY;
+}
+
+const SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
+  '\uacf5\uc7a5\uc81c': 'factory',
+  '\uc820\ud30c\uce20': 'genparts',
+  '\ud604\uc9c0\uc911\uace0': 'used'
+});
+
+const SALES_DYNAMIC_TAB_KEY_PREFIX = 'group';
+const SALES_DYNAMIC_TAB_SLUG_REGEX = /[^a-z0-9\uac00-\ud7a3]+/g;
+
+function buildSalesDateTabKeyByGroupKey(rawGroupKey = '') {
+  const groupKey = normalizeProductGroupKey(rawGroupKey || '');
+  if (!groupKey) {
+    return '';
+  }
+
+  const legacyKey = SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP[groupKey];
+  if (legacyKey) {
+    return legacyKey;
+  }
+
+  const slug = String(groupKey)
+    .trim()
+    .toLowerCase()
+    .replace(SALES_DYNAMIC_TAB_SLUG_REGEX, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug ? `${SALES_DYNAMIC_TAB_KEY_PREFIX}-${slug}` : '';
+}
+
+function getObservedProductGroupKeys() {
+  try {
+    const rows = db
+      .prepare(
+        `
+          SELECT DISTINCT category_group
+          FROM products
+          WHERE TRIM(COALESCE(category_group, '')) != ''
+          ORDER BY category_group ASC
+        `
+      )
+      .all();
+
+    return rows
+      .map((row) => normalizeProductGroupKey(row?.category_group || ''))
+      .filter(Boolean)
+      .filter((groupKey, index, arr) => arr.indexOf(groupKey) === index);
+  } catch {
+    return [];
+  }
+}
+
+function getSalesMainTabs(groupConfigs = null) {
+  const sourceGroups =
+    Array.isArray(groupConfigs) && groupConfigs.length > 0
+      ? groupConfigs
+      : getProductGroupConfigs();
+  const safeGroups =
+    Array.isArray(sourceGroups) && sourceGroups.length > 0
+      ? sourceGroups
+      : SHOP_PRODUCT_GROUPS.map((groupKey) => ({
+          key: groupKey,
+          labelKo: groupKey,
+          labelEn: groupKey
+        }));
+  const observedGroups = getObservedProductGroupKeys();
+  const safeGroupMap = new Map();
+  safeGroups.forEach((group) => {
+    const key = normalizeProductGroupKey(group?.key || '');
+    if (!key || safeGroupMap.has(key)) {
+      return;
+    }
+    safeGroupMap.set(key, {
+      ...group,
+      key,
+      labelKo: String(group?.labelKo || key).trim() || key,
+      labelEn: String(group?.labelEn || group?.labelKo || key).trim() || key
+    });
+  });
+  observedGroups.forEach((groupKey) => {
+    if (safeGroupMap.has(groupKey)) {
+      return;
+    }
+    safeGroupMap.set(groupKey, {
+      key: groupKey,
+      labelKo: groupKey,
+      labelEn: groupKey
+    });
+  });
+  const mergedGroups = [...safeGroupMap.values()];
+
+  const baseTabs = SALES_MAIN_TABS.filter((item) => item.key === 'price' || item.key === 'preorder')
+    .map((item) => ({ ...item }));
+  const legacyTabByKey = new Map(SALES_MAIN_TABS.map((item) => [item.key, item]));
+  const usedTabKeys = new Set(baseTabs.map((item) => String(item.key || '').trim()).filter(Boolean));
+
+  mergedGroups.forEach((group, index) => {
+    const groupKey = normalizeProductGroupKey(group?.key || '');
+    if (!groupKey) {
+      return;
+    }
+
+    const defaultTabKey = buildSalesDateTabKeyByGroupKey(groupKey) || `${SALES_DYNAMIC_TAB_KEY_PREFIX}-${index + 1}`;
+    let tabKey = defaultTabKey;
+    let suffix = 2;
+    while (usedTabKeys.has(tabKey)) {
+      tabKey = `${defaultTabKey}-${suffix}`;
+      suffix += 1;
+    }
+    usedTabKeys.add(tabKey);
+
+    const legacyKey = SALES_DATE_TAB_LEGACY_GROUP_KEY_MAP[groupKey] || '';
+    const legacyTab = legacyKey ? legacyTabByKey.get(legacyKey) : null;
+    const labelKoBase = String(group?.labelKo || groupKey).trim() || groupKey;
+    const labelEnBase = String(group?.labelEn || labelKoBase).trim() || labelKoBase;
+
+    baseTabs.push({
+      key: tabKey,
+      labelKo: String(legacyTab?.labelKo || `${labelKoBase} 매출`),
+      labelEn: String(legacyTab?.labelEn || `${labelEnBase} Sales`),
+      scopeType: 'date',
+      groupKey
+    });
+  });
+
+  return baseTabs;
+}
+
 function normalizeSalesSettingValues(raw = {}, fallback = {}) {
   const now = new Date().toISOString();
   return {
@@ -4054,6 +4198,7 @@ function buildDefaultPriceScopes() {
   return scopeNames.map((name, idx) => ({
     id: createSalesId(`scope-p-${idx + 1}`),
     name: normalizeSalesText(name, 80) || `Factory ${idx + 1}`,
+    categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
     rows: []
   }));
 }
@@ -4070,6 +4215,7 @@ function createDefaultRoundName(tabKey = '', index = 1) {
 
 function buildDefaultSalesWorkbook() {
   const now = new Date().toISOString();
+  const salesMainTabs = getSalesMainTabs();
   const defaultSettings = normalizeSalesSettingValues({
     exchangeRate: SALES_DEFAULT_EXCHANGE_RATE,
     shippingFeeKrw: SALES_DEFAULT_SHIPPING_FEE_KRW,
@@ -4078,7 +4224,7 @@ function buildDefaultSalesWorkbook() {
     updatedAt: now
   });
   const tabs = {};
-  for (const tab of SALES_MAIN_TABS) {
+  for (const tab of salesMainTabs) {
     const tabMode = getSalesScopeMode(tab.key);
     const tabSettings = { ...defaultSettings };
     if (tab.scopeType === 'factory') {
@@ -4122,7 +4268,7 @@ function buildDefaultSalesWorkbook() {
     },
     tabs,
     meta: {
-      importedFrom: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
+      importedFrom: 'local-workbook',
       importedAt: '',
       updatedAt: now
     }
@@ -4134,6 +4280,10 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
   const fallbackName = scopeType === 'factory' ? `Factory ${index + 1}` : createDefaultRoundName(tabKey, index + 1);
   const rows = Array.isArray(rawScope?.rows) ? rawScope.rows : [];
   const scopeMode = getSalesScopeMode(tabKey);
+  const categoryType =
+    scopeType === 'factory'
+      ? normalizeSalesPriceSheetCategoryType(rawScope?.categoryType || rawScope?.type || '')
+      : '';
 
   const normalizedRows = rows
     .map((row) => createDefaultSalesRow(row))
@@ -4159,7 +4309,7 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
     fallbackSettings
   );
 
-  return {
+  const normalizedScope = {
     id: normalizeSalesText(rawScope?.id, 80) || createSalesId(`${fallbackPrefix}-${index + 1}`),
     name: scopeMode === 'date' ? scopeDate || normalizedName : normalizedName,
     date: scopeDate,
@@ -4169,10 +4319,15 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
     },
     rows: normalizedRows
   };
+  if (scopeType === 'factory') {
+    normalizedScope.categoryType = categoryType;
+  }
+  return normalizedScope;
 }
 
 function normalizeSalesWorkbook(rawWorkbook = null) {
   const fallback = buildDefaultSalesWorkbook();
+  const salesMainTabs = getSalesMainTabs();
   const source = rawWorkbook && typeof rawWorkbook === 'object' ? rawWorkbook : {};
   const sourceTabs = source.tabs && typeof source.tabs === 'object' ? source.tabs : {};
   const sourceGlobals = source.globals && typeof source.globals === 'object' ? source.globals : {};
@@ -4188,7 +4343,7 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
   });
 
   const tabs = {};
-  for (const tab of SALES_MAIN_TABS) {
+  for (const tab of salesMainTabs) {
     const rawTab = sourceTabs[tab.key] && typeof sourceTabs[tab.key] === 'object' ? sourceTabs[tab.key] : {};
     const tabSettings = normalizeSalesSettingValues(rawTab.settings || {}, globals);
     if (tab.scopeType === 'factory') {
@@ -4242,8 +4397,7 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
     tabs,
     meta: {
       importedFrom:
-        normalizeSalesText(sourceMeta.importedFrom, 400) ||
-        normalizeSalesText(getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL), 400),
+        normalizeSalesText(sourceMeta.importedFrom, 400) || 'local-workbook',
       importedAt: normalizeSalesText(sourceMeta.importedAt, 40),
       updatedAt: now
     }
@@ -4282,7 +4436,7 @@ function saveSalesWorkbook(inputWorkbook = null, options = {}) {
       updatedAt: now
     },
     meta: {
-      importedFrom: importedFrom || normalizeSalesText(getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL), 400),
+      importedFrom: importedFrom || 'local-workbook',
       importedAt,
       updatedAt: now
     }
@@ -4359,8 +4513,9 @@ function buildSalesScopeSummary(scope = {}, settings = {}) {
 
 function buildSalesWorkbookPayload(workbook) {
   const normalized = normalizeSalesWorkbook(workbook);
+  const salesMainTabs = getSalesMainTabs();
 
-  const tabs = SALES_MAIN_TABS.map((tabInfo) => {
+  const tabs = salesMainTabs.map((tabInfo) => {
     const tab = normalized.tabs[tabInfo.key];
     const scopes = getSalesScopeList(tab).map((scope) => {
       const effectiveSettings = getEffectiveSalesSettings(tab, scope, normalized.globals);
@@ -4368,6 +4523,10 @@ function buildSalesWorkbookPayload(workbook) {
         id: scope.id,
         name: scope.name,
         date: normalizeSalesDate(scope?.settings?.baseDate || scope?.date || ''),
+        categoryType:
+          tabInfo.scopeType === 'factory'
+            ? normalizeSalesPriceSheetCategoryType(scope?.categoryType || '')
+            : '',
         settings: effectiveSettings,
         summary: buildSalesScopeSummary(scope, effectiveSettings),
         rows: scope.rows.map((row) => ({
@@ -4409,12 +4568,16 @@ function isSalesTokenMatch(a = '', b = '') {
   return left === right || left.includes(right) || right.includes(left);
 }
 
-function getSalesTabKeyForCategoryGroup(categoryGroup = '') {
+function getSalesTabKeyForCategoryGroup(categoryGroup = '', groupConfigs = null) {
   const normalized = normalizeProductGroupKey(categoryGroup || '');
-  if (normalized === '공장제') return 'factory';
-  if (normalized === '젠파츠') return 'genparts';
-  if (normalized === '현지중고') return 'used';
-  return '';
+  if (!normalized) {
+    return '';
+  }
+
+  const matched = getSalesMainTabs(groupConfigs).find(
+    (tab) => normalizeProductGroupKey(tab?.groupKey || '') === normalized
+  );
+  return String(matched?.key || '').trim();
 }
 
 function resolveSalesScopeDate(scope = {}) {
@@ -4630,6 +4793,7 @@ function extractRoundNameFromTitle(title = '', tabKey = '') {
 
 function buildSalesWorkbookFromSheetSnapshot(snapshot = {}) {
   const base = buildDefaultSalesWorkbook();
+  const salesMainTabs = getSalesMainTabs();
   const tabs = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
   let detectedExchangeRate = null;
   let detectedShippingFeeKrw = null;
@@ -4638,7 +4802,7 @@ function buildSalesWorkbookFromSheetSnapshot(snapshot = {}) {
 
   for (const importedTab of tabs) {
     if (!importedTab || importedTab.status !== 'ok') continue;
-    const tabInfo = SALES_MAIN_TABS.find((item) => item.key === importedTab.key);
+    const tabInfo = salesMainTabs.find((item) => item.key === importedTab.key);
     if (!tabInfo) continue;
 
     const headers = Array.isArray(importedTab.headers) ? importedTab.headers : [];
@@ -4683,6 +4847,7 @@ function buildSalesWorkbookFromSheetSnapshot(snapshot = {}) {
           groupMap.set(factoryName, {
             id: createSalesId('scope-price'),
             name: normalizeSalesText(factoryName, 80) || '기본',
+            categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
             rows: []
           });
         }
@@ -4813,11 +4978,12 @@ async function fetchSalesImportTab(sheetId, tabConfig) {
 }
 
 async function importSalesWorkbookFromGoogleSheet() {
-  const sourceUrl = getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL);
-  const sheetId = extractGoogleSheetId(sourceUrl) || extractGoogleSheetId(SALES_SHEET_DEFAULT_URL);
+  const sourceUrl = SALES_SHEET_DEFAULT_URL;
+  const sheetId = extractGoogleSheetId(SALES_SHEET_DEFAULT_URL);
   if (!sheetId) {
     throw new Error('invalid sales sheet id');
   }
+  const previousWorkbook = getSalesWorkbook();
 
   const tabs = await Promise.all(
     SALES_IMPORT_TABS.map(async (tab) => {
@@ -4837,16 +5003,59 @@ async function importSalesWorkbookFromGoogleSheet() {
       }
     })
   );
+  const importedTabKeySet = new Set(
+    tabs
+      .filter((tab) => tab && tab.status === 'ok')
+      .map((tab) => String(tab.key || '').trim())
+      .filter(Boolean)
+  );
 
   const workbook = buildSalesWorkbookFromSheetSnapshot({
     sourceUrl,
     sheetId,
     tabs
   });
+  const mergedTabs = workbook.tabs && typeof workbook.tabs === 'object' ? { ...workbook.tabs } : {};
+  const previousTabs = previousWorkbook?.tabs && typeof previousWorkbook.tabs === 'object'
+    ? previousWorkbook.tabs
+    : {};
+  getSalesMainTabs().forEach((tab) => {
+    const tabKey = String(tab?.key || '').trim();
+    if (!tabKey || importedTabKeySet.has(tabKey)) {
+      return;
+    }
+    const previousTab = previousTabs[tabKey];
+    if (previousTab && typeof previousTab === 'object') {
+      mergedTabs[tabKey] = previousTab;
+    }
+  });
+  workbook.tabs = mergedTabs;
+
   return saveSalesWorkbook(workbook, {
     importedFrom: sourceUrl,
     importedAt: new Date().toISOString()
   });
+}
+
+async function syncSalesWorkbookFromLegacySheetOnce() {
+  const alreadySyncedAt = String(getSetting(SALES_LEGACY_SHEET_SYNC_DONE_KEY, '') || '').trim();
+  if (alreadySyncedAt) {
+    return;
+  }
+
+  try {
+    await importSalesWorkbookFromGoogleSheet();
+    const syncedAt = new Date().toISOString();
+    setSetting(SALES_LEGACY_SHEET_SYNC_DONE_KEY, syncedAt);
+    // eslint-disable-next-line no-console
+    console.log('[sales] legacy google sheet data synced once and disabled.');
+  } catch (error) {
+    logDetailedError(
+      'sales-legacy-sheet-sync-failed',
+      error instanceof Error ? error : new Error(String(error)),
+      {}
+    );
+  }
 }
 
 async function fetchCnyKrwExchangeRate() {
@@ -10474,7 +10683,6 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     businessInfo: getSetting('businessInfo', ''),
     footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
     footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
-    salesSheetUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
     languageDefault: getSetting('languageDefault', 'ko'),
     menusJson: JSON.stringify(publicMenus, null, 2)
   };
@@ -10690,8 +10898,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     productGroups: productGroupConfigs.map((group) => group.key),
     productGroupConfigs,
     groupLabelMap,
-    salesMainTabs: SALES_MAIN_TABS,
-    salesSheetDefaultUrl: SALES_SHEET_DEFAULT_URL
+    salesMainTabs: getSalesMainTabs(productGroupConfigs)
   };
 }
 
@@ -11837,28 +12044,11 @@ app.get(
   '/admin/sales/data',
   requireAdmin,
   asyncRoute(async (req, res) => {
-    const shouldImportFromSheet = req.query.importFromSheet === '1';
-    let workbook = null;
-    const rawStoredWorkbook = String(getSetting(SALES_WORKBOOK_SETTING_KEY, '') || '').trim();
-
-    if (shouldImportFromSheet) {
-      workbook = await importSalesWorkbookFromGoogleSheet();
-      logAdminActivity(req, 'SALES_IMPORT', 'sales workbook imported from google sheet');
-    } else if (!rawStoredWorkbook) {
-      try {
-        workbook = await importSalesWorkbookFromGoogleSheet();
-      } catch {
-        workbook = getSalesWorkbook();
-      }
-    } else {
-      workbook = getSalesWorkbook();
-    }
-
+    const workbook = getSalesWorkbook();
     const payload = buildSalesWorkbookPayload(workbook);
     return res.json({
       ok: true,
-      sourceUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
-      mainTabs: SALES_MAIN_TABS,
+      mainTabs: getSalesMainTabs(),
       ...payload
     });
   })
@@ -11876,8 +12066,7 @@ app.post(
 
     return res.json({
       ok: true,
-      sourceUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
-      mainTabs: SALES_MAIN_TABS,
+      mainTabs: getSalesMainTabs(),
       ...buildSalesWorkbookPayload(savedWorkbook)
     });
   })
@@ -11957,8 +12146,7 @@ app.post(
     logAdminActivity(req, 'SALES_FX_SYNC', `tab:${tabKey || 'global'} scope:${scopeId || '-'} CNY/KRW=${fx.exchangeRate}`);
     return res.json({
       ok: true,
-      sourceUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
-      mainTabs: SALES_MAIN_TABS,
+      mainTabs: getSalesMainTabs(),
       ...buildSalesWorkbookPayload(savedWorkbook)
     });
   })
@@ -11967,15 +12155,10 @@ app.post(
 app.post(
   '/admin/sales/import-sheet',
   requireAdmin,
-  asyncRoute(async (req, res) => {
-    const workbook = await importSalesWorkbookFromGoogleSheet();
-    logAdminActivity(req, 'SALES_IMPORT', 'sales workbook imported from google sheet');
-    return res.json({
-      ok: true,
-      sourceUrl: getSetting('salesSheetUrl', SALES_SHEET_DEFAULT_URL),
-      mainTabs: SALES_MAIN_TABS,
-      ...buildSalesWorkbookPayload(workbook)
-    });
+  (req, res) => res.status(410).json({
+    ok: false,
+    error: 'legacy_sheet_import_removed',
+    message: '구글시트 연동 기능은 종료되었습니다.'
   })
 );
 
@@ -14260,6 +14443,8 @@ app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Chrono Lab server running on http://localhost:${PORT}`);
 });
+
+void syncSalesWorkbookFromLegacySheetOnce();
 
 setInterval(() => {
   void pollTrackingAndAutoCompleteOrders(false);

@@ -3298,6 +3298,37 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 .sales-tab-nav {
   margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 8px;
+}
+
+.sales-price-sheet-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.sales-price-sheet-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 8px 10px;
+}
+
+.sales-price-sheet-group-title {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.sales-price-sheet-chip-row {
+  margin-top: 0;
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-bottom: 0;
+  gap: 6px;
 }
 
 .sales-daily-filter-form {
@@ -3565,6 +3596,15 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 .sales-error {
   margin: 4px 0 0;
   color: #dc2626;
+}
+
+body.theme-night .sales-price-sheet-group {
+  background: #1f3353;
+  border-color: #7d95bc;
+}
+
+body.theme-night .sales-price-sheet-group-title {
+  color: #c5d7ff;
 }
 
 body.theme-night .sales-error {
