@@ -4547,7 +4547,6 @@
           factoryNameInput.type = 'text';
           factoryNameInput.placeholder = isEn ? 'Factory sheet name' : '공장 시트명';
           factoryNameInput.value = isAllFactoryScopesSelected ? '' : String(activePriceScope?.name || '');
-          factoryNameInput.disabled = isAllFactoryScopesSelected;
 
           const factoryActions = document.createElement('div');
           factoryActions.className = 'sales-price-taxonomy-actions';
