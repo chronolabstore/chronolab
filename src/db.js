@@ -221,6 +221,8 @@ const defaultSettings = {
   memberLevelPointRates: JSON.stringify(DEFAULT_MEMBER_LEVEL_POINT_RATES),
   contactInfo: '고객센터: 010-0000-0000 / 카카오톡: @chronolab',
   businessInfo: '상호: Chrono Lab | 대표: Chrono Team | 사업자번호: 000-00-00000',
+  footerBrandCopyKo: '심플하고 신뢰할 수 있는 시계 쇼핑.',
+  footerBrandCopyEn: 'Simple. Clean. Trusted watch shopping.',
   languageDefault: 'ko',
   productGroupConfigs: JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS),
   productBadgeSeedV1: '0'
