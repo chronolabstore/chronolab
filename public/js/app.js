@@ -66,11 +66,26 @@
     var popupCurrent = popup.querySelector('[data-popup-current]');
     var popupTotal = popup.querySelector('[data-popup-total]');
 
+    function hideCardElement(card) {
+      if (!card) {
+        return;
+      }
+      card.hidden = true;
+      card.classList.remove('is-active', 'is-next', 'is-next-2', 'is-previous');
+    }
+
+    function showCardElement(card) {
+      if (!card) {
+        return;
+      }
+      card.hidden = false;
+    }
+
     var now = Date.now();
     var visibleCards = popupCards.filter(function (card) {
       var popupId = card.getAttribute('data-popup-id');
       if (!popupId) {
-        card.classList.add('hidden');
+        hideCardElement(card);
         return false;
       }
       var hideKey = 'chronolab-popup-hide-' + popupId;
@@ -79,10 +94,10 @@
       var hiddenForSevenDays = savedUntil > now;
       var shownInSession = sessionStorage.getItem(sessionKey) === '1';
       if (hiddenForSevenDays || shownInSession) {
-        card.classList.add('hidden');
+        hideCardElement(card);
         return false;
       }
-      card.classList.remove('hidden');
+      showCardElement(card);
       return true;
     });
 
@@ -180,7 +195,7 @@
         localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
       }
       sessionStorage.setItem(sessionKey, '1');
-      card.classList.add('hidden');
+      hideCardElement(card);
 
       var removedIndex = visibleCards.indexOf(card);
       if (removedIndex !== -1) {

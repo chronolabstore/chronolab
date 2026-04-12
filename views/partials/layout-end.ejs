@@ -33,12 +33,12 @@
           </button>
 
           <section class="popup-notice-deck-viewport" data-popup-viewport>
-            <div class="popup-notice-deck-meta" data-popup-meta>
-              <strong data-popup-current>1</strong>
-              <span>/</span>
-              <span data-popup-total><%= popupNoticeList.length %></span>
-            </div>
             <div class="popup-notice-deck-stack" data-popup-stack>
+              <div class="popup-notice-deck-meta" data-popup-meta>
+                <strong data-popup-current>1</strong>
+                <span>/</span>
+                <span data-popup-total><%= popupNoticeList.length %></span>
+              </div>
               <% popupNoticeList.forEach((popupNotice) => { %>
                 <article class="popup-card popup-notice-card" data-popup-card data-popup-id="<%= popupNotice.id %>">
                   <h3><%= popupNotice.title %></h3>
