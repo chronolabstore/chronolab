@@ -2,52 +2,52 @@
 
 :root {
   --font-main: 'Noto Sans KR', 'Noto Sans', sans-serif;
-  --color-light-gray: #edf2f8;
-  --color-dark-gray: #61718a;
-  --color-navy: #0f172a;
-  --color-black: #0b1120;
+  --color-light-gray: #f5f5f5;
+  --color-dark-gray: #707a8a;
+  --color-navy: #1e2329;
+  --color-black: #1e2329;
   --color-white: #ffffff;
-  --bg: #f3f6fb;
-  --text: #111827;
-  --muted: #64748b;
-  --line: #d4deea;
+  --bg: #f8f9fa;
+  --text: #1e2329;
+  --muted: #707a8a;
+  --line: #e6e8eb;
   --card: #ffffff;
-  --card-dark: #0f1a2d;
-  --card-dark-text: #f2f6ff;
-  --chip: #eef3f9;
-  --shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
-  --header-fg: #f5f8ff;
-  --header-ui-border: rgba(224, 231, 255, 0.34);
-  --header-ui-bg: rgba(148, 163, 184, 0.16);
-  --header-ui-bg-hover: rgba(148, 163, 184, 0.28);
-  --header-glyph-bg: rgba(148, 163, 184, 0.28);
+  --card-dark: #1e2329;
+  --card-dark-text: #fafafa;
+  --chip: #f5f5f5;
+  --shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  --header-fg: #f2f3f5;
+  --header-ui-border: rgba(183, 189, 198, 0.32);
+  --header-ui-bg: rgba(183, 189, 198, 0.14);
+  --header-ui-bg-hover: rgba(183, 189, 198, 0.24);
+  --header-glyph-bg: rgba(183, 189, 198, 0.24);
   --header-badge-bg: var(--color-white);
-  --header-badge-text: var(--color-navy);
-  --header-badge-border: rgba(148, 163, 184, 0.42);
-  --hero-quick-border: rgba(148, 163, 184, 0.36);
-  --hero-quick-bg: rgba(148, 163, 184, 0.14);
-  --hero-quick-hover-bg: rgba(148, 163, 184, 0.25);
+  --header-badge-text: #1e2329;
+  --header-badge-border: rgba(183, 189, 198, 0.42);
+  --hero-quick-border: rgba(183, 189, 198, 0.4);
+  --hero-quick-bg: rgba(183, 189, 198, 0.16);
+  --hero-quick-hover-bg: rgba(183, 189, 198, 0.26);
   --surface-overlay: rgba(15, 23, 42, 0.08);
-  --surface-overlay-strong: rgba(15, 23, 42, 0.66);
-  --gallery-control-bg: rgba(15, 23, 42, 0.5);
-  --gallery-control-border: rgba(148, 163, 184, 0.48);
+  --surface-overlay-strong: rgba(17, 22, 31, 0.72);
+  --gallery-control-bg: rgba(17, 22, 31, 0.58);
+  --gallery-control-border: rgba(183, 189, 198, 0.5);
   --gallery-control-text: var(--color-white);
-  --modal-overlay: rgba(10, 16, 30, 0.66);
-  --modal-surface-bg: rgba(15, 23, 42, 0.92);
-  --modal-surface-border: rgba(148, 163, 184, 0.3);
-  --detail-secondary-border: rgba(148, 163, 184, 0.42);
-  --detail-secondary-bg-hover: rgba(148, 163, 184, 0.18);
-  --btn-primary-bg: #2563eb;
-  --btn-primary-text: #f8fafc;
-  --btn-primary-border: #2563eb;
-  --btn-primary-bg-hover: #1d4ed8;
-  --btn-primary-text-hover: var(--color-white);
-  --btn-secondary-bg: #f8fafc;
-  --btn-secondary-text: #0f172a;
-  --btn-secondary-border: #c3cfdf;
-  --btn-secondary-bg-hover: #edf2f8;
-  --btn-secondary-text-hover: #0f172a;
-  --focus-ring: rgba(37, 99, 235, 0.34);
+  --modal-overlay: rgba(15, 17, 26, 0.72);
+  --modal-surface-bg: rgba(30, 35, 41, 0.94);
+  --modal-surface-border: rgba(183, 189, 198, 0.34);
+  --detail-secondary-border: rgba(183, 189, 198, 0.44);
+  --detail-secondary-bg-hover: rgba(183, 189, 198, 0.18);
+  --btn-primary-bg: #fcd535;
+  --btn-primary-text: #1e2329;
+  --btn-primary-border: #fcd535;
+  --btn-primary-bg-hover: #f0b90b;
+  --btn-primary-text-hover: #1e2329;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-text: #1e2329;
+  --btn-secondary-border: #d3d7de;
+  --btn-secondary-bg-hover: #f5f5f5;
+  --btn-secondary-text-hover: #1e2329;
+  --focus-ring: rgba(252, 213, 53, 0.38);
   --error-text: #b91c1c;
   --radius-xl: 16px;
   --radius-lg: 12px;
@@ -82,57 +82,57 @@ body {
   min-height: 100vh;
   background-color: var(--bg);
   background-image:
-    radial-gradient(circle at 8% -12%, rgba(37, 99, 235, 0.12), transparent 34%),
-    radial-gradient(circle at 94% 0%, rgba(14, 165, 233, 0.1), transparent 32%);
+    radial-gradient(circle at 8% -12%, rgba(252, 213, 53, 0.14), transparent 36%),
+    radial-gradient(circle at 92% -10%, rgba(252, 213, 53, 0.07), transparent 34%);
   background-attachment: fixed;
 }
 
 body.theme-night {
-  --bg: #0b111d;
-  --text: #e6ecf8;
-  --muted: #9aacbf;
-  --line: #2b3b52;
-  --card: #111b2f;
-  --card-dark: #0c1526;
-  --card-dark-text: #ecf2ff;
-  --chip: #17253a;
-  --header-fg: #e6ecf8;
-  --header-ui-border: rgba(148, 163, 184, 0.35);
-  --header-ui-bg: rgba(148, 163, 184, 0.16);
-  --header-ui-bg-hover: rgba(148, 163, 184, 0.28);
-  --header-glyph-bg: rgba(148, 163, 184, 0.24);
-  --header-badge-bg: #f3f8ff;
-  --header-badge-text: #0b1220;
-  --header-badge-border: rgba(148, 163, 184, 0.48);
-  --hero-quick-border: rgba(148, 163, 184, 0.38);
-  --hero-quick-bg: rgba(15, 23, 42, 0.42);
-  --hero-quick-hover-bg: rgba(59, 130, 246, 0.22);
-  --surface-overlay: rgba(148, 163, 184, 0.12);
-  --surface-overlay-strong: rgba(2, 6, 23, 0.82);
-  --gallery-control-bg: rgba(2, 6, 23, 0.66);
-  --gallery-control-border: rgba(148, 163, 184, 0.42);
-  --gallery-control-text: #eaf1ff;
-  --modal-overlay: rgba(2, 6, 23, 0.86);
-  --modal-surface-bg: rgba(11, 18, 32, 0.95);
-  --modal-surface-border: rgba(148, 163, 184, 0.3);
-  --detail-secondary-border: rgba(148, 163, 184, 0.42);
-  --detail-secondary-bg-hover: rgba(148, 163, 184, 0.18);
-  --btn-primary-bg: #3b82f6;
-  --btn-primary-text: #f4f8ff;
-  --btn-primary-border: #3b82f6;
-  --btn-primary-bg-hover: #2563eb;
-  --btn-primary-text-hover: #ffffff;
-  --btn-secondary-bg: #152338;
-  --btn-secondary-text: #dce6f7;
-  --btn-secondary-border: #334963;
-  --btn-secondary-bg-hover: #1d2f49;
-  --btn-secondary-text-hover: #f4f8ff;
-  --focus-ring: rgba(96, 165, 250, 0.36);
-  --error-text: #fda4af;
-  --shadow: 0 16px 38px rgba(2, 6, 23, 0.5);
+  --bg: #181a20;
+  --text: #eaecef;
+  --muted: #b7bdc6;
+  --line: #2b3139;
+  --card: #1e2329;
+  --card-dark: #181a20;
+  --card-dark-text: #eaecef;
+  --chip: #2b3139;
+  --header-fg: #eaecef;
+  --header-ui-border: rgba(183, 189, 198, 0.35);
+  --header-ui-bg: rgba(183, 189, 198, 0.14);
+  --header-ui-bg-hover: rgba(183, 189, 198, 0.24);
+  --header-glyph-bg: rgba(183, 189, 198, 0.22);
+  --header-badge-bg: #fcd535;
+  --header-badge-text: #1e2329;
+  --header-badge-border: rgba(252, 213, 53, 0.5);
+  --hero-quick-border: rgba(183, 189, 198, 0.4);
+  --hero-quick-bg: rgba(43, 49, 57, 0.78);
+  --hero-quick-hover-bg: rgba(252, 213, 53, 0.2);
+  --surface-overlay: rgba(183, 189, 198, 0.1);
+  --surface-overlay-strong: rgba(8, 9, 11, 0.84);
+  --gallery-control-bg: rgba(8, 9, 11, 0.74);
+  --gallery-control-border: rgba(183, 189, 198, 0.42);
+  --gallery-control-text: #eaecef;
+  --modal-overlay: rgba(8, 9, 11, 0.88);
+  --modal-surface-bg: rgba(24, 26, 32, 0.96);
+  --modal-surface-border: rgba(183, 189, 198, 0.3);
+  --detail-secondary-border: rgba(183, 189, 198, 0.46);
+  --detail-secondary-bg-hover: rgba(183, 189, 198, 0.16);
+  --btn-primary-bg: #fcd535;
+  --btn-primary-text: #1e2329;
+  --btn-primary-border: #fcd535;
+  --btn-primary-bg-hover: #f0b90b;
+  --btn-primary-text-hover: #1e2329;
+  --btn-secondary-bg: #2b3139;
+  --btn-secondary-text: #eaecef;
+  --btn-secondary-border: #474d57;
+  --btn-secondary-bg-hover: #3a4149;
+  --btn-secondary-text-hover: #fafafa;
+  --focus-ring: rgba(252, 213, 53, 0.38);
+  --error-text: #ff7875;
+  --shadow: 0 16px 38px rgba(0, 0, 0, 0.55);
   background-image:
-    radial-gradient(circle at 6% -16%, rgba(59, 130, 246, 0.18), transparent 38%),
-    radial-gradient(circle at 90% -8%, rgba(56, 189, 248, 0.12), transparent 34%);
+    radial-gradient(circle at 6% -16%, rgba(252, 213, 53, 0.16), transparent 40%),
+    radial-gradient(circle at 94% -8%, rgba(252, 213, 53, 0.08), transparent 36%);
 }
 
 body.theme-night input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
@@ -302,8 +302,8 @@ body.theme-night input:not([type='checkbox']):not([type='radio']):not([type='ran
 body.theme-night select:focus,
 body.theme-night textarea:focus {
   outline: none;
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.28);
+  border-color: #f0b90b;
+  box-shadow: 0 0 0 3px rgba(252, 213, 53, 0.32);
 }
 
 a {
@@ -3667,8 +3667,8 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-inline-input:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.2);
-  border-color: #3b82f6;
+  outline: 2px solid rgba(252, 213, 53, 0.22);
+  border-color: #f0b90b;
 }
 
 .sales-row-index {
