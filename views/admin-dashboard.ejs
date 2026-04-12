@@ -4381,46 +4381,63 @@
           ensureScopeTaxonomy(activePriceScope);
           ensurePriceFilters(activePriceScope);
 
-          const scopeSheetWrap = document.createElement('section');
-          scopeSheetWrap.className = 'sales-price-sheet-group';
-          const scopeSheetTitle = document.createElement('h5');
-          scopeSheetTitle.className = 'sales-price-sheet-group-title';
-          scopeSheetTitle.textContent = isEn ? 'Factory Sheets' : '공장 시트';
-          const scopeNav = document.createElement('div');
-          scopeNav.className = 'security-subnav sales-price-sheet-chip-row';
-          scopes.forEach((scope) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = `menu-pill ${scope.id === activeScopeId ? 'active' : ''}`;
-            btn.textContent = scope.name;
-            btn.addEventListener('click', () => {
-              activeScopeId = scope.id;
-              activePriceBrand = '';
-              activePriceModel = '';
-              clearError();
-              renderGlobalFields();
-              renderScopeControls();
-              renderTableRows();
-              renderSummary();
-              renderMeta();
+          const taxonomyPanel = document.createElement('div');
+          taxonomyPanel.className = 'sales-price-taxonomy-grid';
+
+          const keyboardHint = document.createElement('p');
+          keyboardHint.className = 'muted-label sales-price-tip';
+          keyboardHint.textContent = isEn
+            ? 'Tip: type a name and press Enter to add quickly.'
+            : '팁: 이름 입력 후 Enter 키로 빠르게 추가할 수 있습니다.';
+          taxonomyPanel.appendChild(keyboardHint);
+
+          const triggerOnEnter = (input, button) => {
+            if (!input || !button) return;
+            input.addEventListener('keydown', (event) => {
+              if (event.key !== 'Enter' || event.isComposing) return;
+              event.preventDefault();
+              if (!button.disabled) {
+                button.click();
+              }
             });
-            scopeNav.appendChild(btn);
+          };
+
+          const factoryRow = document.createElement('div');
+          factoryRow.className = 'sales-price-taxonomy-row';
+          const factoryTitle = document.createElement('strong');
+          factoryTitle.className = 'sales-price-taxonomy-row-title';
+          factoryTitle.textContent = isEn ? 'Factory Sheet' : '공장 시트';
+          const factorySelect = document.createElement('select');
+          scopes.forEach((scope) => {
+            const option = document.createElement('option');
+            option.value = scope.id;
+            option.textContent = scope.name;
+            option.selected = scope.id === activeScopeId;
+            factorySelect.appendChild(option);
           });
-          scopeSheetWrap.append(scopeSheetTitle, scopeNav);
-          scopeControls.appendChild(scopeSheetWrap);
-
-          const factoryAction = document.createElement('div');
-          factoryAction.className = 'sales-scope-action-row';
-
+          factorySelect.addEventListener('change', () => {
+            activeScopeId = factorySelect.value;
+            activePriceBrand = '';
+            activePriceModel = '';
+            clearError();
+            renderGlobalFields();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
           const factoryNameInput = document.createElement('input');
           factoryNameInput.type = 'text';
           factoryNameInput.placeholder = isEn ? 'Factory sheet name' : '공장 시트명';
           factoryNameInput.value = String(activePriceScope?.name || '');
 
+          const factoryActions = document.createElement('div');
+          factoryActions.className = 'sales-price-taxonomy-actions';
+
           const addFactoryBtn = document.createElement('button');
           addFactoryBtn.type = 'button';
           addFactoryBtn.className = 'chip';
-          addFactoryBtn.textContent = isEn ? 'Add Factory Sheet' : '공장 시트 추가';
+          addFactoryBtn.textContent = isEn ? 'Add' : '추가';
           addFactoryBtn.addEventListener('click', () => {
             const nextName =
               normalizePriceSheetName(factoryNameInput.value, 80) || (isEn ? 'New Factory' : '새 공장');
@@ -4447,7 +4464,8 @@
           const renameFactoryBtn = document.createElement('button');
           renameFactoryBtn.type = 'button';
           renameFactoryBtn.className = 'chip';
-          renameFactoryBtn.textContent = isEn ? 'Rename Factory Sheet' : '공장 시트 이름변경';
+          renameFactoryBtn.textContent = isEn ? 'Rename' : '이름변경';
+          renameFactoryBtn.disabled = !activePriceScope;
           renameFactoryBtn.addEventListener('click', () => {
             const scope = getActiveScope();
             if (!scope) return;
@@ -4474,7 +4492,8 @@
           const deleteFactoryBtn = document.createElement('button');
           deleteFactoryBtn.type = 'button';
           deleteFactoryBtn.className = 'chip';
-          deleteFactoryBtn.textContent = isEn ? 'Delete Factory Sheet' : '공장 시트 삭제';
+          deleteFactoryBtn.textContent = isEn ? 'Delete' : '삭제';
+          deleteFactoryBtn.disabled = !Array.isArray(tab.groups) || tab.groups.length <= 1;
           deleteFactoryBtn.addEventListener('click', () => {
             if (!Array.isArray(tab.groups) || tab.groups.length <= 1) {
               showError(isEn ? 'At least one factory sheet is required.' : '공장 시트는 최소 1개가 필요합니다.');
@@ -4492,22 +4511,10 @@
             renderSummary();
             renderMeta();
           });
-
-          const rowSeparator = document.createElement('span');
-          rowSeparator.className = 'sales-scope-inline-separator';
-          rowSeparator.textContent = '|';
-          factoryAction.append(
-            factoryNameInput,
-            addFactoryBtn,
-            renameFactoryBtn,
-            deleteFactoryBtn,
-            rowSeparator,
-            rowActionHost
-          );
-          scopeControls.appendChild(factoryAction);
-
-          const taxonomyPanel = document.createElement('div');
-          taxonomyPanel.className = 'sales-price-taxonomy-grid';
+          triggerOnEnter(factoryNameInput, addFactoryBtn);
+          factoryActions.append(addFactoryBtn, renameFactoryBtn, deleteFactoryBtn);
+          factoryRow.append(factoryTitle, factorySelect, factoryNameInput, factoryActions);
+          taxonomyPanel.appendChild(factoryRow);
 
           const brandRow = document.createElement('div');
           brandRow.className = 'sales-price-taxonomy-row';
@@ -4545,7 +4552,7 @@
           const addBrandBtn = document.createElement('button');
           addBrandBtn.type = 'button';
           addBrandBtn.className = 'chip';
-          addBrandBtn.textContent = isEn ? 'Add Brand' : '브랜드 추가';
+          addBrandBtn.textContent = isEn ? 'Add' : '추가';
           addBrandBtn.addEventListener('click', () => {
             const nextBrandName = normalizePriceSheetName(brandInput.value, 80);
             if (!nextBrandName) {
@@ -4571,7 +4578,8 @@
           const renameBrandBtn = document.createElement('button');
           renameBrandBtn.type = 'button';
           renameBrandBtn.className = 'chip';
-          renameBrandBtn.textContent = isEn ? 'Rename Brand' : '브랜드 이름변경';
+          renameBrandBtn.textContent = isEn ? 'Rename' : '이름변경';
+          renameBrandBtn.disabled = !activePriceBrand;
           renameBrandBtn.addEventListener('click', () => {
             if (!activePriceBrand) {
               showError(isEn ? 'Select a brand first.' : '먼저 브랜드를 선택해 주세요.');
@@ -4618,7 +4626,8 @@
           const deleteBrandBtn = document.createElement('button');
           deleteBrandBtn.type = 'button';
           deleteBrandBtn.className = 'chip';
-          deleteBrandBtn.textContent = isEn ? 'Delete Brand' : '브랜드 삭제';
+          deleteBrandBtn.textContent = isEn ? 'Delete' : '삭제';
+          deleteBrandBtn.disabled = !activePriceBrand;
           deleteBrandBtn.addEventListener('click', () => {
             if (!activePriceBrand) {
               showError(isEn ? 'Select a brand first.' : '먼저 브랜드를 선택해 주세요.');
@@ -4644,7 +4653,11 @@
             renderSummary();
             renderMeta();
           });
-          brandRow.append(brandTitle, brandSelect, brandInput, addBrandBtn, renameBrandBtn, deleteBrandBtn);
+          triggerOnEnter(brandInput, addBrandBtn);
+          const brandActions = document.createElement('div');
+          brandActions.className = 'sales-price-taxonomy-actions';
+          brandActions.append(addBrandBtn, renameBrandBtn, deleteBrandBtn);
+          brandRow.append(brandTitle, brandSelect, brandInput, brandActions);
           taxonomyPanel.appendChild(brandRow);
 
           const modelRow = document.createElement('div');
@@ -4684,7 +4697,7 @@
           const addModelBtn = document.createElement('button');
           addModelBtn.type = 'button';
           addModelBtn.className = 'chip';
-          addModelBtn.textContent = isEn ? 'Add Model' : '모델 추가';
+          addModelBtn.textContent = isEn ? 'Add' : '추가';
           addModelBtn.disabled = !activePriceBrand;
           addModelBtn.addEventListener('click', () => {
             if (!activePriceBrand) {
@@ -4722,7 +4735,7 @@
           const renameModelBtn = document.createElement('button');
           renameModelBtn.type = 'button';
           renameModelBtn.className = 'chip';
-          renameModelBtn.textContent = isEn ? 'Rename Model' : '모델 이름변경';
+          renameModelBtn.textContent = isEn ? 'Rename' : '이름변경';
           renameModelBtn.disabled = !activePriceBrand || !activePriceModel;
           renameModelBtn.addEventListener('click', () => {
             if (!activePriceBrand || !activePriceModel) {
@@ -4777,7 +4790,7 @@
           const deleteModelBtn = document.createElement('button');
           deleteModelBtn.type = 'button';
           deleteModelBtn.className = 'chip';
-          deleteModelBtn.textContent = isEn ? 'Delete Model' : '모델 삭제';
+          deleteModelBtn.textContent = isEn ? 'Delete' : '삭제';
           deleteModelBtn.disabled = !activePriceBrand || !activePriceModel;
           deleteModelBtn.addEventListener('click', () => {
             if (!activePriceBrand || !activePriceModel) {
@@ -4812,8 +4825,24 @@
             renderMeta();
           });
 
-          modelRow.append(modelTitle, modelSelect, modelInput, addModelBtn, renameModelBtn, deleteModelBtn);
+          triggerOnEnter(modelInput, addModelBtn);
+          const modelActions = document.createElement('div');
+          modelActions.className = 'sales-price-taxonomy-actions';
+          modelActions.append(addModelBtn, renameModelBtn, deleteModelBtn);
+          modelRow.append(modelTitle, modelSelect, modelInput, modelActions);
           taxonomyPanel.appendChild(modelRow);
+
+          const rowActionRow = document.createElement('div');
+          rowActionRow.className = 'sales-price-taxonomy-row sales-price-taxonomy-row-actions';
+          const rowActionTitle = document.createElement('strong');
+          rowActionTitle.className = 'sales-price-taxonomy-row-title';
+          rowActionTitle.textContent = isEn ? 'Rows' : '행';
+          const rowActionWrap = document.createElement('div');
+          rowActionWrap.className = 'sales-price-row-action-wrap';
+          rowActionWrap.appendChild(rowActionHost);
+          rowActionRow.append(rowActionTitle, rowActionWrap);
+          taxonomyPanel.appendChild(rowActionRow);
+
           scopeControls.appendChild(taxonomyPanel);
           return;
         }
