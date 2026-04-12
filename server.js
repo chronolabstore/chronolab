@@ -4186,6 +4186,66 @@ function createDefaultSalesRow(partial = {}) {
   };
 }
 
+function normalizeSalesSheetName(value = '', maxLength = 120) {
+  return normalizeSalesText(value, maxLength).replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSalesSheetNameKey(value = '') {
+  return normalizeSalesSheetName(value, 120).toLowerCase();
+}
+
+function compareSalesSheetNames(left = '', right = '') {
+  return String(left || '').localeCompare(String(right || ''), 'ko', {
+    sensitivity: 'base'
+  });
+}
+
+function normalizeSalesScopeTaxonomy(rawTaxonomy = {}, rows = []) {
+  const sourceBrands = Array.isArray(rawTaxonomy?.brands) ? rawTaxonomy.brands : [];
+  const brandMap = new Map();
+
+  const upsertBrand = (rawBrandName = '') => {
+    const brandName = normalizeSalesSheetName(rawBrandName, 80);
+    if (!brandName) return null;
+    const brandKey = normalizeSalesSheetNameKey(brandName);
+    if (!brandMap.has(brandKey)) {
+      brandMap.set(brandKey, { name: brandName, models: [] });
+    }
+    return brandMap.get(brandKey);
+  };
+
+  const upsertModel = (brandEntry, rawModelName = '') => {
+    if (!brandEntry) return;
+    const modelName = normalizeSalesSheetName(rawModelName, 120);
+    if (!modelName) return;
+    const modelKey = normalizeSalesSheetNameKey(modelName);
+    const hasModel = brandEntry.models.some((item) => normalizeSalesSheetNameKey(item) === modelKey);
+    if (!hasModel) {
+      brandEntry.models.push(modelName);
+    }
+  };
+
+  sourceBrands.forEach((brandItem) => {
+    const brandEntry = upsertBrand(brandItem?.name || '');
+    const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+    models.forEach((modelName) => upsertModel(brandEntry, modelName));
+  });
+
+  rows.forEach((row) => {
+    const brandEntry = upsertBrand(row?.brand || '');
+    upsertModel(brandEntry, row?.model || '');
+  });
+
+  const brands = [...brandMap.values()]
+    .map((brandItem) => ({
+      name: brandItem.name,
+      models: [...brandItem.models].sort(compareSalesSheetNames)
+    }))
+    .sort((a, b) => compareSalesSheetNames(a.name, b.name));
+
+  return { brands };
+}
+
 function buildDefaultPriceScopes() {
   const groupConfigs = getProductGroupConfigs();
   const factoryLikeGroup =
@@ -4199,6 +4259,7 @@ function buildDefaultPriceScopes() {
     id: createSalesId(`scope-p-${idx + 1}`),
     name: normalizeSalesText(name, 80) || `Factory ${idx + 1}`,
     categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
+    taxonomy: { brands: [] },
     rows: []
   }));
 }
@@ -4280,10 +4341,6 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
   const fallbackName = scopeType === 'factory' ? `Factory ${index + 1}` : createDefaultRoundName(tabKey, index + 1);
   const rows = Array.isArray(rawScope?.rows) ? rawScope.rows : [];
   const scopeMode = getSalesScopeMode(tabKey);
-  const categoryType =
-    scopeType === 'factory'
-      ? normalizeSalesPriceSheetCategoryType(rawScope?.categoryType || rawScope?.type || '')
-      : '';
 
   const normalizedRows = rows
     .map((row) => createDefaultSalesRow(row))
@@ -4320,7 +4377,13 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
     rows: normalizedRows
   };
   if (scopeType === 'factory') {
-    normalizedScope.categoryType = categoryType;
+    normalizedRows.forEach((row) => {
+      if (!normalizeSalesSheetName(row.factory, 60)) {
+        row.factory = normalizedScope.name;
+      }
+    });
+    normalizedScope.categoryType = SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY;
+    normalizedScope.taxonomy = normalizeSalesScopeTaxonomy(rawScope?.taxonomy || {}, normalizedRows);
   }
   return normalizedScope;
 }
@@ -4527,6 +4590,10 @@ function buildSalesWorkbookPayload(workbook) {
           tabInfo.scopeType === 'factory'
             ? normalizeSalesPriceSheetCategoryType(scope?.categoryType || '')
             : '',
+        taxonomy:
+          tabInfo.scopeType === 'factory'
+            ? normalizeSalesScopeTaxonomy(scope?.taxonomy || {}, scope?.rows || [])
+            : undefined,
         settings: effectiveSettings,
         summary: buildSalesScopeSummary(scope, effectiveSettings),
         rows: scope.rows.map((row) => ({
