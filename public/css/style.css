@@ -3459,6 +3459,37 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   flex-wrap: wrap;
 }
 
+.sales-price-taxonomy-grid {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sales-price-taxonomy-row {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 210px) minmax(140px, 1fr) repeat(3, auto);
+  align-items: center;
+  gap: 8px;
+}
+
+.sales-price-taxonomy-row-title {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sales-price-taxonomy-row select,
+.sales-price-taxonomy-row input {
+  min-height: 36px;
+}
+
+.sales-price-taxonomy-row .chip {
+  min-height: 36px;
+}
+
 .sales-date-action-group {
   margin-left: auto;
   display: inline-flex;
@@ -3477,6 +3508,14 @@ body.theme-night .menu-brand-model-list .admin-list-item {
     margin-left: 0;
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .sales-price-taxonomy-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sales-price-taxonomy-row-title {
+    grid-column: 1 / -1;
   }
 }
 
@@ -3604,6 +3643,15 @@ body.theme-night .sales-price-sheet-group {
 }
 
 body.theme-night .sales-price-sheet-group-title {
+  color: #c5d7ff;
+}
+
+body.theme-night .sales-price-taxonomy-grid {
+  background: #1f3353;
+  border-color: #7d95bc;
+}
+
+body.theme-night .sales-price-taxonomy-row-title {
   color: #c5d7ff;
 }
 

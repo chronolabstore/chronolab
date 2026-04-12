@@ -3839,6 +3839,8 @@
       let workbook = null;
       let activeTabKey = tabDefs[0]?.key || 'price';
       let activeScopeId = '';
+      let activePriceBrand = '';
+      let activePriceModel = '';
       let dirty = false;
       let saveInFlight = false;
       let saveQueued = false;
@@ -3883,57 +3885,119 @@
         return 'date';
       };
 
-      const normalizePriceSheetCategoryType = (value) => {
-        const normalized = String(value || '').trim().toLowerCase();
-        if (normalized === 'brand' || normalized === 'model') return normalized;
-        return 'factory';
-      };
-
-      const getPriceSheetCategoryLabel = (categoryType) => {
-        const normalized = normalizePriceSheetCategoryType(categoryType);
-        if (normalized === 'brand') {
-          return isEn ? 'Brand' : '브랜드';
-        }
-        if (normalized === 'model') {
-          return isEn ? 'Model' : '모델';
-        }
-        return isEn ? 'Factory' : '공장';
-      };
-
-      const getPriceSheetCategoryFieldKey = (categoryType) => {
-        const normalized = normalizePriceSheetCategoryType(categoryType);
-        if (normalized === 'brand') return 'brand';
-        if (normalized === 'model') return 'model';
-        return 'factory';
-      };
-
       const isPriceTableActive = () => getScopeMode(activeTabKey) === 'factory';
 
-      const applyPriceSheetNameToRows = (scope, previousName = '', previousCategoryType = '') => {
-        if (!scope || !Array.isArray(scope.rows)) return;
+      const normalizePriceSheetName = (value, maxLength = 80) =>
+        String(value || '')
+          .trim()
+          .replace(/\s+/g, ' ')
+          .slice(0, maxLength);
 
-        const nextCategoryType = normalizePriceSheetCategoryType(scope?.categoryType || '');
-        const nextFieldKey = getPriceSheetCategoryFieldKey(nextCategoryType);
-        const nextName = String(scope?.name || '').trim();
-        const prevFieldKey = getPriceSheetCategoryFieldKey(previousCategoryType || nextCategoryType);
-        const prevName = String(previousName || '').trim();
+      const normalizePriceSheetNameKey = (value) => normalizePriceSheetName(value).toLowerCase();
 
-        scope.rows.forEach((row) => {
-          if (!row || typeof row !== 'object') return;
+      const comparePriceSheetNames = (left, right) =>
+        String(left || '').localeCompare(String(right || ''), isEn ? 'en' : 'ko', { sensitivity: 'base' });
 
-          if (prevFieldKey !== nextFieldKey) {
-            const prevValue = String(row[prevFieldKey] || '').trim();
-            const nextValue = String(row[nextFieldKey] || '').trim();
-            if (prevValue && !nextValue) {
-              row[nextFieldKey] = prevValue;
-            }
+      const ensureScopeTaxonomy = (scope) => {
+        if (!scope || typeof scope !== 'object') {
+          return { brands: [] };
+        }
+
+        const brandMap = new Map();
+        const upsertBrand = (rawBrandName) => {
+          const brandName = normalizePriceSheetName(rawBrandName, 80);
+          if (!brandName) return null;
+          const brandKey = normalizePriceSheetNameKey(brandName);
+          if (!brandMap.has(brandKey)) {
+            brandMap.set(brandKey, { name: brandName, models: [] });
           }
-
-          const currentValue = String(row[nextFieldKey] || '').trim();
-          if (!currentValue || (prevName && currentValue === prevName)) {
-            row[nextFieldKey] = nextName;
+          return brandMap.get(brandKey);
+        };
+        const pushModel = (brandEntry, rawModelName) => {
+          if (!brandEntry) return;
+          const modelName = normalizePriceSheetName(rawModelName, 120);
+          if (!modelName) return;
+          const exists = brandEntry.models.some(
+            (item) => normalizePriceSheetNameKey(item) === normalizePriceSheetNameKey(modelName)
+          );
+          if (!exists) {
+            brandEntry.models.push(modelName);
           }
+        };
+
+        const rawBrands = Array.isArray(scope?.taxonomy?.brands) ? scope.taxonomy.brands : [];
+        rawBrands.forEach((brandItem) => {
+          const brandEntry = upsertBrand(brandItem?.name || '');
+          const rawModels = Array.isArray(brandItem?.models) ? brandItem.models : [];
+          rawModels.forEach((modelName) => pushModel(brandEntry, modelName));
         });
+
+        const rows = Array.isArray(scope.rows) ? scope.rows : [];
+        rows.forEach((row) => {
+          const brandEntry = upsertBrand(row?.brand || '');
+          pushModel(brandEntry, row?.model || '');
+        });
+
+        const brands = [...brandMap.values()]
+          .map((brandItem) => ({
+            name: brandItem.name,
+            models: [...brandItem.models].sort(comparePriceSheetNames)
+          }))
+          .sort((a, b) => comparePriceSheetNames(a.name, b.name));
+
+        scope.taxonomy = { brands };
+        return scope.taxonomy;
+      };
+
+      const findPriceBrandEntry = (scope, brandName = '') => {
+        const taxonomy = ensureScopeTaxonomy(scope);
+        const brandKey = normalizePriceSheetNameKey(brandName);
+        if (!brandKey) return null;
+        return taxonomy.brands.find((brandItem) => normalizePriceSheetNameKey(brandItem.name) === brandKey) || null;
+      };
+
+      const getPriceBrandNames = (scope) => {
+        const taxonomy = ensureScopeTaxonomy(scope);
+        return taxonomy.brands.map((brandItem) => brandItem.name);
+      };
+
+      const getPriceModelNames = (scope, brandName = '') => {
+        const brandEntry = findPriceBrandEntry(scope, brandName);
+        return brandEntry ? [...brandEntry.models] : [];
+      };
+
+      const ensurePriceFilters = (scope = getActiveScope()) => {
+        if (!isPriceTableActive() || !scope) {
+          activePriceBrand = '';
+          activePriceModel = '';
+          return;
+        }
+
+        const brandNames = getPriceBrandNames(scope);
+        const brandExists = brandNames.some(
+          (brandName) => normalizePriceSheetNameKey(brandName) === normalizePriceSheetNameKey(activePriceBrand)
+        );
+        if (!brandExists) {
+          activePriceBrand = brandNames[0] || '';
+        } else {
+          const matchedBrand = brandNames.find(
+            (brandName) => normalizePriceSheetNameKey(brandName) === normalizePriceSheetNameKey(activePriceBrand)
+          );
+          activePriceBrand = matchedBrand || activePriceBrand;
+        }
+
+        const modelNames = getPriceModelNames(scope, activePriceBrand);
+        const modelExists = modelNames.some(
+          (modelName) => normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(activePriceModel)
+        );
+        if (!modelExists) {
+          activePriceModel = modelNames[0] || '';
+        } else {
+          const matchedModel = modelNames.find(
+            (modelName) => normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(activePriceModel)
+          );
+          activePriceModel = matchedModel || activePriceModel;
+        }
       };
 
       const formatKrw = (value) => {
@@ -4067,8 +4131,7 @@
         if (mode === 'round') {
           return settings?.baseDate ? `${scope.name} (${settings.baseDate})` : (scope.name || '-');
         }
-        const categoryLabel = getPriceSheetCategoryLabel(scope?.categoryType || '');
-        return `${categoryLabel} / ${scope.name || '-'}`;
+        return scope.name || '-';
       };
 
       const calcRow = (row) => {
@@ -4184,23 +4247,38 @@
           return;
         }
 
+        const isPriceSheet = isPriceTableActive();
+        if (isPriceSheet) {
+          ensurePriceFilters(scope);
+        }
+
+        const visibleRows = scope.rows.filter((row) => {
+          if (!isPriceSheet) return true;
+          const rowBrandKey = normalizePriceSheetNameKey(row?.brand || '');
+          const rowModelKey = normalizePriceSheetNameKey(row?.model || '');
+          const activeBrandKey = normalizePriceSheetNameKey(activePriceBrand || '');
+          const activeModelKey = normalizePriceSheetNameKey(activePriceModel || '');
+          if (activeBrandKey && rowBrandKey !== activeBrandKey) return false;
+          if (activeModelKey && rowModelKey !== activeModelKey) return false;
+          return true;
+        });
+
+        if (visibleRows.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="14" class="muted-label">${
+            isPriceSheet && activePriceBrand
+              ? (isEn ? 'No rows in selected brand/model. Add a row to start.' : '선택한 브랜드/모델 분류에 행이 없습니다. 행 추가로 시작하세요.')
+              : (isEn ? 'No rows yet. Add a row to start.' : '행이 없습니다. 행 추가로 시작하세요.')
+          }</td></tr>`;
+          return;
+        }
+
         tableBody.innerHTML = '';
-        scope.rows.forEach((row, index) => {
+        visibleRows.forEach((row, index) => {
           const tr = document.createElement('tr');
           tr.dataset.rowId = row.id;
-          const isPriceSheet = getScopeMode(activeTabKey) === 'factory';
-          const priceSheetCategoryType = isPriceSheet
-            ? normalizePriceSheetCategoryType(scope?.categoryType || '')
-            : '';
-          const defaultFactoryValue =
-            row.factory ||
-            (isPriceSheet && priceSheetCategoryType === 'factory' ? String(scope?.name || '') : '');
-          const defaultBrandValue =
-            row.brand ||
-            (isPriceSheet && priceSheetCategoryType === 'brand' ? String(scope?.name || '') : '');
-          const defaultModelValue =
-            row.model ||
-            (isPriceSheet && priceSheetCategoryType === 'model' ? String(scope?.name || '') : '');
+          const defaultFactoryValue = row.factory || (isPriceSheet ? String(scope?.name || '') : '');
+          const defaultBrandValue = row.brand || (isPriceSheet ? String(activePriceBrand || '') : '');
+          const defaultModelValue = row.model || (isPriceSheet ? String(activePriceModel || '') : '');
 
           const makeCell = (content) => {
             const td = document.createElement('td');
@@ -4282,8 +4360,8 @@
         caption.className = 'muted-label';
         if (scopeMode === 'factory') {
           caption.textContent = isEn
-            ? 'Create and switch price-table sheets by factory, brand, or model.'
-            : '공장/브랜드/모델 기준으로 가격표 시트를 생성하고 전환할 수 있습니다.';
+            ? 'Create and switch sheets by factory. Inside each factory sheet, manage brand and model groups.'
+            : '가격표 시트는 공장 단위로 생성/전환하며, 선택한 공장 시트 안에서 브랜드/모델을 분류합니다.';
         } else if (scopeMode === 'round') {
           caption.textContent = isEn
             ? 'Rounds/batches are stored separately. Set date + FX per selected round.'
@@ -4297,107 +4375,67 @@
 
         if (scopeMode === 'factory') {
           const activePriceScope = getActiveScope();
-          const activeCategoryType = normalizePriceSheetCategoryType(activePriceScope?.categoryType || '');
-          const groupedScopes = {
-            factory: [],
-            brand: [],
-            model: []
-          };
+          if (!activePriceScope) {
+            return;
+          }
+          ensureScopeTaxonomy(activePriceScope);
+          ensurePriceFilters(activePriceScope);
+
+          const scopeSheetWrap = document.createElement('section');
+          scopeSheetWrap.className = 'sales-price-sheet-group';
+          const scopeSheetTitle = document.createElement('h5');
+          scopeSheetTitle.className = 'sales-price-sheet-group-title';
+          scopeSheetTitle.textContent = isEn ? 'Factory Sheets' : '공장 시트';
+          const scopeNav = document.createElement('div');
+          scopeNav.className = 'security-subnav sales-price-sheet-chip-row';
           scopes.forEach((scope) => {
-            const scopeCategoryType = normalizePriceSheetCategoryType(scope?.categoryType || '');
-            groupedScopes[scopeCategoryType].push(scope);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `menu-pill ${scope.id === activeScopeId ? 'active' : ''}`;
+            btn.textContent = scope.name;
+            btn.addEventListener('click', () => {
+              activeScopeId = scope.id;
+              activePriceBrand = '';
+              activePriceModel = '';
+              clearError();
+              renderGlobalFields();
+              renderScopeControls();
+              renderTableRows();
+              renderSummary();
+              renderMeta();
+            });
+            scopeNav.appendChild(btn);
           });
+          scopeSheetWrap.append(scopeSheetTitle, scopeNav);
+          scopeControls.appendChild(scopeSheetWrap);
 
-          const groupedNav = document.createElement('div');
-          groupedNav.className = 'sales-price-sheet-groups';
-          ['factory', 'brand', 'model'].forEach((typeKey) => {
-            const section = document.createElement('section');
-            section.className = 'sales-price-sheet-group';
+          const factoryAction = document.createElement('div');
+          factoryAction.className = 'sales-scope-action-row';
 
-            const sectionTitle = document.createElement('h5');
-            sectionTitle.className = 'sales-price-sheet-group-title';
-            sectionTitle.textContent = getPriceSheetCategoryLabel(typeKey);
-            section.appendChild(sectionTitle);
+          const factoryNameInput = document.createElement('input');
+          factoryNameInput.type = 'text';
+          factoryNameInput.placeholder = isEn ? 'Factory sheet name' : '공장 시트명';
+          factoryNameInput.value = String(activePriceScope?.name || '');
 
-            const sectionChips = document.createElement('div');
-            sectionChips.className = 'security-subnav sales-price-sheet-chip-row';
-            if (groupedScopes[typeKey].length === 0) {
-              const emptyText = document.createElement('span');
-              emptyText.className = 'muted-label';
-              emptyText.textContent = isEn ? 'No sheets' : '시트 없음';
-              sectionChips.appendChild(emptyText);
-            } else {
-              groupedScopes[typeKey].forEach((scope) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = `menu-pill ${scope.id === activeScopeId ? 'active' : ''}`;
-                btn.textContent = scope.name;
-                btn.addEventListener('click', () => {
-                  activeScopeId = scope.id;
-                  clearError();
-                  renderGlobalFields();
-                  renderScopeControls();
-                  renderTableRows();
-                  renderSummary();
-                  renderMeta();
-                });
-                sectionChips.appendChild(btn);
-              });
-            }
-
-            section.append(sectionTitle, sectionChips);
-            groupedNav.appendChild(section);
-          });
-          scopeControls.appendChild(groupedNav);
-
-          const action = document.createElement('div');
-          action.className = 'sales-scope-action-row';
-
-          const typeLabel = document.createElement('label');
-          typeLabel.className = 'sales-round-select-wrap';
-          const typeCaption = document.createElement('span');
-          typeCaption.textContent = isEn ? 'Sheet Type' : '시트 분류';
-          const typeSelect = document.createElement('select');
-          ['factory', 'brand', 'model'].forEach((typeKey) => {
-            const option = document.createElement('option');
-            option.value = typeKey;
-            option.textContent = getPriceSheetCategoryLabel(typeKey);
-            option.selected = typeKey === activeCategoryType;
-            typeSelect.appendChild(option);
-          });
-          typeLabel.append(typeCaption, typeSelect);
-
-          const nameInput = document.createElement('input');
-          nameInput.type = 'text';
-          nameInput.value = activePriceScope?.name || '';
-          const refreshPriceSheetNamePlaceholder = () => {
-            const currentType = normalizePriceSheetCategoryType(typeSelect.value || '');
-            const typeLabelText = getPriceSheetCategoryLabel(currentType);
-            nameInput.placeholder = isEn ? `${typeLabelText} sheet name` : `${typeLabelText} 시트명`;
-          };
-          typeSelect.addEventListener('change', refreshPriceSheetNamePlaceholder);
-          refreshPriceSheetNamePlaceholder();
-
-          const addBtn = document.createElement('button');
-          addBtn.type = 'button';
-          addBtn.className = 'chip';
-          addBtn.textContent = isEn ? 'Add Sheet' : '시트 추가';
-          addBtn.addEventListener('click', () => {
-            const nextCategoryType = normalizePriceSheetCategoryType(typeSelect.value || '');
-            const fallbackSheetName = isEn
-              ? `New ${getPriceSheetCategoryLabel(nextCategoryType)}`
-              : `새 ${getPriceSheetCategoryLabel(nextCategoryType)}`;
-            const nextName = String(nameInput.value || '').trim() || fallbackSheetName;
+          const addFactoryBtn = document.createElement('button');
+          addFactoryBtn.type = 'button';
+          addFactoryBtn.className = 'chip';
+          addFactoryBtn.textContent = isEn ? 'Add Factory Sheet' : '공장 시트 추가';
+          addFactoryBtn.addEventListener('click', () => {
+            const nextName =
+              normalizePriceSheetName(factoryNameInput.value, 80) || (isEn ? 'New Factory' : '새 공장');
             if (!Array.isArray(tab.groups)) tab.groups = [];
             tab.groups.push({
               id: `scope-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              name: nextName.slice(0, 80),
-              categoryType: nextCategoryType,
+              name: nextName,
               settings: normalizeSettings({}, ensureTabSettings(tab)),
+              taxonomy: { brands: [] },
               rows: []
             });
             activeScopeId = tab.groups[tab.groups.length - 1].id;
-            markDirty();
+            activePriceBrand = '';
+            activePriceModel = '';
+            markDirty(isEn ? 'factory sheet added (auto-save)' : '공장 시트 추가됨 (자동 저장)');
             clearError();
             renderGlobalFields();
             renderScopeControls();
@@ -4406,21 +4444,26 @@
             renderMeta();
           });
 
-          const renameBtn = document.createElement('button');
-          renameBtn.type = 'button';
-          renameBtn.className = 'chip';
-          renameBtn.textContent = isEn ? 'Rename' : '이름변경';
-          renameBtn.addEventListener('click', () => {
+          const renameFactoryBtn = document.createElement('button');
+          renameFactoryBtn.type = 'button';
+          renameFactoryBtn.className = 'chip';
+          renameFactoryBtn.textContent = isEn ? 'Rename Factory Sheet' : '공장 시트 이름변경';
+          renameFactoryBtn.addEventListener('click', () => {
             const scope = getActiveScope();
             if (!scope) return;
-            const nextName = String(nameInput.value || '').trim();
+            const previousName = normalizePriceSheetName(scope.name, 80);
+            const nextName = normalizePriceSheetName(factoryNameInput.value, 80);
             if (!nextName) return;
-            const previousName = String(scope.name || '').trim();
-            const previousCategoryType = normalizePriceSheetCategoryType(scope?.categoryType || '');
-            scope.name = nextName.slice(0, 80);
-            scope.categoryType = normalizePriceSheetCategoryType(typeSelect.value || '');
-            applyPriceSheetNameToRows(scope, previousName, previousCategoryType);
-            markDirty();
+            scope.name = nextName;
+            if (Array.isArray(scope.rows)) {
+              scope.rows.forEach((row) => {
+                const rowFactoryName = normalizePriceSheetName(row?.factory || '', 80);
+                if (!rowFactoryName || rowFactoryName === previousName) {
+                  row.factory = nextName;
+                }
+              });
+            }
+            markDirty(isEn ? 'factory sheet renamed (auto-save)' : '공장 시트 이름 변경됨 (자동 저장)');
             clearError();
             renderScopeControls();
             renderTableRows();
@@ -4428,19 +4471,21 @@
             renderMeta();
           });
 
-          const deleteBtn = document.createElement('button');
-          deleteBtn.type = 'button';
-          deleteBtn.className = 'chip';
-          deleteBtn.textContent = isEn ? 'Delete' : '삭제';
-          deleteBtn.addEventListener('click', () => {
+          const deleteFactoryBtn = document.createElement('button');
+          deleteFactoryBtn.type = 'button';
+          deleteFactoryBtn.className = 'chip';
+          deleteFactoryBtn.textContent = isEn ? 'Delete Factory Sheet' : '공장 시트 삭제';
+          deleteFactoryBtn.addEventListener('click', () => {
             if (!Array.isArray(tab.groups) || tab.groups.length <= 1) {
-              showError(isEn ? 'At least one sheet is required.' : '시트는 최소 1개가 필요합니다.');
+              showError(isEn ? 'At least one factory sheet is required.' : '공장 시트는 최소 1개가 필요합니다.');
               return;
             }
             clearError();
             tab.groups = tab.groups.filter((scope) => scope.id !== activeScopeId);
             activeScopeId = tab.groups[0]?.id || '';
-            markDirty();
+            activePriceBrand = '';
+            activePriceModel = '';
+            markDirty(isEn ? 'factory sheet deleted (auto-save)' : '공장 시트 삭제됨 (자동 저장)');
             renderGlobalFields();
             renderScopeControls();
             renderTableRows();
@@ -4451,9 +4496,325 @@
           const rowSeparator = document.createElement('span');
           rowSeparator.className = 'sales-scope-inline-separator';
           rowSeparator.textContent = '|';
+          factoryAction.append(
+            factoryNameInput,
+            addFactoryBtn,
+            renameFactoryBtn,
+            deleteFactoryBtn,
+            rowSeparator,
+            rowActionHost
+          );
+          scopeControls.appendChild(factoryAction);
 
-          action.append(typeLabel, nameInput, addBtn, renameBtn, deleteBtn, rowSeparator, rowActionHost);
-          scopeControls.appendChild(action);
+          const taxonomyPanel = document.createElement('div');
+          taxonomyPanel.className = 'sales-price-taxonomy-grid';
+
+          const brandRow = document.createElement('div');
+          brandRow.className = 'sales-price-taxonomy-row';
+          const brandTitle = document.createElement('strong');
+          brandTitle.className = 'sales-price-taxonomy-row-title';
+          brandTitle.textContent = isEn ? 'Brand' : '브랜드';
+          const brandSelect = document.createElement('select');
+          const brandNames = getPriceBrandNames(activePriceScope);
+          const brandPlaceholder = document.createElement('option');
+          brandPlaceholder.value = '';
+          brandPlaceholder.textContent = isEn ? 'No brand selected' : '브랜드 선택 없음';
+          brandSelect.appendChild(brandPlaceholder);
+          brandNames.forEach((brandName) => {
+            const option = document.createElement('option');
+            option.value = brandName;
+            option.textContent = brandName;
+            option.selected =
+              normalizePriceSheetNameKey(brandName) === normalizePriceSheetNameKey(activePriceBrand || '');
+            brandSelect.appendChild(option);
+          });
+          brandSelect.addEventListener('change', () => {
+            activePriceBrand = brandSelect.value || '';
+            activePriceModel = '';
+            ensurePriceFilters(activePriceScope);
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+          const brandInput = document.createElement('input');
+          brandInput.type = 'text';
+          brandInput.placeholder = isEn ? 'Brand name' : '브랜드명';
+          brandInput.value = activePriceBrand || '';
+          const addBrandBtn = document.createElement('button');
+          addBrandBtn.type = 'button';
+          addBrandBtn.className = 'chip';
+          addBrandBtn.textContent = isEn ? 'Add Brand' : '브랜드 추가';
+          addBrandBtn.addEventListener('click', () => {
+            const nextBrandName = normalizePriceSheetName(brandInput.value, 80);
+            if (!nextBrandName) {
+              showError(isEn ? 'Enter a brand name.' : '브랜드명을 입력해 주세요.');
+              return;
+            }
+            if (findPriceBrandEntry(activePriceScope, nextBrandName)) {
+              showError(isEn ? 'Brand already exists.' : '이미 존재하는 브랜드입니다.');
+              return;
+            }
+            const taxonomy = ensureScopeTaxonomy(activePriceScope);
+            taxonomy.brands.push({ name: nextBrandName, models: [] });
+            taxonomy.brands.sort((a, b) => comparePriceSheetNames(a.name, b.name));
+            activePriceBrand = nextBrandName;
+            activePriceModel = '';
+            markDirty(isEn ? 'brand group added (auto-save)' : '브랜드 분류 추가됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+          const renameBrandBtn = document.createElement('button');
+          renameBrandBtn.type = 'button';
+          renameBrandBtn.className = 'chip';
+          renameBrandBtn.textContent = isEn ? 'Rename Brand' : '브랜드 이름변경';
+          renameBrandBtn.addEventListener('click', () => {
+            if (!activePriceBrand) {
+              showError(isEn ? 'Select a brand first.' : '먼저 브랜드를 선택해 주세요.');
+              return;
+            }
+            const nextBrandName = normalizePriceSheetName(brandInput.value, 80);
+            if (!nextBrandName) {
+              showError(isEn ? 'Enter a brand name.' : '브랜드명을 입력해 주세요.');
+              return;
+            }
+            const currentBrandEntry = findPriceBrandEntry(activePriceScope, activePriceBrand);
+            if (!currentBrandEntry) {
+              showError(isEn ? 'Brand not found.' : '브랜드를 찾을 수 없습니다.');
+              return;
+            }
+            const duplicatedEntry = findPriceBrandEntry(activePriceScope, nextBrandName);
+            if (
+              duplicatedEntry &&
+              normalizePriceSheetNameKey(duplicatedEntry.name) !== normalizePriceSheetNameKey(currentBrandEntry.name)
+            ) {
+              showError(isEn ? 'Brand already exists.' : '이미 존재하는 브랜드입니다.');
+              return;
+            }
+            const prevBrandKey = normalizePriceSheetNameKey(currentBrandEntry.name);
+            currentBrandEntry.name = nextBrandName;
+            const taxonomy = ensureScopeTaxonomy(activePriceScope);
+            taxonomy.brands.sort((a, b) => comparePriceSheetNames(a.name, b.name));
+            if (Array.isArray(activePriceScope.rows)) {
+              activePriceScope.rows.forEach((row) => {
+                if (normalizePriceSheetNameKey(row?.brand || '') === prevBrandKey) {
+                  row.brand = nextBrandName;
+                }
+              });
+            }
+            activePriceBrand = nextBrandName;
+            ensurePriceFilters(activePriceScope);
+            markDirty(isEn ? 'brand group renamed (auto-save)' : '브랜드 분류 이름 변경됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+          const deleteBrandBtn = document.createElement('button');
+          deleteBrandBtn.type = 'button';
+          deleteBrandBtn.className = 'chip';
+          deleteBrandBtn.textContent = isEn ? 'Delete Brand' : '브랜드 삭제';
+          deleteBrandBtn.addEventListener('click', () => {
+            if (!activePriceBrand) {
+              showError(isEn ? 'Select a brand first.' : '먼저 브랜드를 선택해 주세요.');
+              return;
+            }
+            const targetBrandKey = normalizePriceSheetNameKey(activePriceBrand);
+            const taxonomy = ensureScopeTaxonomy(activePriceScope);
+            taxonomy.brands = taxonomy.brands.filter(
+              (brandItem) => normalizePriceSheetNameKey(brandItem.name) !== targetBrandKey
+            );
+            if (Array.isArray(activePriceScope.rows)) {
+              activePriceScope.rows = activePriceScope.rows.filter(
+                (row) => normalizePriceSheetNameKey(row?.brand || '') !== targetBrandKey
+              );
+            }
+            activePriceBrand = '';
+            activePriceModel = '';
+            ensurePriceFilters(activePriceScope);
+            markDirty(isEn ? 'brand group deleted (auto-save)' : '브랜드 분류 삭제됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+          brandRow.append(brandTitle, brandSelect, brandInput, addBrandBtn, renameBrandBtn, deleteBrandBtn);
+          taxonomyPanel.appendChild(brandRow);
+
+          const modelRow = document.createElement('div');
+          modelRow.className = 'sales-price-taxonomy-row';
+          const modelTitle = document.createElement('strong');
+          modelTitle.className = 'sales-price-taxonomy-row-title';
+          modelTitle.textContent = isEn ? 'Model' : '모델';
+          const modelSelect = document.createElement('select');
+          const modelNames = getPriceModelNames(activePriceScope, activePriceBrand);
+          const modelPlaceholder = document.createElement('option');
+          modelPlaceholder.value = '';
+          modelPlaceholder.textContent = isEn ? 'No model selected' : '모델 선택 없음';
+          modelSelect.appendChild(modelPlaceholder);
+          modelNames.forEach((modelName) => {
+            const option = document.createElement('option');
+            option.value = modelName;
+            option.textContent = modelName;
+            option.selected =
+              normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(activePriceModel || '');
+            modelSelect.appendChild(option);
+          });
+          modelSelect.addEventListener('change', () => {
+            activePriceModel = modelSelect.value || '';
+            ensurePriceFilters(activePriceScope);
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          const modelInput = document.createElement('input');
+          modelInput.type = 'text';
+          modelInput.placeholder = isEn ? 'Model name' : '모델명';
+          modelInput.value = activePriceModel || '';
+
+          const addModelBtn = document.createElement('button');
+          addModelBtn.type = 'button';
+          addModelBtn.className = 'chip';
+          addModelBtn.textContent = isEn ? 'Add Model' : '모델 추가';
+          addModelBtn.disabled = !activePriceBrand;
+          addModelBtn.addEventListener('click', () => {
+            if (!activePriceBrand) {
+              showError(isEn ? 'Select a brand first.' : '먼저 브랜드를 선택해 주세요.');
+              return;
+            }
+            const nextModelName = normalizePriceSheetName(modelInput.value, 120);
+            if (!nextModelName) {
+              showError(isEn ? 'Enter a model name.' : '모델명을 입력해 주세요.');
+              return;
+            }
+            const brandEntry = findPriceBrandEntry(activePriceScope, activePriceBrand);
+            if (!brandEntry) {
+              showError(isEn ? 'Brand not found.' : '브랜드를 찾을 수 없습니다.');
+              return;
+            }
+            const duplicated = brandEntry.models.some(
+              (modelName) => normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(nextModelName)
+            );
+            if (duplicated) {
+              showError(isEn ? 'Model already exists in this brand.' : '해당 브랜드에 이미 존재하는 모델입니다.');
+              return;
+            }
+            brandEntry.models.push(nextModelName);
+            brandEntry.models.sort(comparePriceSheetNames);
+            activePriceModel = nextModelName;
+            markDirty(isEn ? 'model group added (auto-save)' : '모델 분류 추가됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          const renameModelBtn = document.createElement('button');
+          renameModelBtn.type = 'button';
+          renameModelBtn.className = 'chip';
+          renameModelBtn.textContent = isEn ? 'Rename Model' : '모델 이름변경';
+          renameModelBtn.disabled = !activePriceBrand || !activePriceModel;
+          renameModelBtn.addEventListener('click', () => {
+            if (!activePriceBrand || !activePriceModel) {
+              showError(isEn ? 'Select a model first.' : '먼저 모델을 선택해 주세요.');
+              return;
+            }
+            const nextModelName = normalizePriceSheetName(modelInput.value, 120);
+            if (!nextModelName) {
+              showError(isEn ? 'Enter a model name.' : '모델명을 입력해 주세요.');
+              return;
+            }
+            const brandEntry = findPriceBrandEntry(activePriceScope, activePriceBrand);
+            if (!brandEntry) {
+              showError(isEn ? 'Brand not found.' : '브랜드를 찾을 수 없습니다.');
+              return;
+            }
+            const targetModelKey = normalizePriceSheetNameKey(activePriceModel);
+            const duplicated = brandEntry.models.some(
+              (modelName) =>
+                normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(nextModelName) &&
+                normalizePriceSheetNameKey(modelName) !== targetModelKey
+            );
+            if (duplicated) {
+              showError(isEn ? 'Model already exists in this brand.' : '해당 브랜드에 이미 존재하는 모델입니다.');
+              return;
+            }
+            brandEntry.models = brandEntry.models.map((modelName) =>
+              normalizePriceSheetNameKey(modelName) === targetModelKey ? nextModelName : modelName
+            );
+            brandEntry.models.sort(comparePriceSheetNames);
+            if (Array.isArray(activePriceScope.rows)) {
+              const activeBrandKey = normalizePriceSheetNameKey(activePriceBrand);
+              activePriceScope.rows.forEach((row) => {
+                if (
+                  normalizePriceSheetNameKey(row?.brand || '') === activeBrandKey &&
+                  normalizePriceSheetNameKey(row?.model || '') === targetModelKey
+                ) {
+                  row.model = nextModelName;
+                }
+              });
+            }
+            activePriceModel = nextModelName;
+            ensurePriceFilters(activePriceScope);
+            markDirty(isEn ? 'model group renamed (auto-save)' : '모델 분류 이름 변경됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          const deleteModelBtn = document.createElement('button');
+          deleteModelBtn.type = 'button';
+          deleteModelBtn.className = 'chip';
+          deleteModelBtn.textContent = isEn ? 'Delete Model' : '모델 삭제';
+          deleteModelBtn.disabled = !activePriceBrand || !activePriceModel;
+          deleteModelBtn.addEventListener('click', () => {
+            if (!activePriceBrand || !activePriceModel) {
+              showError(isEn ? 'Select a model first.' : '먼저 모델을 선택해 주세요.');
+              return;
+            }
+            const brandEntry = findPriceBrandEntry(activePriceScope, activePriceBrand);
+            if (!brandEntry) {
+              showError(isEn ? 'Brand not found.' : '브랜드를 찾을 수 없습니다.');
+              return;
+            }
+            const targetModelKey = normalizePriceSheetNameKey(activePriceModel);
+            brandEntry.models = brandEntry.models.filter(
+              (modelName) => normalizePriceSheetNameKey(modelName) !== targetModelKey
+            );
+            if (Array.isArray(activePriceScope.rows)) {
+              const activeBrandKey = normalizePriceSheetNameKey(activePriceBrand);
+              activePriceScope.rows = activePriceScope.rows.filter((row) => {
+                return !(
+                  normalizePriceSheetNameKey(row?.brand || '') === activeBrandKey &&
+                  normalizePriceSheetNameKey(row?.model || '') === targetModelKey
+                );
+              });
+            }
+            activePriceModel = '';
+            ensurePriceFilters(activePriceScope);
+            markDirty(isEn ? 'model group deleted (auto-save)' : '모델 분류 삭제됨 (자동 저장)');
+            clearError();
+            renderScopeControls();
+            renderTableRows();
+            renderSummary();
+            renderMeta();
+          });
+
+          modelRow.append(modelTitle, modelSelect, modelInput, addModelBtn, renameModelBtn, deleteModelBtn);
+          taxonomyPanel.appendChild(modelRow);
+          scopeControls.appendChild(taxonomyPanel);
           return;
         }
 
@@ -4916,14 +5277,14 @@
         const scope = getActiveScope();
         if (!scope || !Array.isArray(scope.rows)) return;
         const isPriceSheet = getScopeMode(activeTabKey) === 'factory';
-        const priceSheetCategoryType = isPriceSheet
-          ? normalizePriceSheetCategoryType(scope?.categoryType || '')
-          : '';
+        if (isPriceSheet) {
+          ensurePriceFilters(scope);
+        }
         scope.rows.push({
           id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          factory: isPriceSheet && priceSheetCategoryType === 'factory' ? String(scope?.name || '') : '',
-          brand: isPriceSheet && priceSheetCategoryType === 'brand' ? String(scope?.name || '') : '',
-          model: isPriceSheet && priceSheetCategoryType === 'model' ? String(scope?.name || '') : '',
+          factory: isPriceSheet ? String(scope?.name || '') : '',
+          brand: isPriceSheet ? String(activePriceBrand || '') : '',
+          model: isPriceSheet ? String(activePriceModel || '') : '',
           reference: '',
           spec: '',
           costRmb: 0,
