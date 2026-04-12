@@ -3975,7 +3975,26 @@
       };
 
       const getPriceModelNames = (scope, brandName = '') => {
-        const brandEntry = findPriceBrandEntry(scope, brandName);
+        const taxonomy = ensureScopeTaxonomy(scope);
+        const brandKey = normalizePriceSheetNameKey(brandName);
+        if (!brandKey) {
+          const modelMap = new Map();
+          taxonomy.brands.forEach((brandItem) => {
+            const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+            models.forEach((modelName) => {
+              const normalizedName = normalizePriceSheetName(modelName, 120);
+              if (!normalizedName) return;
+              const key = normalizePriceSheetNameKey(normalizedName);
+              if (!modelMap.has(key)) {
+                modelMap.set(key, normalizedName);
+              }
+            });
+          });
+          return [...modelMap.values()].sort(comparePriceSheetNames);
+        }
+        const brandEntry = taxonomy.brands.find(
+          (brandItem) => normalizePriceSheetNameKey(brandItem.name) === brandKey
+        );
         return brandEntry ? [...brandEntry.models] : [];
       };
 
@@ -3995,11 +4014,6 @@
           activePriceBrand = matchedBrand || '';
         } else {
           activePriceBrand = '';
-        }
-
-        if (!activePriceBrand) {
-          activePriceModel = '';
-          return;
         }
 
         const modelNames = getPriceModelNames(scope, activePriceBrand);
@@ -4699,7 +4713,6 @@
           modelPlaceholder.value = '';
           modelPlaceholder.textContent = isEn ? 'All' : '전체';
           modelSelect.appendChild(modelPlaceholder);
-          modelSelect.disabled = !activePriceBrand;
           modelNames.forEach((modelName) => {
             const option = document.createElement('option');
             option.value = modelName;
