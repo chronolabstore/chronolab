@@ -21,22 +21,49 @@
 
     <% const popupNoticeList = Array.isArray(ctx.popupNotices) ? ctx.popupNotices : []; %>
     <% if (popupNoticeList.length > 0) { %>
-      <div id="noticePopupDeck" class="popup-backdrop hidden">
-        <div class="popup-notice-grid">
-          <% popupNoticeList.forEach((popupNotice) => { %>
-            <article class="popup-card popup-notice-card" data-popup-card data-popup-id="<%= popupNotice.id %>">
-              <h3><%= popupNotice.title %></h3>
-              <% if (popupNotice.imagePath) { %>
-                <img src="<%= popupNotice.imagePath %>" alt="popup notice" class="popup-image" />
-              <% } %>
-              <p class="popup-notice-content"><%= popupNotice.content %></p>
-              <div class="popup-actions">
-                <button type="button" data-popup-action="hide7" class="chip ghost"><%= ctx.lang === 'en' ? "Don't show for 7 days" : '7일간 보지 않기' %></button>
-                <button type="button" data-popup-action="close" class="chip"><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
-                <button type="button" data-popup-action="confirm" class="chip dark"><%= ctx.lang === 'en' ? 'OK' : '확인' %></button>
-              </div>
-            </article>
-          <% }) %>
+      <div id="noticePopupDeck" class="popup-backdrop hidden" data-popup-deck>
+        <div class="popup-notice-deck-shell">
+          <button
+            type="button"
+            class="popup-deck-nav popup-deck-nav-prev"
+            data-popup-nav="prev"
+            aria-label="<%= ctx.lang === 'en' ? 'Previous notice' : '이전 공지' %>"
+          >
+            <span aria-hidden="true">‹</span>
+          </button>
+
+          <section class="popup-notice-deck-viewport" data-popup-viewport>
+            <div class="popup-notice-deck-meta" data-popup-meta>
+              <strong data-popup-current>1</strong>
+              <span>/</span>
+              <span data-popup-total><%= popupNoticeList.length %></span>
+            </div>
+            <div class="popup-notice-deck-stack" data-popup-stack>
+              <% popupNoticeList.forEach((popupNotice) => { %>
+                <article class="popup-card popup-notice-card" data-popup-card data-popup-id="<%= popupNotice.id %>">
+                  <h3><%= popupNotice.title %></h3>
+                  <% if (popupNotice.imagePath) { %>
+                    <img src="<%= popupNotice.imagePath %>" alt="popup notice" class="popup-image" />
+                  <% } %>
+                  <p class="popup-notice-content"><%= popupNotice.content %></p>
+                  <div class="popup-actions">
+                    <button type="button" data-popup-action="hide7" class="chip ghost"><%= ctx.lang === 'en' ? "Don't show for 7 days" : '7일간 보지 않기' %></button>
+                    <button type="button" data-popup-action="close" class="chip"><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
+                    <button type="button" data-popup-action="confirm" class="chip dark"><%= ctx.lang === 'en' ? 'OK' : '확인' %></button>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          </section>
+
+          <button
+            type="button"
+            class="popup-deck-nav popup-deck-nav-next"
+            data-popup-nav="next"
+            aria-label="<%= ctx.lang === 'en' ? 'Next notice' : '다음 공지' %>"
+          >
+            <span aria-hidden="true">›</span>
+          </button>
         </div>
       </div>
     <% } %>
