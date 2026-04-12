@@ -3987,16 +3987,19 @@
         }
 
         const brandNames = getPriceBrandNames(scope);
-        const brandExists = brandNames.some(
-          (brandName) => normalizePriceSheetNameKey(brandName) === normalizePriceSheetNameKey(activePriceBrand)
-        );
-        if (!brandExists) {
-          activePriceBrand = brandNames[0] || '';
-        } else {
+        const activeBrandKey = normalizePriceSheetNameKey(activePriceBrand || '');
+        if (activeBrandKey) {
           const matchedBrand = brandNames.find(
-            (brandName) => normalizePriceSheetNameKey(brandName) === normalizePriceSheetNameKey(activePriceBrand)
+            (brandName) => normalizePriceSheetNameKey(brandName) === activeBrandKey
           );
-          activePriceBrand = matchedBrand || activePriceBrand;
+          activePriceBrand = matchedBrand || '';
+        } else {
+          activePriceBrand = '';
+        }
+
+        if (!activePriceBrand) {
+          activePriceModel = '';
+          return;
         }
 
         const modelNames = getPriceModelNames(scope, activePriceBrand);
@@ -4004,7 +4007,7 @@
           (modelName) => normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(activePriceModel)
         );
         if (!modelExists) {
-          activePriceModel = modelNames[0] || '';
+          activePriceModel = '';
         } else {
           const matchedModel = modelNames.find(
             (modelName) => normalizePriceSheetNameKey(modelName) === normalizePriceSheetNameKey(activePriceModel)
@@ -4544,7 +4547,7 @@
           const brandNames = getPriceBrandNames(activePriceScope);
           const brandPlaceholder = document.createElement('option');
           brandPlaceholder.value = '';
-          brandPlaceholder.textContent = isEn ? 'No brand selected' : '브랜드 선택 없음';
+          brandPlaceholder.textContent = isEn ? 'All' : '전체';
           brandSelect.appendChild(brandPlaceholder);
           brandNames.forEach((brandName) => {
             const option = document.createElement('option');
@@ -4694,8 +4697,9 @@
           const modelNames = getPriceModelNames(activePriceScope, activePriceBrand);
           const modelPlaceholder = document.createElement('option');
           modelPlaceholder.value = '';
-          modelPlaceholder.textContent = isEn ? 'No model selected' : '모델 선택 없음';
+          modelPlaceholder.textContent = isEn ? 'All' : '전체';
           modelSelect.appendChild(modelPlaceholder);
+          modelSelect.disabled = !activePriceBrand;
           modelNames.forEach((modelName) => {
             const option = document.createElement('option');
             option.value = modelName;
