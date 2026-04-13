@@ -3021,18 +3021,6 @@ body.admin-page select[size]:not([size='1']) {
   padding-right: 10px;
 }
 
-body.admin-page input[type='date'] {
-  min-height: 40px;
-  padding-right: 38px;
-  line-height: 1.2;
-}
-
-body.admin-page input[type='date']::-webkit-calendar-picker-indicator {
-  margin: 0;
-  opacity: 0.92;
-  cursor: pointer;
-}
-
 .member-filter-row .member-search-item input {
   min-width: 240px;
   width: min(52vw, 420px);
@@ -3704,7 +3692,7 @@ body.admin-page input[type='date']::-webkit-calendar-picker-indicator {
   font: inherit;
 }
 
-.sales-round-input:is(select, input[type='date']) {
+.sales-round-input:is(select) {
   padding-right: 36px;
   background-position: right 10px center;
 }
