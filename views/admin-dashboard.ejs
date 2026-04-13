@@ -3516,7 +3516,7 @@
         <button type="submit" class="cta-main"><%= isEn ? 'Add Notice' : '공지 등록' %></button>
       </form>
     <% } else { %>
-      <div class="admin-list">
+      <div class="admin-list admin-post-accordion-list">
         <% notices.forEach((item) => { %>
           <details class="admin-list-item">
             <summary>
@@ -3588,7 +3588,7 @@
         <button type="submit" class="cta-main"><%= isEn ? 'Add News' : '뉴스 등록' %></button>
       </form>
     <% } else { %>
-      <div class="admin-list">
+      <div class="admin-list admin-post-accordion-list">
         <% newsPosts.forEach((item) => { %>
           <details class="admin-list-item">
             <summary>
@@ -3655,7 +3655,7 @@
         <button type="submit" class="cta-main"><%= isEn ? 'Add QC' : 'QC 등록' %></button>
       </form>
     <% } else { %>
-      <div class="admin-list">
+      <div class="admin-list admin-post-accordion-list">
         <% qcs.forEach((item) => { %>
           <details class="admin-list-item">
             <summary>
@@ -5901,7 +5901,7 @@
         <% } %>
       </div>
     <% } else { %>
-      <div class="admin-list">
+      <div class="admin-list admin-post-accordion-list">
         <% inquiries.forEach((item) => { %>
           <details class="admin-list-item">
             <summary>
