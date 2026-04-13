@@ -2806,6 +2806,18 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   gap: 6px;
 }
 
+.admin-post-action-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.admin-post-action-row > .chip,
+.admin-post-action-row > .inline-form {
+  flex: 0 0 auto;
+}
+
 .member-level-group-grid {
   gap: 8px;
 }
