@@ -3513,6 +3513,19 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   gap: 2px;
 }
 
+.sales-global-hint strong {
+  font-size: 0.82rem;
+}
+
+.sales-global-hint small {
+  color: var(--muted);
+}
+
+.sales-global-actions .chip:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
 .sales-scope-toolbar {
   margin-top: 6px;
   display: grid;

@@ -4008,6 +4008,15 @@
       <div class="sales-global-actions">
         <button type="button" class="chip dark" id="salesApplyGlobalBtn"><%= isEn ? 'Save' : '저장' %></button>
         <button type="button" class="chip" id="salesFxSyncBtn"><%= isEn ? 'Sync Naver FX' : '네이버 환율 반영' %></button>
+        <button type="button" class="chip" id="salesFilterSyncBtn"><%= isEn ? 'Sync Category Filters' : '분류 필터 동기화' %></button>
+        <a
+          href="<%= isEn ? '/admin/menus?section=group-filters&lang=en' : '/admin/menus?section=group-filters' %>"
+          class="chip"
+        ><%= isEn ? 'Manage Category Filters' : '분류 필터 관리' %></a>
+      </div>
+      <div class="sales-global-hint">
+        <strong><%= isEn ? 'Recommended: keep Category Filters as the single source of truth.' : '권장: 분류 필터를 단일 기준값(원본)으로 유지하세요.' %></strong>
+        <small><%= isEn ? 'Use sync after add/update/delete to reflect Factory/Brand/Model options in Price Table safely.' : '추가/수정/삭제 후 동기화를 실행하면 가격표의 공장/브랜드/모델 옵션이 안전하게 병합 반영됩니다.' %></small>
       </div>
     </div>
 
@@ -4061,6 +4070,7 @@
     (() => {
       const mainTabButtons = Array.from(document.querySelectorAll('#salesMainTabNav [data-sales-main-tab]'));
       const fxSyncBtn = document.getElementById('salesFxSyncBtn');
+      const filterSyncBtn = document.getElementById('salesFilterSyncBtn');
       const applyGlobalBtn = document.getElementById('salesApplyGlobalBtn');
       const saveBtn = document.getElementById('salesSaveBtn');
       const addRowBtn = document.getElementById('salesAddRowBtn');
@@ -4322,6 +4332,17 @@
       const clearError = () => {
         errorText.textContent = '';
         errorText.classList.add('hidden');
+      };
+
+      const buildFilterSyncMetaText = (stats = {}) => {
+        const addedScopes = Number(stats?.scopesAdded || 0);
+        const taxonomyUpdated = Number(stats?.taxonomiesUpdated || 0);
+        const namesUpdated = Number(stats?.namesUpdated || 0);
+        const fixedTypes = Number(stats?.categoryTypesFixed || 0);
+        if (isEn) {
+          return `Filter sync done · scopes +${addedScopes} · taxonomy ${taxonomyUpdated} · names ${namesUpdated} · type fixes ${fixedTypes}`;
+        }
+        return `필터 동기화 완료 · 시트 추가 ${addedScopes} · 분류 반영 ${taxonomyUpdated} · 이름 정리 ${namesUpdated} · 타입 보정 ${fixedTypes}`;
       };
 
       const getTabDef = () => tabDefs.find((item) => item.key === activeTabKey) || tabDefs[0] || { key: 'price', scopeType: 'factory' };
@@ -5826,6 +5847,53 @@
           renderMeta(isEn ? 'Naver/Hana rate applied' : '네이버/하나은행 환율 반영됨');
         } catch (error) {
           showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+        }
+      });
+
+      filterSyncBtn?.addEventListener('click', async () => {
+        clearError();
+        if (dirty) {
+          const proceed = window.confirm(
+            isEn
+              ? 'Unsaved changes will be saved first, then filter sync runs. Continue?'
+              : '저장되지 않은 변경을 먼저 저장한 뒤 필터 동기화를 실행합니다. 계속할까요?'
+          );
+          if (!proceed) {
+            return;
+          }
+          await saveWorkbook({
+            silent: true,
+            reason: isEn ? 'auto-saved before filter sync' : '필터 동기화 전 자동 저장'
+          });
+        }
+
+        filterSyncBtn.disabled = true;
+        filterSyncBtn.classList.add('is-loading');
+        try {
+          const response = await fetch('/admin/sales/sync-filters', {
+            method: 'POST',
+            headers: {
+              accept: 'application/json'
+            }
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload?.ok || !payload?.workbook) {
+            throw new Error(payload?.message || (isEn ? 'Filter sync failed.' : '필터 동기화에 실패했습니다.'));
+          }
+
+          workbook = payload.workbook;
+          dirty = false;
+          ensureActiveScope();
+          renderGlobalFields();
+          renderScopeControls();
+          renderTableRows();
+          renderSummary();
+          renderMeta(buildFilterSyncMetaText(payload.stats || {}));
+        } catch (error) {
+          showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+        } finally {
+          filterSyncBtn.disabled = false;
+          filterSyncBtn.classList.remove('is-loading');
         }
       });
 

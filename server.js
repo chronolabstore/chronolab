@@ -4890,10 +4890,25 @@ function saveSalesWorkbook(inputWorkbook = null, options = {}) {
   return next;
 }
 
-function applySalesWorkbookPriceFilterBaselineSeedOnce() {
+function syncSalesWorkbookPriceFilters(options = {}) {
+  const force = options && options.force === true;
+  const respectVersion = options && options.respectVersion === true;
+  const markVersion = options && options.markVersion === false ? false : true;
   const currentVersion = String(getSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, '') || '').trim();
-  if (currentVersion === SALES_PRICE_FILTER_BASELINE_VERSION) {
-    return;
+
+  if (!force && respectVersion && currentVersion === SALES_PRICE_FILTER_BASELINE_VERSION) {
+    return {
+      changed: false,
+      skipped: true,
+      workbook: getSalesWorkbook(),
+      stats: {
+        tabsProcessed: 0,
+        scopesAdded: 0,
+        namesUpdated: 0,
+        taxonomiesUpdated: 0,
+        categoryTypesFixed: 0
+      }
+    };
   }
 
   const productGroupConfigs = getProductGroupConfigs();
@@ -4901,19 +4916,40 @@ function applySalesWorkbookPriceFilterBaselineSeedOnce() {
     (tabInfo) => String(tabInfo?.scopeType || '').trim() === 'factory'
   );
   if (salesTabs.length === 0) {
-    setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
-    return;
+    if (markVersion) {
+      setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+    }
+    return {
+      changed: false,
+      skipped: false,
+      workbook: getSalesWorkbook(),
+      stats: {
+        tabsProcessed: 0,
+        scopesAdded: 0,
+        namesUpdated: 0,
+        taxonomiesUpdated: 0,
+        categoryTypesFixed: 0
+      }
+    };
   }
 
   const workbook = getSalesWorkbook();
   const workbookTabs = workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs : {};
   let changed = false;
+  const stats = {
+    tabsProcessed: 0,
+    scopesAdded: 0,
+    namesUpdated: 0,
+    taxonomiesUpdated: 0,
+    categoryTypesFixed: 0
+  };
 
   salesTabs.forEach((tabInfo) => {
     const tabKey = String(tabInfo?.key || '').trim();
     if (!tabKey || !workbookTabs[tabKey] || typeof workbookTabs[tabKey] !== 'object') {
       return;
     }
+    stats.tabsProcessed += 1;
     const tab = workbookTabs[tabKey];
     if (!Array.isArray(tab.groups)) {
       tab.groups = [];
@@ -4946,6 +4982,7 @@ function applySalesWorkbookPriceFilterBaselineSeedOnce() {
         rows: []
       }));
       changed = true;
+      stats.scopesAdded += tab.groups.length;
     } else if (baselineFactoryNames.length > 0) {
       const placeholderKeySet = new Set(['기본', 'factory 1', 'factory']);
       if (tab.groups.length === 1) {
@@ -4953,9 +4990,15 @@ function applySalesWorkbookPriceFilterBaselineSeedOnce() {
         const onlyScopeName = normalizeSalesSheetName(onlyScope?.name || '', 80);
         const onlyScopeKey = normalizeSalesSheetNameKey(onlyScopeName);
         const rowCount = Array.isArray(onlyScope?.rows) ? onlyScope.rows.length : 0;
-        if (onlyScope && rowCount === 0 && placeholderKeySet.has(onlyScopeKey) && onlyScopeName !== baselineFactoryNames[0]) {
+        if (
+          onlyScope &&
+          rowCount === 0 &&
+          placeholderKeySet.has(onlyScopeKey) &&
+          onlyScopeName !== baselineFactoryNames[0]
+        ) {
           onlyScope.name = baselineFactoryNames[0];
           changed = true;
+          stats.namesUpdated += 1;
         }
       }
 
@@ -4978,6 +5021,7 @@ function applySalesWorkbookPriceFilterBaselineSeedOnce() {
         });
         existingScopeNameKeys.add(factoryKey);
         changed = true;
+        stats.scopesAdded += 1;
       });
     }
 
@@ -4994,19 +5038,51 @@ function applySalesWorkbookPriceFilterBaselineSeedOnce() {
       if (JSON.stringify(scope.taxonomy || {}) !== JSON.stringify(mergedTaxonomy)) {
         scope.taxonomy = mergedTaxonomy;
         changed = true;
+        stats.taxonomiesUpdated += 1;
       }
 
-      if (normalizeSalesPriceSheetCategoryType(scope.categoryType) !== SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY) {
+      if (
+        normalizeSalesPriceSheetCategoryType(scope.categoryType) !==
+        SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY
+      ) {
         scope.categoryType = SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY;
         changed = true;
+        stats.categoryTypesFixed += 1;
       }
     });
   });
 
-  if (changed) {
-    saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' });
+  const savedWorkbook = changed
+    ? saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' })
+    : workbook;
+
+  if (markVersion) {
+    setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
   }
-  setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+
+  return {
+    changed,
+    skipped: false,
+    workbook: savedWorkbook,
+    stats
+  };
+}
+
+function applySalesWorkbookPriceFilterBaselineSeedOnce() {
+  syncSalesWorkbookPriceFilters({
+    force: false,
+    respectVersion: true,
+    markVersion: true
+  });
+}
+
+function syncSalesWorkbookPriceFiltersSafely(options = {}) {
+  try {
+    return syncSalesWorkbookPriceFilters(options);
+  } catch (error) {
+    console.error('[sales] workbook filter sync failed:', error);
+    return null;
+  }
 }
 
 applySalesWorkbookPriceFilterBaselineSeedOnce();
@@ -12910,6 +12986,35 @@ app.get(
 );
 
 app.post(
+  '/admin/sales/sync-filters',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const syncResult = syncSalesWorkbookPriceFiltersSafely({
+      force: true,
+      respectVersion: false,
+      markVersion: true
+    });
+    if (!syncResult || !syncResult.workbook) {
+      return res.status(500).json({
+        ok: false,
+        error: 'sales_filter_sync_failed',
+        message: '분류 필터 동기화 중 오류가 발생했습니다.'
+      });
+    }
+    const payload = buildSalesWorkbookPayload(syncResult.workbook);
+
+    logAdminActivity(req, 'SALES_FILTER_SYNC', `changed:${syncResult.changed ? '1' : '0'}`);
+    return res.json({
+      ok: true,
+      changed: Boolean(syncResult.changed),
+      stats: syncResult.stats,
+      mainTabs: getSalesMainTabs(),
+      ...payload
+    });
+  })
+);
+
+app.post(
   '/admin/sales/workbook',
   requireAdmin,
   asyncRoute(async (req, res) => {
@@ -13188,6 +13293,11 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
     customFields: useFactoryTemplate ? getFactoryDefaultFields() : getCompactDefaultFields()
   }];
   setProductGroupConfigs(nextConfigs);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
 
   setFlash(req, 'success', '쇼핑몰 분류가 추가되었습니다.');
   return res.redirect(backPath);
@@ -13225,6 +13335,11 @@ app.post('/admin/product-group/remove/:key', requireAdmin, (req, res) => {
 
   const nextConfigs = configs.filter((group) => group.key !== key);
   setProductGroupConfigs(nextConfigs);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(req, 'success', '쇼핑몰 분류가 삭제되었습니다.');
   return res.redirect(backPath);
 });
@@ -13503,6 +13618,11 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   };
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',
@@ -13658,6 +13778,11 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   };
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',
@@ -13837,6 +13962,11 @@ app.post('/admin/product-group/filter/update', requireAdmin, (req, res) => {
   }
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',
