@@ -4502,7 +4502,7 @@ body.theme-night .order-status-badge-delivered {
   color: var(--muted);
   background: var(--card);
   pointer-events: none;
-  transform: translate(-108%, -38%);
+  transform: translate(0, -132%);
 }
 
 .popup-notice-deck-stack {
@@ -4514,7 +4514,7 @@ body.theme-night .order-status-badge-delivered {
 
 .popup-notice-card {
   position: absolute;
-  top: 0;
+  top: 50%;
   left: 50%;
   right: auto;
   width: 100%;
@@ -4525,36 +4525,36 @@ body.theme-night .order-status-badge-delivered {
   gap: 0;
   pointer-events: none;
   opacity: 0;
-  transform: translate3d(calc(-50% + 16px), 0, 0) scale(0.98);
-  transform-origin: top center;
+  transform: translate3d(calc(-50% + 16px), -50%, 0) scale(0.98);
+  transform-origin: center center;
   transition: transform 0.24s ease, opacity 0.24s ease, filter 0.24s ease;
 }
 
 .popup-notice-card.is-active {
   opacity: 1;
-  transform: translate3d(-50%, 0, 0) scale(1);
+  transform: translate3d(-50%, -50%, 0) scale(1);
   pointer-events: auto;
   z-index: 5;
   filter: none;
 }
 
 .popup-notice-card.is-next {
-  opacity: 0.9;
-  transform: translate3d(calc(-50% + 38px), 0, 0) scale(0.97);
+  opacity: 0.62;
+  transform: translate3d(calc(-50% + 38px), -50%, 0) scale(0.97);
   z-index: 4;
-  filter: blur(0.8px);
+  filter: blur(1.15px);
 }
 
 .popup-notice-card.is-next-2 {
-  opacity: 0.72;
-  transform: translate3d(calc(-50% + 64px), 0, 0) scale(0.94);
+  opacity: 0.34;
+  transform: translate3d(calc(-50% + 64px), -50%, 0) scale(0.94);
   z-index: 3;
-  filter: blur(1.35px);
+  filter: blur(1.9px);
 }
 
 .popup-notice-card.is-previous {
   opacity: 0;
-  transform: translate3d(calc(-50% - 24px), 0, 0) scale(0.95);
+  transform: translate3d(calc(-50% - 24px), -50%, 0) scale(0.95);
   z-index: 1;
   filter: blur(1.2px);
 }
@@ -4629,18 +4629,18 @@ body.theme-night .order-status-badge-delivered {
   }
 
   .popup-notice-card.is-next {
-    transform: translate3d(calc(-50% + 26px), 0, 0) scale(0.97);
+    transform: translate3d(calc(-50% + 26px), -50%, 0) scale(0.97);
   }
 
   .popup-notice-card.is-next-2 {
-    transform: translate3d(calc(-50% + 42px), 0, 0) scale(0.94);
+    transform: translate3d(calc(-50% + 42px), -50%, 0) scale(0.94);
   }
 
   .popup-notice-deck-meta {
     top: 0;
     left: 0;
     font-size: 0.75rem;
-    transform: translate(-90%, -34%);
+    transform: translate(0, -120%);
   }
 }
 
