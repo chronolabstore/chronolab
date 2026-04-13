@@ -4408,6 +4408,8 @@ body.theme-night .order-status-badge-delivered {
 }
 
 .popup-notice-deck-shell {
+  --popup-card-width: 620px;
+  --popup-card-height: min(74vh, 540px);
   width: min(100%, 740px);
   position: relative;
   display: block;
@@ -4489,8 +4491,9 @@ body.theme-night .order-status-badge-delivered {
 
 .popup-notice-deck-stack {
   position: relative;
-  width: min(100%, 600px);
-  min-height: 220px;
+  width: min(100%, var(--popup-card-width));
+  height: var(--popup-card-height);
+  min-height: var(--popup-card-height);
   margin-inline: auto;
 }
 
@@ -4499,9 +4502,10 @@ body.theme-night .order-status-badge-delivered {
   top: 50%;
   left: 50%;
   right: auto;
-  width: 100%;
+  width: min(100%, var(--popup-card-width));
+  height: var(--popup-card-height);
   max-width: none;
-  max-height: min(82vh, 840px);
+  max-height: var(--popup-card-height);
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -4542,10 +4546,25 @@ body.theme-night .order-status-badge-delivered {
 }
 
 .popup-notice-card .popup-notice-content {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding-right: 2px;
+  width: 100%;
   margin: 0;
+  white-space: pre-line;
+  line-height: 1.45;
+}
+
+.popup-notice-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  padding-right: 2px;
+}
+
+.popup-notice-body.is-overflow {
+  justify-content: flex-start;
 }
 
 .popup-notice-card .popup-actions {
@@ -4554,7 +4573,7 @@ body.theme-night .order-status-badge-delivered {
 }
 
 .popup-notice-card .popup-image {
-  max-height: min(42vh, 360px);
+  max-height: min(28vh, 208px);
   object-fit: contain;
   background: var(--chip);
   width: 100%;
@@ -4581,6 +4600,11 @@ body.theme-night .order-status-badge-delivered {
 }
 
 @media (max-width: 820px) {
+  .popup-notice-deck-shell {
+    --popup-card-width: 100%;
+    --popup-card-height: min(72vh, 520px);
+  }
+
   .popup-deck-nav {
     width: 38px;
     height: 38px;
@@ -4605,7 +4629,6 @@ body.theme-night .order-status-badge-delivered {
   }
 
   .popup-notice-card {
-    max-height: min(80vh, 760px);
     border-radius: 14px;
     padding: 14px;
   }

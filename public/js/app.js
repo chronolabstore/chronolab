@@ -144,6 +144,10 @@
         card.classList.remove('is-active', 'is-next', 'is-next-2', 'is-previous');
         if (index === currentIndex) {
           card.classList.add('is-active');
+          var activeBody = card.querySelector('[data-popup-scrollable]');
+          if (activeBody) {
+            activeBody.scrollTop = 0;
+          }
           return;
         }
         if (index === currentIndex + 1) {
@@ -158,7 +162,7 @@
           card.classList.add('is-previous');
         }
       });
-      requestAnimationFrame(syncDeckStackHeight);
+      syncActiveCardLayout();
       updateDeckMeta();
     }
 
@@ -174,6 +178,28 @@
       if (nextHeight > 0) {
         popupStack.style.height = String(nextHeight) + 'px';
       }
+    }
+
+    function syncScrollableBody(card) {
+      if (!card) {
+        return;
+      }
+      var scrollableBody = card.querySelector('[data-popup-scrollable]');
+      if (!scrollableBody) {
+        return;
+      }
+      scrollableBody.classList.remove('is-overflow');
+      var overflowByHeight = scrollableBody.scrollHeight - scrollableBody.clientHeight > 1;
+      if (overflowByHeight) {
+        scrollableBody.classList.add('is-overflow');
+      }
+    }
+
+    function syncActiveCardLayout() {
+      requestAnimationFrame(function () {
+        syncDeckStackHeight();
+        syncScrollableBody(visibleCards[currentIndex]);
+      });
     }
 
     function goPrev() {
@@ -266,8 +292,11 @@
         }
         var contentScroller =
           event.target && typeof event.target.closest === 'function'
-            ? event.target.closest('.popup-notice-content')
+            ? event.target.closest('[data-popup-scrollable], .popup-notice-content')
             : null;
+        if (contentScroller && !contentScroller.hasAttribute('data-popup-scrollable')) {
+          contentScroller = contentScroller.closest('[data-popup-scrollable]') || contentScroller;
+        }
         if (contentScroller && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
           var maxScrollTop = contentScroller.scrollHeight - contentScroller.clientHeight;
           if (maxScrollTop > 1) {
@@ -380,7 +409,7 @@
           if (card !== visibleCards[currentIndex]) {
             return;
           }
-          requestAnimationFrame(syncDeckStackHeight);
+          syncActiveCardLayout();
         });
       });
     });
@@ -389,7 +418,7 @@
       if (popup.classList.contains('hidden')) {
         return;
       }
-      requestAnimationFrame(syncDeckStackHeight);
+      syncActiveCardLayout();
     });
 
     updateDeckCards();
