@@ -429,8 +429,12 @@
     if (!popup) {
       return;
     }
+    var confirmButton = popup.querySelector('[data-flash-popup-action="confirm"]');
 
     popup.classList.remove('hidden');
+    if (confirmButton) {
+      confirmButton.focus();
+    }
     popup.addEventListener('click', function (event) {
       var actionTarget = event.target.closest('[data-flash-popup-action]');
       if (!actionTarget) {
@@ -441,6 +445,24 @@
       }
 
       closeFlashPopup();
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (popup.classList.contains('hidden')) {
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (confirmButton) {
+          confirmButton.click();
+          return;
+        }
+        closeFlashPopup();
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeFlashPopup();
+      }
     });
   }
 
