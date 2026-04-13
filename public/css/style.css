@@ -4676,9 +4676,15 @@ body.theme-night .order-status-badge-delivered {
    level 2 (inner): soft blue
    level 3 (nested inner): white */
 body.admin-page {
-  --admin-surface-l1: var(--card);
-  --admin-surface-l2: var(--chip);
-  --admin-surface-l3: var(--card);
+  --admin-surface-l1: #ffffff;
+  --admin-surface-l2: #eaf1fb;
+  --admin-surface-l3: #ffffff;
+}
+
+body.admin-page.theme-night {
+  --admin-surface-l1: #111b30;
+  --admin-surface-l2: #1b2941;
+  --admin-surface-l3: #111b30;
 }
 
 body.admin-page .block-card {
@@ -4868,10 +4874,10 @@ body.admin-page .admin-post-accordion-list > details.admin-list-item {
 body.admin-page .admin-post-accordion-list > details.admin-list-item > summary {
   margin: 0;
   padding: 12px 14px;
-  border: 0;
+  border: 0 !important;
   border-radius: 12px;
-  background: var(--admin-surface-l2);
-  color: #1a2a47;
+  background: var(--admin-surface-l2) !important;
+  color: #1a2a47 !important;
 }
 
 body.admin-page .admin-post-accordion-list > details.admin-list-item > summary small {
@@ -4887,10 +4893,10 @@ body.admin-page .admin-post-accordion-list > details.admin-list-item[open] {
 body.admin-page .admin-post-accordion-list > details.admin-list-item[open] > summary {
   margin: -10px -10px 10px;
   padding: 10px 12px;
-  border: 1px solid #d2dceb;
+  border: 1px solid #d2dceb !important;
   border-radius: 10px 10px 0 0;
-  background: var(--admin-surface-l2);
-  color: #1a2a47;
+  background: var(--admin-surface-l2) !important;
+  color: #1a2a47 !important;
 }
 
 @media (max-width: 820px) {
