@@ -2077,36 +2077,43 @@
                                     const modelLabelEntry = resolveFilterLabelEntry(brandModelLabelMap, optionValue);
                                     const modelDisplayName = isEn ? (modelLabelEntry.labelEn || optionValue) : (modelLabelEntry.labelKo || optionValue);
                                   %>
-                                  <div class="admin-list-item">
-                                    <div class="menu-brand-model-row">
+                                  <details class="admin-list-item menu-brand-model-item menu-brand-model-sub-item">
+                                    <summary class="menu-brand-model-summary">
                                       <strong class="menu-brand-model-name"><%= modelDisplayName %></strong>
-                                      <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
-                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                                        <input type="hidden" name="filterType" value="model" />
-                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                        <label><%= isEn ? 'Stored Value' : '저장값' %>
-                                          <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
-                                        </label>
-                                        <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
-                                          <input type="text" name="optionLabelKo" value="<%= modelLabelEntry.labelKo || optionValue %>" required />
-                                        </label>
-                                        <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
-                                          <input type="text" name="optionLabelEn" value="<%= modelLabelEntry.labelEn || optionValue %>" required />
-                                        </label>
-                                        <div class="admin-account-actions">
-                                          <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Model' : '모델 수정' %></button>
-                                        </div>
-                                      </form>
-                                      <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
-                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                        <input type="hidden" name="filterType" value="model" />
-                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                        <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                                      </form>
+                                      <small><%= isEn ? `Value: ${optionValue}` : `저장값: ${optionValue}` %></small>
+                                    </summary>
+                                    <div class="menu-brand-model-body">
+                                      <div class="admin-list-item">
+                                        <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                          <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                          <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                          <input type="hidden" name="filterType" value="model" />
+                                          <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                          <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                            <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
+                                          </label>
+                                          <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                            <input type="text" name="optionLabelKo" value="<%= modelLabelEntry.labelKo || optionValue %>" required />
+                                          </label>
+                                          <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                            <input type="text" name="optionLabelEn" value="<%= modelLabelEntry.labelEn || optionValue %>" required />
+                                          </label>
+                                          <div class="admin-account-actions menu-brand-model-actions">
+                                            <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Model' : '모델 수정' %></button>
+                                          </div>
+                                        </form>
+                                      </div>
+                                      <div class="admin-account-actions menu-brand-model-actions">
+                                        <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                          <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                          <input type="hidden" name="filterType" value="model" />
+                                          <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                          <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                          <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                        </form>
+                                      </div>
                                     </div>
-                                  </div>
+                                  </details>
                                 <% }) %>
                               </div>
                             <% } %>

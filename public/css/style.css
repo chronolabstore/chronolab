@@ -2443,12 +2443,12 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   position: relative;
   margin: 0;
   min-height: 44px;
-  padding: 10px 56px 10px 12px;
+  padding: 10px 76px 10px 12px;
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   background: var(--chip);
   border: 1px solid transparent;
 }
@@ -2466,14 +2466,14 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
-  margin-right: 10px;
+  margin-right: 22px;
   flex-shrink: 0;
 }
 
 .menu-brand-model-summary::after {
   content: "▾";
   position: absolute;
-  right: 16px;
+  right: 22px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.78rem;
@@ -2513,6 +2513,25 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--chip);
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary {
+  min-height: 40px;
+  padding: 8px 74px 8px 12px;
+  border-radius: 10px;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary strong {
+  font-size: 0.88rem;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary small {
+  font-size: 0.75rem;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-body {
+  gap: 8px;
+  padding: 8px;
 }
 
 .menu-brand-model-row {
