@@ -5423,13 +5423,16 @@
 
           const topActionGroup = document.createElement('div');
           topActionGroup.className = 'sales-date-action-group';
-          topActionGroup.append(addBtn, saveDateBtn, deleteBtn);
+          const dateManageGroup = document.createElement('div');
+          dateManageGroup.className = 'sales-date-btn-group';
+          dateManageGroup.append(addBtn, saveDateBtn, deleteBtn);
 
           const rowActionWrap = document.createElement('div');
           rowActionWrap.className = 'sales-date-row-actions';
           rowActionWrap.appendChild(rowActionHost);
 
-          action.append(dateLabel, topActionGroup, rowActionWrap);
+          topActionGroup.append(dateManageGroup, rowActionWrap);
+          action.append(dateLabel, topActionGroup);
           scopeControls.appendChild(action);
           return;
         }
