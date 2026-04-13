@@ -54,8 +54,15 @@ const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
 const execFileAsync = promisify(execFile);
+const SESSION_SECRET = process.env.SESSION_SECRET || 'chronolab-local-secret';
 const SESSION_DEFAULT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const SESSION_STORE_CLEANUP_INTERVAL_MS = 1000 * 60 * 15;
+const AUTH_PERSIST_COOKIE_NAME = 'cl_auth';
+const AUTH_PERSIST_COOKIE_MAX_AGE_MS = SESSION_DEFAULT_MAX_AGE_MS;
+const AUTH_PERSIST_HMAC_KEY = crypto
+  .createHash('sha256')
+  .update(`${SESSION_SECRET}:auth-cookie-v1`)
+  .digest();
 
 function resolveSessionExpiryTimeMs(sess = {}) {
   const cookie = sess && typeof sess.cookie === 'object' ? sess.cookie : {};
@@ -188,6 +195,124 @@ class SQLiteSessionStore extends session.Store {
       callback(error);
     }
   }
+}
+
+function signPersistAuthPayload(payloadBase64 = '') {
+  return crypto.createHmac('sha256', AUTH_PERSIST_HMAC_KEY).update(String(payloadBase64 || '')).digest('base64url');
+}
+
+function createPersistAuthToken(userId) {
+  const normalizedUserId = Number(userId || 0);
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+    return '';
+  }
+
+  const now = Date.now();
+  const payload = {
+    uid: normalizedUserId,
+    iat: now,
+    exp: now + AUTH_PERSIST_COOKIE_MAX_AGE_MS
+  };
+  const payloadBase64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const signature = signPersistAuthPayload(payloadBase64);
+  return `${payloadBase64}.${signature}`;
+}
+
+function parsePersistAuthToken(rawToken = '') {
+  const token = String(rawToken || '').trim();
+  if (!token) {
+    return null;
+  }
+
+  const dotIndex = token.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex >= token.length - 1) {
+    return null;
+  }
+
+  const payloadBase64 = token.slice(0, dotIndex);
+  const providedSignature = token.slice(dotIndex + 1);
+  const expectedSignature = signPersistAuthPayload(payloadBase64);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  const providedBuffer = Buffer.from(providedSignature);
+  if (
+    expectedBuffer.length !== providedBuffer.length ||
+    !crypto.timingSafeEqual(expectedBuffer, providedBuffer)
+  ) {
+    return null;
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  const userId = Number(payload?.uid || 0);
+  const expiresAt = Number(payload?.exp || 0);
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return null;
+  }
+
+  return {
+    userId,
+    expiresAt
+  };
+}
+
+function clearPersistAuthCookie(res) {
+  if (!res || typeof res.clearCookie !== 'function') {
+    return;
+  }
+  res.clearCookie(AUTH_PERSIST_COOKIE_NAME, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction
+  });
+}
+
+function setPersistAuthCookie(res, userId) {
+  if (!res || typeof res.cookie !== 'function') {
+    return;
+  }
+  const token = createPersistAuthToken(userId);
+  if (!token) {
+    clearPersistAuthCookie(res);
+    return;
+  }
+  res.cookie(AUTH_PERSIST_COOKIE_NAME, token, {
+    path: '/',
+    maxAge: AUTH_PERSIST_COOKIE_MAX_AGE_MS,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction
+  });
+}
+
+function tryRestoreSessionFromPersistCookie(req, res) {
+  if (req?.session?.userId) {
+    return true;
+  }
+
+  const token = String(req?.cookies?.[AUTH_PERSIST_COOKIE_NAME] || '').trim();
+  if (!token) {
+    return false;
+  }
+
+  const parsed = parsePersistAuthToken(token);
+  if (!parsed) {
+    clearPersistAuthCookie(res);
+    return false;
+  }
+
+  if (!req?.session) {
+    clearPersistAuthCookie(res);
+    return false;
+  }
+
+  req.session.userId = parsed.userId;
+  return true;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -515,7 +640,7 @@ app.use(cookieParser());
 const sessionStore = new SQLiteSessionStore();
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'chronolab-local-secret',
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     store: sessionStore,
@@ -2857,13 +2982,14 @@ function readAdminOtpSetup(req) {
   return { userId, secret, issuedAt };
 }
 
-function setAdminAuthSession(req, userRow) {
+function setAdminAuthSession(req, res, userRow) {
   if (!req?.session || !userRow) {
     return;
   }
   req.session.userId = Number(userRow.id);
   req.session.isAdmin = true;
   req.session.adminRole = normalizeAdminRole(userRow.admin_role);
+  setPersistAuthCookie(res, Number(userRow.id));
   clearAdminOtpPending(req);
 }
 
@@ -7466,7 +7592,7 @@ function asyncRoute(handler) {
 }
 
 function loadUser(req, res, next) {
-  if (!req.session.userId) {
+  if (!req.session.userId && !tryRestoreSessionFromPersistCookie(req, res)) {
     req.user = null;
     return next();
   }
@@ -7506,6 +7632,7 @@ function loadUser(req, res, next) {
     req.session.userId = null;
     req.session.isAdmin = false;
     req.session.adminRole = '';
+    clearPersistAuthCookie(res);
     req.user = null;
     return next();
   }
@@ -7514,6 +7641,7 @@ function loadUser(req, res, next) {
     req.session.userId = null;
     req.session.isAdmin = false;
     req.session.adminRole = '';
+    clearPersistAuthCookie(res);
     req.user = null;
     setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return next();
@@ -8851,6 +8979,7 @@ app.get('/mypage', requireAuth, (req, res) => {
     req.session.userId = null;
     req.session.isAdmin = false;
     req.session.adminRole = '';
+    clearPersistAuthCookie(res);
     setFlash(req, 'error', '사용자 정보를 확인할 수 없어 다시 로그인해 주세요.');
     return res.redirect('/login');
   }
@@ -9327,6 +9456,7 @@ app.post(
       req.session.userId = null;
       req.session.isAdmin = false;
       req.session.adminRole = '';
+      clearPersistAuthCookie(res);
       setFlash(req, 'error', '사용자 정보를 찾을 수 없습니다. 다시 로그인해 주세요.');
       return res.redirect('/login');
     }
@@ -9739,6 +9869,7 @@ app.post(
 
     req.session.userId = createdUserId;
     req.session.isAdmin = false;
+    setPersistAuthCookie(res, createdUserId);
     clearSignupCaptcha(req);
     resetAuthAttempt(req, 'signup');
 
@@ -10232,6 +10363,7 @@ app.post(
   req.session.userId = Number(user.id);
   req.session.isAdmin = Number(user.is_admin) === 1;
   req.session.adminRole = Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '';
+  setPersistAuthCookie(res, Number(user.id));
   resetAuthAttempt(req, 'login');
 
   setFlash(req, 'success', '로그인되었습니다.');
@@ -10241,6 +10373,7 @@ app.post(
 
 app.post('/logout', (req, res) => {
   req.session.destroy(() => {
+    clearPersistAuthCookie(res);
     res.redirect('/main');
   });
 });
@@ -10309,7 +10442,7 @@ app.post(
     return res.redirect('/admin/otp/verify');
   }
 
-  setAdminAuthSession(req, user);
+  setAdminAuthSession(req, res, user);
   resetAuthAttempt(req, 'admin-login');
 
   logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success');
@@ -10396,7 +10529,7 @@ app.post(
       return res.redirect('/admin/otp/verify');
     }
 
-    setAdminAuthSession(req, user);
+    setAdminAuthSession(req, res, user);
     resetAuthAttempt(req, 'admin-login');
     resetAuthAttempt(req, 'admin-otp-verify');
     logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success via otp');
@@ -10450,6 +10583,7 @@ app.post('/admin/change-password', requirePrimaryAdmin, asyncRoute(async (req, r
 
 app.get('/admin/logout', requireAdmin, (req, res) => {
   req.session.destroy(() => {
+    clearPersistAuthCookie(res);
     res.redirect('/admin/login');
   });
 });
@@ -12507,6 +12641,7 @@ app.get('/admin/otp', requireAdmin, (req, res) => {
     req.session.userId = null;
     req.session.isAdmin = false;
     req.session.adminRole = '';
+    clearPersistAuthCookie(res);
     clearAdminOtpSetup(req);
     setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
     return res.redirect('/admin/login');
