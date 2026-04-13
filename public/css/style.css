@@ -2627,6 +2627,15 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   white-space: nowrap;
 }
 
+.menu-group-filter-row {
+  align-items: center;
+  margin: 8px 0 4px;
+}
+
+.menu-group-filter-row .chip {
+  white-space: nowrap;
+}
+
 .menu-field-group-list {
   margin-top: 8px;
 }
@@ -4778,7 +4787,15 @@ body.admin-page :where(
 }
 
 body.admin-page .admin-list-item .menu-inline-edit > summary {
-  background: var(--admin-surface-l3);
+  background: #eef3ff;
+  color: #1a2a47;
+  border-color: #c8d6ea;
+}
+
+body.admin-page .admin-list-item .menu-inline-edit[open] > summary {
+  background: var(--color-navy);
+  color: #f8fafc;
+  border-color: #2b3a56;
 }
 
 /* Admin table/list preset
@@ -4833,6 +4850,20 @@ body.admin-page details.inquiry-admin-item > summary {
 body.admin-page details.admin-list-item > summary small,
 body.admin-page details.inquiry-admin-item > summary small {
   color: rgba(248, 250, 252, 0.84);
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary {
+  border-color: #d2dceb;
+  color: #1a2a47 !important;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary strong {
+  color: #1a2a47;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary small,
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary::after {
+  color: #5f6b7e;
 }
 
 body.admin-page .admin-list-item .admin-account-row:first-child {
