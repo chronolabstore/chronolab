@@ -3002,6 +3002,25 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   min-width: 112px;
 }
 
+body.admin-page select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.75L10 12.25L14.5 7.75' stroke='%2364758b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  background-position: right 12px center;
+  padding-right: 38px;
+  line-height: 1.2;
+}
+
+body.admin-page select[multiple],
+body.admin-page select[size]:not([size='1']) {
+  -webkit-appearance: auto;
+  appearance: auto;
+  background-image: none;
+  padding-right: 10px;
+}
+
 .member-filter-row .member-search-item input {
   min-width: 240px;
   width: min(52vw, 420px);
@@ -3673,6 +3692,11 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   font: inherit;
 }
 
+.sales-round-input:is(select) {
+  padding-right: 36px;
+  background-position: right 10px center;
+}
+
 .sales-round-action-group {
   display: inline-flex;
   align-items: center;
@@ -3714,7 +3738,6 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   white-space: nowrap;
 }
 
-.sales-price-taxonomy-row select,
 .sales-price-taxonomy-row input {
   width: 100%;
   min-height: 36px;
@@ -3724,6 +3747,18 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   color: var(--text);
   font: inherit;
   padding: 0 10px;
+}
+
+.sales-price-taxonomy-row select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  padding: 0 36px 0 10px;
+  background-position: right 10px center;
 }
 
 .sales-price-taxonomy-actions {
@@ -3756,7 +3791,32 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-date-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-date-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) auto auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.sales-date-row-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sales-date-row-actions #salesRowActionHost {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3774,8 +3834,17 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 @media (max-width: 900px) {
   .sales-date-action-group {
-    margin-left: 0;
     width: 100%;
+    justify-content: flex-end;
+  }
+
+  .sales-date-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-date-row-actions {
+    width: 100%;
+    margin-left: 0;
     justify-content: flex-end;
   }
 
@@ -4880,6 +4949,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
@@ -4909,6 +4979,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
@@ -4935,6 +5006,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
