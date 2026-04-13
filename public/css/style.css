@@ -4859,7 +4859,7 @@ body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip:no
    - collapsed list rows: light-blue surface
    - expanded editor body: white surface */
 body.admin-page .admin-post-accordion-list > details.admin-list-item {
-  background: var(--admin-surface-l3) !important;
+  background: var(--admin-surface-l2) !important;
   border-color: #d2dceb;
   padding: 0;
   gap: 0;
@@ -4870,7 +4870,7 @@ body.admin-page .admin-post-accordion-list > details.admin-list-item > summary {
   padding: 12px 14px;
   border: 0;
   border-radius: 12px;
-  background: var(--admin-surface-l3);
+  background: var(--admin-surface-l2);
   color: #1a2a47;
 }
 
@@ -4889,7 +4889,7 @@ body.admin-page .admin-post-accordion-list > details.admin-list-item[open] > sum
   padding: 10px 12px;
   border: 1px solid #d2dceb;
   border-radius: 10px 10px 0 0;
-  background: var(--admin-surface-l3);
+  background: var(--admin-surface-l2);
   color: #1a2a47;
 }
 
