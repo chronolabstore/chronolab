@@ -4775,6 +4775,86 @@ body.admin-page .admin-list-item .menu-inline-edit > summary {
   background: var(--admin-surface-l3);
 }
 
+/* Admin table/list preset
+   header row: navy + white text
+   body rows/items: white + black/gray text
+   actions: navy combination */
+body.admin-page .table-wrap {
+  background: #ffffff !important;
+}
+
+body.admin-page table {
+  background: #ffffff;
+}
+
+body.admin-page th {
+  background: var(--color-navy) !important;
+  color: #f8fafc !important;
+  border-bottom-color: #2b3a56 !important;
+}
+
+body.admin-page td {
+  background: #ffffff !important;
+  color: #111827 !important;
+  border-bottom-color: #d8dfec !important;
+}
+
+body.admin-page tr:hover td {
+  background: #f7f9fd !important;
+}
+
+body.admin-page td small,
+body.admin-page .muted-label {
+  color: #5f6b7e;
+}
+
+body.admin-page .admin-list-item,
+body.admin-page .inquiry-admin-item {
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+
+body.admin-page details.admin-list-item > summary,
+body.admin-page details.inquiry-admin-item > summary {
+  margin: -10px -10px 10px;
+  padding: 10px 12px;
+  border-radius: 10px 10px 0 0;
+  border: 1px solid #2b3a56;
+  background: var(--color-navy);
+  color: #f8fafc;
+}
+
+body.admin-page details.admin-list-item > summary small,
+body.admin-page details.inquiry-admin-item > summary small {
+  color: rgba(248, 250, 252, 0.84);
+}
+
+body.admin-page .admin-list-item .admin-account-row:first-child {
+  margin: -10px -10px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #2b3a56;
+  background: var(--color-navy);
+  color: #f8fafc;
+}
+
+body.admin-page .admin-list-item .admin-account-row:first-child .admin-account-brief span {
+  color: rgba(248, 250, 252, 0.84);
+}
+
+body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.dark,
+body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .cta-main {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: #f8fafc;
+}
+
+body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip:not(.dark) {
+  background: #ffffff;
+  border-color: #b9c7df;
+  color: #1a2a47;
+}
+
 @media (max-width: 820px) {
   .popup-notice-deck-shell {
     --popup-card-width: 100%;
