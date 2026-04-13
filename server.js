@@ -155,6 +155,8 @@ const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
 const PRODUCT_FILTER_BASELINE_VERSION_KEY = 'productFilterBaselineSeedV20260414';
 const PRODUCT_FILTER_BASELINE_VERSION = '2026-04-14-v1';
 const PRODUCT_FILTER_BASELINE_GROUP_KEYS = Object.freeze(['공장제', '젠파츠', '현지중고']);
+const SALES_PRICE_FILTER_BASELINE_VERSION_KEY = 'salesWorkbookPriceFilterSeedV20260414';
+const SALES_PRICE_FILTER_BASELINE_VERSION = '2026-04-14-v1';
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
@@ -4555,6 +4557,94 @@ function buildDefaultPriceScopes(groupKey = '') {
   }));
 }
 
+function buildSalesTaxonomyBaselineByGroupConfig(groupConfig = null) {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return { brands: [] };
+  }
+
+  const brandOptions = getGroupBrandOptions(groupConfig);
+  const modelOptionMap = getGroupModelOptionsByBrand(groupConfig);
+  const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
+  const fallbackModelOptions = getGroupModelOptions(groupConfig);
+
+  const brands = brandOptions
+    .map((brandValue) => {
+      const brandName = normalizeSalesSheetName(brandValue, 80);
+      if (!brandName) {
+        return null;
+      }
+      const sourceModels = hasModelOptionMap
+        ? getGroupModelOptionsForBrand(groupConfig, brandValue)
+        : fallbackModelOptions;
+      const models = normalizeProductFilterOptionList(sourceModels)
+        .map((modelValue) => normalizeSalesSheetName(modelValue, 120))
+        .filter(Boolean)
+        .sort(compareSalesSheetNames);
+      return {
+        name: brandName,
+        models
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => compareSalesSheetNames(a.name, b.name));
+
+  return { brands };
+}
+
+function mergeSalesTaxonomyWithBaseline(currentTaxonomy = {}, rows = [], baselineTaxonomy = { brands: [] }) {
+  const current = normalizeSalesScopeTaxonomy(currentTaxonomy, rows);
+  const baselineBrands = Array.isArray(baselineTaxonomy?.brands) ? baselineTaxonomy.brands : [];
+  const brandMap = new Map();
+
+  const upsertBrand = (rawBrandName = '') => {
+    const brandName = normalizeSalesSheetName(rawBrandName, 80);
+    if (!brandName) {
+      return null;
+    }
+    const brandKey = normalizeSalesSheetNameKey(brandName);
+    if (!brandMap.has(brandKey)) {
+      brandMap.set(brandKey, { name: brandName, models: [] });
+    }
+    return brandMap.get(brandKey);
+  };
+
+  const upsertModel = (brandEntry, rawModelName = '') => {
+    if (!brandEntry) {
+      return;
+    }
+    const modelName = normalizeSalesSheetName(rawModelName, 120);
+    if (!modelName) {
+      return;
+    }
+    const modelKey = normalizeSalesSheetNameKey(modelName);
+    const duplicated = brandEntry.models.some((item) => normalizeSalesSheetNameKey(item) === modelKey);
+    if (!duplicated) {
+      brandEntry.models.push(modelName);
+    }
+  };
+
+  (Array.isArray(current.brands) ? current.brands : []).forEach((brandItem) => {
+    const brandEntry = upsertBrand(brandItem?.name || '');
+    const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+    models.forEach((modelName) => upsertModel(brandEntry, modelName));
+  });
+
+  baselineBrands.forEach((brandItem) => {
+    const brandEntry = upsertBrand(brandItem?.name || '');
+    const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+    models.forEach((modelName) => upsertModel(brandEntry, modelName));
+  });
+
+  const brands = [...brandMap.values()]
+    .map((brandItem) => ({
+      name: brandItem.name,
+      models: [...brandItem.models].sort(compareSalesSheetNames)
+    }))
+    .sort((a, b) => compareSalesSheetNames(a.name, b.name));
+
+  return { brands };
+}
+
 function createDefaultRoundName(tabKey = '', index = 1) {
   if (tabKey === 'preorder') {
     return `${index}차`;
@@ -4799,6 +4889,127 @@ function saveSalesWorkbook(inputWorkbook = null, options = {}) {
   setSetting(SALES_WORKBOOK_SETTING_KEY, JSON.stringify(next));
   return next;
 }
+
+function applySalesWorkbookPriceFilterBaselineSeedOnce() {
+  const currentVersion = String(getSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, '') || '').trim();
+  if (currentVersion === SALES_PRICE_FILTER_BASELINE_VERSION) {
+    return;
+  }
+
+  const productGroupConfigs = getProductGroupConfigs();
+  const salesTabs = getSalesMainTabs(productGroupConfigs).filter(
+    (tabInfo) => String(tabInfo?.scopeType || '').trim() === 'factory'
+  );
+  if (salesTabs.length === 0) {
+    setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+    return;
+  }
+
+  const workbook = getSalesWorkbook();
+  const workbookTabs = workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs : {};
+  let changed = false;
+
+  salesTabs.forEach((tabInfo) => {
+    const tabKey = String(tabInfo?.key || '').trim();
+    if (!tabKey || !workbookTabs[tabKey] || typeof workbookTabs[tabKey] !== 'object') {
+      return;
+    }
+    const tab = workbookTabs[tabKey];
+    if (!Array.isArray(tab.groups)) {
+      tab.groups = [];
+      changed = true;
+    }
+
+    const normalizedGroupKey = normalizeProductGroupKey(tabInfo?.groupKey || '');
+    const groupConfig = normalizedGroupKey
+      ? productGroupConfigs.find(
+          (group) => normalizeProductGroupKey(group?.key || '') === normalizedGroupKey
+        )
+      : null;
+    if (!groupConfig) {
+      return;
+    }
+
+    const baselineTaxonomy = buildSalesTaxonomyBaselineByGroupConfig(groupConfig);
+    const baselineFactoryNames = normalizeProductFilterOptionList(groupConfig.factoryOptions)
+      .map((value) => normalizeSalesSheetName(value, 80))
+      .filter(Boolean);
+    const hasGroups = Array.isArray(tab.groups) && tab.groups.length > 0;
+
+    if (!hasGroups) {
+      const scopeNames = baselineFactoryNames.length > 0 ? baselineFactoryNames : ['기본'];
+      tab.groups = scopeNames.map((scopeName, idx) => ({
+        id: createSalesId(`scope-p-seed-${idx + 1}`),
+        name: scopeName,
+        categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
+        taxonomy: mergeSalesTaxonomyWithBaseline({}, [], baselineTaxonomy),
+        rows: []
+      }));
+      changed = true;
+    } else if (baselineFactoryNames.length > 0) {
+      const placeholderKeySet = new Set(['기본', 'factory 1', 'factory']);
+      if (tab.groups.length === 1) {
+        const onlyScope = tab.groups[0] && typeof tab.groups[0] === 'object' ? tab.groups[0] : null;
+        const onlyScopeName = normalizeSalesSheetName(onlyScope?.name || '', 80);
+        const onlyScopeKey = normalizeSalesSheetNameKey(onlyScopeName);
+        const rowCount = Array.isArray(onlyScope?.rows) ? onlyScope.rows.length : 0;
+        if (onlyScope && rowCount === 0 && placeholderKeySet.has(onlyScopeKey) && onlyScopeName !== baselineFactoryNames[0]) {
+          onlyScope.name = baselineFactoryNames[0];
+          changed = true;
+        }
+      }
+
+      const existingScopeNameKeys = new Set(
+        tab.groups
+          .map((scope) => normalizeSalesSheetNameKey(scope?.name || ''))
+          .filter(Boolean)
+      );
+      baselineFactoryNames.forEach((factoryName) => {
+        const factoryKey = normalizeSalesSheetNameKey(factoryName);
+        if (!factoryKey || existingScopeNameKeys.has(factoryKey)) {
+          return;
+        }
+        tab.groups.push({
+          id: createSalesId(`scope-p-seed-${tab.groups.length + 1}`),
+          name: factoryName,
+          categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
+          taxonomy: mergeSalesTaxonomyWithBaseline({}, [], baselineTaxonomy),
+          rows: []
+        });
+        existingScopeNameKeys.add(factoryKey);
+        changed = true;
+      });
+    }
+
+    tab.groups.forEach((scope) => {
+      if (!scope || typeof scope !== 'object') {
+        return;
+      }
+
+      const mergedTaxonomy = mergeSalesTaxonomyWithBaseline(
+        scope.taxonomy || {},
+        Array.isArray(scope.rows) ? scope.rows : [],
+        baselineTaxonomy
+      );
+      if (JSON.stringify(scope.taxonomy || {}) !== JSON.stringify(mergedTaxonomy)) {
+        scope.taxonomy = mergedTaxonomy;
+        changed = true;
+      }
+
+      if (normalizeSalesPriceSheetCategoryType(scope.categoryType) !== SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY) {
+        scope.categoryType = SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY;
+        changed = true;
+      }
+    });
+  });
+
+  if (changed) {
+    saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' });
+  }
+  setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+}
+
+applySalesWorkbookPriceFilterBaselineSeedOnce();
 
 function getSalesScopeList(tab = null) {
   if (!tab || typeof tab !== 'object') {
