@@ -3634,6 +3634,7 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  align-self: end;
   gap: 8px;
 }
 
