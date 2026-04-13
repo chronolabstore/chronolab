@@ -1104,13 +1104,37 @@ function ensureAdminUser() {
     return;
   }
 
-  const passwordHash = bcrypt.hashSync('Admin123!', 10);
+  const bootstrapPassword = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || '').trim();
+  const bootstrapUsername = String(process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin')
+    .trim()
+    .toLowerCase();
+  const bootstrapEmail = String(process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@chronolab.local')
+    .trim()
+    .toLowerCase();
+
+  const usernameValid = /^[a-z0-9]{4,20}$/.test(bootstrapUsername);
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bootstrapEmail);
+
+  if (!bootstrapPassword) {
+    console.warn('[chronolab:bootstrap] no admin account exists and BOOTSTRAP_ADMIN_PASSWORD is not set.');
+    return;
+  }
+  if (bootstrapPassword.length < 12 || !/[a-z]/.test(bootstrapPassword) || !/[A-Z]/.test(bootstrapPassword) || !/[0-9]/.test(bootstrapPassword) || !/[^A-Za-z0-9]/.test(bootstrapPassword)) {
+    console.warn('[chronolab:bootstrap] BOOTSTRAP_ADMIN_PASSWORD does not meet minimum complexity requirements.');
+    return;
+  }
+  if (!usernameValid || !emailValid) {
+    console.warn('[chronolab:bootstrap] invalid BOOTSTRAP_ADMIN_USERNAME or BOOTSTRAP_ADMIN_EMAIL.');
+    return;
+  }
+
+  const passwordHash = bcrypt.hashSync(bootstrapPassword, 10);
   db.prepare(
     `
       INSERT INTO users (email, username, full_name, phone, password_hash, agreed_terms, is_admin, admin_role)
       VALUES (?, ?, ?, '', ?, 1, 1, 'PRIMARY')
     `
-  ).run('admin@chronolab.local', 'admin', 'Main Admin', passwordHash);
+  ).run(bootstrapEmail, bootstrapUsername, 'Main Admin', passwordHash);
 }
 
 function normalizeAdminRoles() {
