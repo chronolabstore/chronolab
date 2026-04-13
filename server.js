@@ -7673,6 +7673,9 @@ function loadUser(req, res, next) {
   };
 
   req.session.isAdmin = req.user.isAdmin;
+  if (!String(req.cookies?.[AUTH_PERSIST_COOKIE_NAME] || '').trim()) {
+    setPersistAuthCookie(res, req.user.id);
+  }
 
   return next();
 }
