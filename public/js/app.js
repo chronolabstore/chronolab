@@ -87,39 +87,6 @@
       });
     });
 
-    var currencyStorageKey = 'chronolab-selected-currency';
-    var currencyItems = Array.prototype.slice.call(langPanel.querySelectorAll('[data-currency-item][data-currency-value]'));
-
-    function applyCurrencySelection(value) {
-      var normalized = String(value || '').trim();
-      currencyItems.forEach(function (item) {
-        item.classList.toggle('is-active', String(item.getAttribute('data-currency-value') || '').trim() === normalized);
-      });
-    }
-
-    if (currencyItems.length) {
-      var storedCurrency = '';
-      try {
-        storedCurrency = String(localStorage.getItem(currencyStorageKey) || '').trim();
-      } catch (error) {
-        storedCurrency = '';
-      }
-      if (storedCurrency) {
-        applyCurrencySelection(storedCurrency);
-      }
-
-      currencyItems.forEach(function (item) {
-        item.addEventListener('click', function () {
-          var nextValue = String(item.getAttribute('data-currency-value') || '').trim();
-          applyCurrencySelection(nextValue);
-          try {
-            localStorage.setItem(currencyStorageKey, nextValue);
-          } catch (error) {
-            // ignore storage failures
-          }
-        });
-      });
-    }
   }
 
   function initNoticePopup() {

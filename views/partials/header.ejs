@@ -65,7 +65,7 @@
           data-lang-panel-toggle
           aria-controls="headerLangPanel"
           aria-expanded="false"
-          aria-label="<%= ctx.lang === 'en' ? 'Language and currency settings' : '언어 및 통화 설정' %>"
+          aria-label="<%= ctx.lang === 'en' ? 'Language settings' : '언어 설정' %>"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
@@ -100,36 +100,16 @@
   </div>
 
   <div id="headerLangPanel" class="header-lang-panel" data-lang-panel hidden>
-    <div class="header-lang-panel-grid">
-      <section class="header-lang-column">
-        <h4><%= ctx.lang === 'en' ? 'Language' : '언어' %></h4>
-        <label class="header-lang-search">
-          <input type="search" data-lang-search="lang" placeholder="<%= ctx.lang === 'en' ? 'Search' : '검색' %>" />
-        </label>
-        <div class="header-lang-list" data-lang-list="lang">
-          <a href="/set-lang/en" data-filter-item="english en" class="<%= ctx.lang === 'en' ? 'is-active' : '' %>">English</a>
-          <a href="/set-lang/ko" data-filter-item="korean ko 한국어" class="<%= ctx.lang === 'ko' ? 'is-active' : '' %>"><%= ctx.lang === 'en' ? 'Korean (한국어)' : '한국어' %></a>
-        </div>
-      </section>
-      <section class="header-lang-column">
-        <h4><%= ctx.lang === 'en' ? 'Currency' : '통화' %></h4>
-        <label class="header-lang-search">
-          <input type="search" data-lang-search="currency" placeholder="<%= ctx.lang === 'en' ? 'Search' : '검색' %>" />
-        </label>
-        <div class="header-lang-list" data-lang-list="currency">
-          <button type="button" data-currency-item data-filter-item="usd $" data-currency-value="USD-$" class="is-active">USD-$</button>
-          <button type="button" data-currency-item data-filter-item="aed" data-currency-value="AED-د.إ">AED-د.إ</button>
-          <button type="button" data-currency-item data-filter-item="eur" data-currency-value="EUR-€">EUR-€</button>
-          <button type="button" data-currency-item data-filter-item="gbp" data-currency-value="GBP-£">GBP-£</button>
-          <button type="button" data-currency-item data-filter-item="jpy" data-currency-value="JPY-¥">JPY-¥</button>
-          <button type="button" data-currency-item data-filter-item="krw 원" data-currency-value="KRW-₩">KRW-₩</button>
-          <button type="button" data-currency-item data-filter-item="cny 위안" data-currency-value="CNY-¥">CNY-¥</button>
-          <button type="button" data-currency-item data-filter-item="sgd" data-currency-value="SGD-S$">SGD-S$</button>
-          <button type="button" data-currency-item data-filter-item="cad" data-currency-value="CAD-C$">CAD-C$</button>
-          <button type="button" data-currency-item data-filter-item="aud" data-currency-value="AUD-A$">AUD-A$</button>
-        </div>
-      </section>
-    </div>
+    <section class="header-lang-column">
+      <h4><%= ctx.lang === 'en' ? 'Language' : '언어' %></h4>
+      <label class="header-lang-search">
+        <input type="search" data-lang-search="lang" placeholder="<%= ctx.lang === 'en' ? 'Search' : '검색' %>" />
+      </label>
+      <div class="header-lang-list" data-lang-list="lang">
+        <a href="/set-lang/en" data-filter-item="english en" class="<%= ctx.lang === 'en' ? 'is-active' : '' %>">English</a>
+        <a href="/set-lang/ko" data-filter-item="korean ko 한국어" class="<%= ctx.lang === 'ko' ? 'is-active' : '' %>"><%= ctx.lang === 'en' ? 'Korean (한국어)' : '한국어' %></a>
+      </div>
+    </section>
   </div>
 
   <nav class="menu-scroller">
