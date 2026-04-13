@@ -5163,3 +5163,197 @@ body.theme-night .inline-file-preview-image {
     min-height: 220px;
   }
 }
+
+/* Binance-inspired full visual pass (functionality unchanged) */
+:root {
+  --bg: #f5f7fa;
+  --text: #111827;
+  --muted: #5f6b7a;
+  --line: #e7ecf1;
+  --card: #ffffff;
+  --chip: #f6f9fc;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-border: #d5dde6;
+  --btn-secondary-bg-hover: #f4f7fb;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  max-width: 1240px;
+  padding: 12px 16px 30px;
+}
+
+.page-container {
+  gap: 14px;
+}
+
+.site-header {
+  border-radius: 10px;
+  border-color: #dde4ec;
+  background: var(--card);
+}
+
+.header-top {
+  background: linear-gradient(100deg, #101928 0%, #13223a 52%, #0f1828 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 12px 16px;
+}
+
+.menu-scroller {
+  background: var(--card);
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.menu-pill,
+.chip,
+.kpi-toggle-btn,
+.cta-main.cta-pill {
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.menu-pill.active,
+.chip.dark,
+.kpi-toggle-btn.active,
+.cta-main {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-text);
+}
+
+.menu-pill:hover,
+.chip:hover,
+.kpi-toggle-btn:hover {
+  border-color: #c8d1dc;
+}
+
+.hero-wrap,
+.hero-image-pane,
+.hero-dark-card,
+.detail-card-dark,
+.block-card,
+.shop-filter-card,
+.product-card,
+.news-card,
+.qc-card,
+.review-card,
+.auth-card,
+.footer-card,
+.kpi-card,
+.admin-list-item,
+.inquiry-admin-item,
+.table-wrap,
+.popup-card,
+.cart-summary-card,
+.shop-split-card,
+.shop-row-block {
+  border-color: var(--line);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.hero-image-pane h1,
+.hero-image-pane h2,
+.block-card > h2,
+.block-card > h3,
+.section-head h2 {
+  letter-spacing: -0.02em;
+}
+
+body.theme-night {
+  --bg: #0b111b;
+  --text: #e6ecf5;
+  --muted: #94a3b8;
+  --line: #263246;
+  --card: #121b2a;
+  --card-dark: #101826;
+  --chip: #1a2639;
+  --header-ui-border: rgba(148, 163, 184, 0.32);
+  --header-ui-bg: rgba(148, 163, 184, 0.12);
+  --header-ui-bg-hover: rgba(148, 163, 184, 0.22);
+  --btn-secondary-bg: #192538;
+  --btn-secondary-border: #32445f;
+  --btn-secondary-bg-hover: #23324a;
+}
+
+body.theme-night {
+  background-color: var(--bg);
+}
+
+body.theme-night .site-header {
+  background: #111a28;
+  border-color: #2a3750;
+}
+
+body.theme-night .header-top {
+  background: linear-gradient(100deg, #0d1420 0%, #132238 52%, #0d1420 100%);
+  border-bottom-color: rgba(148, 163, 184, 0.24);
+}
+
+body.theme-night .menu-scroller {
+  background: #111a28;
+  border-top-color: #2a3750;
+}
+
+body.theme-night .menu-pill,
+body.theme-night .chip,
+body.theme-night .kpi-toggle-btn,
+body.theme-night .icon-action,
+body.theme-night .icon-circle-action {
+  background: #1a2639;
+  border-color: #344865;
+  color: #dce4ef;
+}
+
+body.theme-night .menu-pill:hover,
+body.theme-night .chip:hover,
+body.theme-night .kpi-toggle-btn:hover,
+body.theme-night .icon-action:hover,
+body.theme-night .icon-circle-action:hover {
+  background: #25344c;
+}
+
+body.theme-night .menu-pill.active,
+body.theme-night .chip.dark,
+body.theme-night .kpi-toggle-btn.active,
+body.theme-night .cta-main,
+body.theme-night .header-actions .chip.dark {
+  background: #f0b90b;
+  border-color: #f0b90b;
+  color: #111827;
+}
+
+body.theme-night .hero-wrap,
+body.theme-night .hero-image-pane,
+body.theme-night .hero-dark-card,
+body.theme-night .detail-card-dark,
+body.theme-night .block-card,
+body.theme-night .shop-filter-card,
+body.theme-night .product-card,
+body.theme-night .news-card,
+body.theme-night .qc-card,
+body.theme-night .review-card,
+body.theme-night .auth-card,
+body.theme-night .footer-card,
+body.theme-night .kpi-card,
+body.theme-night .admin-list-item,
+body.theme-night .inquiry-admin-item,
+body.theme-night .table-wrap,
+body.theme-night .popup-card,
+body.theme-night .cart-summary-card,
+body.theme-night .shop-split-card,
+body.theme-night .shop-row-block {
+  background: var(--card);
+  border-color: var(--line);
+}
+
+body.theme-night .hero-dark-card,
+body.theme-night .detail-card-dark {
+  background: #0f1726;
+}
