@@ -688,12 +688,12 @@ body.theme-night .hero-badge {
   margin-top: -20px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 12px;
 }
 
 .hero-dark-card h3 {
-  margin: 0;
+  margin: 36px 0 0;
   font-size: 1.2rem;
 }
 
