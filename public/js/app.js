@@ -31,9 +31,8 @@
       }
 
       var legacyHideKey = 'chronolab-popup-hide-' + legacyPopupId;
-      var legacySessionKey = 'chronolab-popup-session-' + legacyPopupId;
       var legacySavedUntil = Number(localStorage.getItem(legacyHideKey) || '0');
-      if (legacySavedUntil > Date.now() || sessionStorage.getItem(legacySessionKey) === '1') {
+      if (legacySavedUntil > Date.now()) {
         return;
       }
       popup.classList.remove('hidden');
@@ -48,12 +47,10 @@
         }
 
         var action = actionTarget.getAttribute('data-popup-action');
-        var sessionKey = 'chronolab-popup-session-' + legacyPopupId;
         var hideKey = 'chronolab-popup-hide-' + legacyPopupId;
         if (action === 'hide7') {
           localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
         }
-        sessionStorage.setItem(sessionKey, '1');
         closeNoticePopup();
       });
       return;
@@ -62,27 +59,41 @@
     var navPrev = popup.querySelector('[data-popup-nav="prev"]');
     var navNext = popup.querySelector('[data-popup-nav="next"]');
     var popupViewport = popup.querySelector('[data-popup-viewport]') || popup;
+    var popupStack = popup.querySelector('[data-popup-stack]');
     var popupMeta = popup.querySelector('[data-popup-meta]');
     var popupCurrent = popup.querySelector('[data-popup-current]');
     var popupTotal = popup.querySelector('[data-popup-total]');
+
+    function hideCardElement(card) {
+      if (!card) {
+        return;
+      }
+      card.hidden = true;
+      card.classList.remove('is-active', 'is-next', 'is-next-2', 'is-previous');
+    }
+
+    function showCardElement(card) {
+      if (!card) {
+        return;
+      }
+      card.hidden = false;
+    }
 
     var now = Date.now();
     var visibleCards = popupCards.filter(function (card) {
       var popupId = card.getAttribute('data-popup-id');
       if (!popupId) {
-        card.classList.add('hidden');
+        hideCardElement(card);
         return false;
       }
       var hideKey = 'chronolab-popup-hide-' + popupId;
-      var sessionKey = 'chronolab-popup-session-' + popupId;
       var savedUntil = Number(localStorage.getItem(hideKey) || '0');
       var hiddenForSevenDays = savedUntil > now;
-      var shownInSession = sessionStorage.getItem(sessionKey) === '1';
-      if (hiddenForSevenDays || shownInSession) {
-        card.classList.add('hidden');
+      if (hiddenForSevenDays) {
+        hideCardElement(card);
         return false;
       }
-      card.classList.remove('hidden');
+      showCardElement(card);
       return true;
     });
 
@@ -147,7 +158,22 @@
           card.classList.add('is-previous');
         }
       });
+      requestAnimationFrame(syncDeckStackHeight);
       updateDeckMeta();
+    }
+
+    function syncDeckStackHeight() {
+      if (!popupStack || !visibleCards.length) {
+        return;
+      }
+      var activeCard = visibleCards[currentIndex];
+      if (!activeCard) {
+        return;
+      }
+      var nextHeight = Math.ceil(activeCard.getBoundingClientRect().height || activeCard.offsetHeight || 0);
+      if (nextHeight > 0) {
+        popupStack.style.height = String(nextHeight) + 'px';
+      }
     }
 
     function goPrev() {
@@ -175,12 +201,10 @@
         return;
       }
       var hideKey = 'chronolab-popup-hide-' + popupId;
-      var sessionKey = 'chronolab-popup-session-' + popupId;
       if (hideForSevenDays) {
         localStorage.setItem(hideKey, String(Date.now() + 1000 * 60 * 60 * 24 * 7));
       }
-      sessionStorage.setItem(sessionKey, '1');
-      card.classList.add('hidden');
+      hideCardElement(card);
 
       var removedIndex = visibleCards.indexOf(card);
       if (removedIndex !== -1) {
@@ -347,6 +371,25 @@
       if (event.key === 'Escape') {
         closeNoticePopup();
       }
+    });
+
+    visibleCards.forEach(function (card) {
+      var images = card.querySelectorAll('img');
+      images.forEach(function (image) {
+        image.addEventListener('load', function () {
+          if (card !== visibleCards[currentIndex]) {
+            return;
+          }
+          requestAnimationFrame(syncDeckStackHeight);
+        });
+      });
+    });
+
+    window.addEventListener('resize', function () {
+      if (popup.classList.contains('hidden')) {
+        return;
+      }
+      requestAnimationFrame(syncDeckStackHeight);
     });
 
     updateDeckCards();
