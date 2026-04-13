@@ -5,15 +5,31 @@ DEFAULT_APP_DIR="/var/www/chronolab"
 LEGACY_APP_DIR="/var/www/chrono-lab"
 if [ -n "${APP_DIR:-}" ]; then
   APP_DIR="${APP_DIR}"
-elif [ -d "$DEFAULT_APP_DIR" ]; then
+elif [ -d "$DEFAULT_APP_DIR/.git" ]; then
   APP_DIR="$DEFAULT_APP_DIR"
-elif [ -d "$LEGACY_APP_DIR" ]; then
+elif [ -d "$LEGACY_APP_DIR/.git" ]; then
   APP_DIR="$LEGACY_APP_DIR"
 else
-  APP_DIR="$DEFAULT_APP_DIR"
+  APP_DIR="$LEGACY_APP_DIR"
 fi
-PM2_APP="${PM2_APP:-chronolab}"
+PM2_APP="${PM2_APP:-}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
+
+resolve_pm2_app_name() {
+  if [ -n "$PM2_APP" ]; then
+    echo "$PM2_APP"
+    return
+  fi
+  for candidate in chronolab chrono-lab; do
+    if pm2 describe "$candidate" >/dev/null 2>&1; then
+      echo "$candidate"
+      return
+    fi
+  done
+  echo "chronolab"
+}
+
+PM2_APP="$(resolve_pm2_app_name)"
 
 echo "[1/3] reload pm2 app: $PM2_APP"
 if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
