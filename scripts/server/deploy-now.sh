@@ -30,9 +30,9 @@ git pull --ff-only origin "$BRANCH"
 echo "[4/6] install production dependencies"
 npm install --omit=dev
 
-echo "[5/6] restart app"
+echo "[5/6] reload app"
 if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-  pm2 restart "$PM2_APP" --update-env
+  pm2 reload "$PM2_APP" --update-env || pm2 restart "$PM2_APP" --update-env
 else
   if [ -f "$ENV_FILE" ]; then
     pm2 start "$APP_DIR/server.js" --name "$PM2_APP" --node-args="--env-file=$ENV_FILE"

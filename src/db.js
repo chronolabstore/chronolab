@@ -1733,6 +1733,16 @@ export function initDb() {
       member_visit_count INTEGER NOT NULL DEFAULT 0,
       guest_visit_count INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      sid TEXT PRIMARY KEY,
+      sess TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at
+      ON user_sessions (expires_at);
   `);
 
   ensureProductsCategoryColumn();

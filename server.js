@@ -54,6 +54,141 @@ const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
 const execFileAsync = promisify(execFile);
+const SESSION_DEFAULT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+const SESSION_STORE_CLEANUP_INTERVAL_MS = 1000 * 60 * 15;
+
+function resolveSessionExpiryTimeMs(sess = {}) {
+  const cookie = sess && typeof sess.cookie === 'object' ? sess.cookie : {};
+  const maxAgeRaw =
+    cookie && (cookie.originalMaxAge !== undefined ? cookie.originalMaxAge : cookie.maxAge);
+  const maxAge = Number(maxAgeRaw);
+  if (Number.isFinite(maxAge) && maxAge > 0) {
+    return Date.now() + maxAge;
+  }
+
+  const expiresAt = cookie && cookie.expires ? new Date(cookie.expires).getTime() : NaN;
+  if (Number.isFinite(expiresAt) && expiresAt > 0) {
+    return expiresAt;
+  }
+
+  return Date.now() + SESSION_DEFAULT_MAX_AGE_MS;
+}
+
+class SQLiteSessionStore extends session.Store {
+  constructor(options = {}) {
+    super();
+    this.cleanupIntervalMs = Math.max(
+      60 * 1000,
+      Number(options.cleanupIntervalMs || SESSION_STORE_CLEANUP_INTERVAL_MS)
+    );
+    this.lastCleanupAt = 0;
+
+    this.selectStmt = db.prepare(
+      `
+        SELECT sess
+        FROM user_sessions
+        WHERE sid = ?
+          AND expires_at > ?
+        LIMIT 1
+      `
+    );
+    this.upsertStmt = db.prepare(
+      `
+        INSERT INTO user_sessions (sid, sess, expires_at, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(sid)
+        DO UPDATE SET
+          sess = excluded.sess,
+          expires_at = excluded.expires_at,
+          updated_at = datetime('now')
+      `
+    );
+    this.touchStmt = db.prepare(
+      `
+        UPDATE user_sessions
+        SET expires_at = ?, updated_at = datetime('now')
+        WHERE sid = ?
+      `
+    );
+    this.destroyStmt = db.prepare('DELETE FROM user_sessions WHERE sid = ?');
+    this.cleanupStmt = db.prepare('DELETE FROM user_sessions WHERE expires_at <= ?');
+  }
+
+  cleanupExpiredSessions() {
+    const now = Date.now();
+    if (now - this.lastCleanupAt < this.cleanupIntervalMs) {
+      return;
+    }
+    this.cleanupStmt.run(now);
+    this.lastCleanupAt = now;
+  }
+
+  get(sid, callback = () => {}) {
+    try {
+      this.cleanupExpiredSessions();
+      const row = this.selectStmt.get(String(sid || ''), Date.now());
+      if (!row || !row.sess) {
+        callback(null, null);
+        return;
+      }
+      let parsed = null;
+      try {
+        parsed = JSON.parse(String(row.sess || '{}'));
+      } catch {
+        this.destroyStmt.run(String(sid || ''));
+        callback(null, null);
+        return;
+      }
+      callback(null, parsed);
+    } catch (error) {
+      callback(error);
+    }
+  }
+
+  set(sid, sess, callback = () => {}) {
+    try {
+      this.cleanupExpiredSessions();
+      const normalizedSid = String(sid || '').trim();
+      if (!normalizedSid) {
+        callback(new Error('invalid session id'));
+        return;
+      }
+      const expiresAt = resolveSessionExpiryTimeMs(sess);
+      this.upsertStmt.run(normalizedSid, JSON.stringify(sess || {}), expiresAt);
+      callback(null);
+    } catch (error) {
+      callback(error);
+    }
+  }
+
+  touch(sid, sess, callback = () => {}) {
+    try {
+      this.cleanupExpiredSessions();
+      const normalizedSid = String(sid || '').trim();
+      if (!normalizedSid) {
+        callback(new Error('invalid session id'));
+        return;
+      }
+      const expiresAt = resolveSessionExpiryTimeMs(sess);
+      const result = this.touchStmt.run(expiresAt, normalizedSid);
+      if (!result || Number(result.changes || 0) === 0) {
+        this.upsertStmt.run(normalizedSid, JSON.stringify(sess || {}), expiresAt);
+      }
+      callback(null);
+    } catch (error) {
+      callback(error);
+    }
+  }
+
+  destroy(sid, callback = () => {}) {
+    try {
+      this.destroyStmt.run(String(sid || ''));
+      callback(null);
+    } catch (error) {
+      callback(error);
+    }
+  }
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_REGEX = /^[a-z0-9]{4,20}$/;
@@ -377,13 +512,15 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
+const sessionStore = new SQLiteSessionStore();
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'chronolab-local-secret',
     resave: false,
     saveUninitialized: false,
+    store: sessionStore,
     cookie: {
-      maxAge: 1000 * 60 * 60 * 24 * 14,
+      maxAge: SESSION_DEFAULT_MAX_AGE_MS,
       httpOnly: true,
       sameSite: 'lax',
       secure: isProduction
