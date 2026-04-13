@@ -3501,6 +3501,22 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   align-items: end;
 }
 
+.sales-global-settings-head {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 3px;
+  padding: 0 2px;
+}
+
+.sales-global-settings-head strong {
+  font-size: 0.92rem;
+}
+
+.sales-global-settings-head small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .sales-global-field {
   display: grid;
   gap: 6px;
@@ -3580,6 +3596,92 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.sales-round-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.sales-round-top {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.sales-round-field {
+  display: grid;
+  gap: 6px;
+}
+
+.sales-round-field-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.sales-round-field-meta {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.sales-round-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: end;
+  gap: 8px;
+}
+
+.sales-round-row-actions #salesRowActionHost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-round-editor-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 220px) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.sales-round-inline-field {
+  display: grid;
+  gap: 6px;
+}
+
+.sales-round-inline-field > span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.sales-round-input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  padding: 0 10px;
+  font: inherit;
+}
+
+.sales-round-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sales-round-action-group .chip {
+  min-height: 38px;
 }
 
 .sales-price-taxonomy-grid {
@@ -3677,6 +3779,23 @@ body.theme-night .menu-brand-model-list .admin-list-item {
     justify-content: flex-end;
   }
 
+  .sales-round-top {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-round-row-actions {
+    justify-content: flex-start;
+  }
+
+  .sales-round-editor-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-round-action-group {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .sales-price-taxonomy-row {
     grid-template-columns: 1fr;
   }
@@ -3699,20 +3818,26 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-round-select-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 6px;
   min-height: 36px;
-  padding: 0 10px;
+  min-width: 180px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--card);
 }
 
 .sales-round-select-wrap > span {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--muted);
   white-space: nowrap;
+  font-weight: 700;
+}
+
+.sales-round-select-wrap select,
+.sales-round-select-wrap input {
+  width: 100%;
 }
 
 .sales-summary-grid {
@@ -4755,6 +4880,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
   .sales-summary-card,
@@ -4783,6 +4909,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
   .sales-summary-card,
@@ -4808,6 +4935,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
   .sales-summary-card,

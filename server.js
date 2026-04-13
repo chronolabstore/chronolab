@@ -3466,6 +3466,9 @@ function normalizeSalesManageSection(rawSection = '') {
   if (section === 'price' || section === 'factory-price' || section === 'factory') {
     return 'price';
   }
+  if (section === 'preorder' || section === 'round' || section === 'batch') {
+    return 'preorder';
+  }
   if (section === 'daily' || section === 'summary') {
     return 'daily';
   }
