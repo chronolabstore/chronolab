@@ -152,6 +152,9 @@ const PRODUCT_GROUP_MODE = Object.freeze({
   SIMPLE: 'simple'
 });
 const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
+const PRODUCT_FILTER_BASELINE_VERSION_KEY = 'productFilterBaselineSeedV20260414';
+const PRODUCT_FILTER_BASELINE_VERSION = '2026-04-14-v1';
+const PRODUCT_FILTER_BASELINE_GROUP_KEYS = Object.freeze(['공장제', '젠파츠', '현지중고']);
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
@@ -848,6 +851,23 @@ function getDefaultGroupFilterSeeds() {
   };
 }
 
+function buildMergedProductFilterOptionMap(currentMap = {}, baselineMap = {}, allowedBrands = []) {
+  const normalizedCurrent = normalizeProductFilterOptionMap(currentMap, allowedBrands);
+  const normalizedBaseline = normalizeProductFilterOptionMap(baselineMap, allowedBrands);
+  const merged = {};
+
+  allowedBrands.forEach((brandValue) => {
+    const currentList = normalizedCurrent[brandValue] || [];
+    const baselineList = normalizedBaseline[brandValue] || [];
+    const mergedList = normalizeProductFilterOptionList([...currentList, ...baselineList]);
+    if (mergedList.length > 0) {
+      merged[brandValue] = mergedList;
+    }
+  });
+
+  return normalizeProductFilterOptionMap(merged, allowedBrands);
+}
+
 function cloneFieldTemplate(template = []) {
   return template.map((field) => ({ ...field }));
 }
@@ -1297,6 +1317,181 @@ function setProductGroupConfigs(configs) {
   setSetting('productGroupConfigs', JSON.stringify(normalized));
   return normalized;
 }
+
+function applyProductFilterBaselineSeedOnce() {
+  const currentVersion = String(getSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, '') || '').trim();
+  if (currentVersion === PRODUCT_FILTER_BASELINE_VERSION) {
+    return;
+  }
+
+  const baselineByKey = new Map(
+    getDefaultProductGroupConfigs()
+      .map((group) => [normalizeProductGroupKey(group?.key || ''), group])
+      .filter(([groupKey, group]) => Boolean(groupKey && group && typeof group === 'object'))
+  );
+  if (baselineByKey.size === 0) {
+    setSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, PRODUCT_FILTER_BASELINE_VERSION);
+    return;
+  }
+
+  const currentConfigs = getProductGroupConfigs();
+  const nextConfigs = [...currentConfigs];
+  const genpartsKey = normalizeProductGroupKey('젠파츠', '젠파츠');
+  let changed = false;
+
+  PRODUCT_FILTER_BASELINE_GROUP_KEYS.forEach((rawGroupKey) => {
+    const normalizedGroupKey = normalizeProductGroupKey(rawGroupKey, rawGroupKey);
+    if (!normalizedGroupKey) {
+      return;
+    }
+
+    const baselineGroup = baselineByKey.get(normalizedGroupKey);
+    if (!baselineGroup) {
+      return;
+    }
+
+    const targetIndex = nextConfigs.findIndex(
+      (group) => normalizeProductGroupKey(group?.key || '') === normalizedGroupKey
+    );
+
+    if (targetIndex < 0) {
+      nextConfigs.push(JSON.parse(JSON.stringify(baselineGroup)));
+      changed = true;
+      return;
+    }
+
+    const targetGroup = nextConfigs[targetIndex] || {};
+    const baselineBrandOptions = normalizeProductFilterOptionList(baselineGroup.brandOptions);
+    const currentBrandOptions = normalizeProductFilterOptionList(targetGroup.brandOptions);
+    const mergedBrandOptions = normalizeProductFilterOptionList([
+      ...currentBrandOptions,
+      ...baselineBrandOptions
+    ]);
+
+    const mergedModelOptionsByBrand = buildMergedProductFilterOptionMap(
+      targetGroup.modelOptionsByBrand,
+      baselineGroup.modelOptionsByBrand,
+      mergedBrandOptions
+    );
+    const hasModelOptionsByBrand = Object.keys(mergedModelOptionsByBrand).length > 0;
+
+    const baselineBrandLabelRaw =
+      baselineGroup.brandOptionLabels &&
+      typeof baselineGroup.brandOptionLabels === 'object' &&
+      !Array.isArray(baselineGroup.brandOptionLabels)
+        ? baselineGroup.brandOptionLabels
+        : {};
+    const currentBrandLabelRaw =
+      targetGroup.brandOptionLabels &&
+      typeof targetGroup.brandOptionLabels === 'object' &&
+      !Array.isArray(targetGroup.brandOptionLabels)
+        ? targetGroup.brandOptionLabels
+        : {};
+    const mergedBrandOptionLabels = normalizeProductFilterOptionLabelMap(
+      { ...baselineBrandLabelRaw, ...currentBrandLabelRaw },
+      mergedBrandOptions
+    );
+
+    const baselineModelLabelRawByBrand =
+      baselineGroup.modelOptionLabelsByBrand &&
+      typeof baselineGroup.modelOptionLabelsByBrand === 'object' &&
+      !Array.isArray(baselineGroup.modelOptionLabelsByBrand)
+        ? baselineGroup.modelOptionLabelsByBrand
+        : {};
+    const currentModelLabelRawByBrand =
+      targetGroup.modelOptionLabelsByBrand &&
+      typeof targetGroup.modelOptionLabelsByBrand === 'object' &&
+      !Array.isArray(targetGroup.modelOptionLabelsByBrand)
+        ? targetGroup.modelOptionLabelsByBrand
+        : {};
+    const rawMergedModelLabelsByBrand = {};
+    Object.keys(mergedModelOptionsByBrand).forEach((brandValue) => {
+      const baselineBrandLabelKey = findMatchingProductFilterKey(baselineModelLabelRawByBrand, brandValue);
+      const currentBrandLabelKey = findMatchingProductFilterKey(currentModelLabelRawByBrand, brandValue);
+      const baselineBrandLabelMap =
+        baselineBrandLabelKey &&
+        baselineModelLabelRawByBrand[baselineBrandLabelKey] &&
+        typeof baselineModelLabelRawByBrand[baselineBrandLabelKey] === 'object' &&
+        !Array.isArray(baselineModelLabelRawByBrand[baselineBrandLabelKey])
+          ? baselineModelLabelRawByBrand[baselineBrandLabelKey]
+          : {};
+      const currentBrandLabelMap =
+        currentBrandLabelKey &&
+        currentModelLabelRawByBrand[currentBrandLabelKey] &&
+        typeof currentModelLabelRawByBrand[currentBrandLabelKey] === 'object' &&
+        !Array.isArray(currentModelLabelRawByBrand[currentBrandLabelKey])
+          ? currentModelLabelRawByBrand[currentBrandLabelKey]
+          : {};
+
+      rawMergedModelLabelsByBrand[brandValue] = {
+        ...baselineBrandLabelMap,
+        ...currentBrandLabelMap
+      };
+    });
+    const mergedModelOptionLabelsByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      rawMergedModelLabelsByBrand,
+      mergedModelOptionsByBrand,
+      mergedBrandOptions
+    );
+
+    let mergedFactoryOptions = [];
+    let mergedFactoryOptionLabels = {};
+    if (normalizedGroupKey !== genpartsKey) {
+      const baselineFactoryOptions = normalizeProductFilterOptionList(baselineGroup.factoryOptions);
+      const currentFactoryOptions = normalizeProductFilterOptionList(targetGroup.factoryOptions);
+      mergedFactoryOptions = normalizeProductFilterOptionList([
+        ...currentFactoryOptions,
+        ...baselineFactoryOptions
+      ]);
+
+      const baselineFactoryLabelRaw =
+        baselineGroup.factoryOptionLabels &&
+        typeof baselineGroup.factoryOptionLabels === 'object' &&
+        !Array.isArray(baselineGroup.factoryOptionLabels)
+          ? baselineGroup.factoryOptionLabels
+          : {};
+      const currentFactoryLabelRaw =
+        targetGroup.factoryOptionLabels &&
+        typeof targetGroup.factoryOptionLabels === 'object' &&
+        !Array.isArray(targetGroup.factoryOptionLabels)
+          ? targetGroup.factoryOptionLabels
+          : {};
+      mergedFactoryOptionLabels = normalizeProductFilterOptionLabelMap(
+        { ...baselineFactoryLabelRaw, ...currentFactoryLabelRaw },
+        mergedFactoryOptions
+      );
+    }
+
+    const baselineModelOptions = normalizeProductFilterOptionList(baselineGroup.modelOptions);
+    const currentModelOptions = normalizeProductFilterOptionList(targetGroup.modelOptions);
+    const mergedModelOptions = hasModelOptionsByBrand
+      ? []
+      : normalizeProductFilterOptionList([...currentModelOptions, ...baselineModelOptions]);
+
+    const nextGroup = {
+      ...targetGroup,
+      brandOptions: mergedBrandOptions,
+      factoryOptions: mergedFactoryOptions,
+      modelOptions: mergedModelOptions,
+      modelOptionsByBrand: mergedModelOptionsByBrand,
+      brandOptionLabels: mergedBrandOptionLabels,
+      factoryOptionLabels: mergedFactoryOptionLabels,
+      modelOptionLabelsByBrand: mergedModelOptionLabelsByBrand
+    };
+
+    if (JSON.stringify(nextGroup) !== JSON.stringify(targetGroup)) {
+      nextConfigs[targetIndex] = nextGroup;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    setProductGroupConfigs(nextConfigs);
+  }
+  setSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, PRODUCT_FILTER_BASELINE_VERSION);
+}
+
+applyProductFilterBaselineSeedOnce();
 
 function getProductGroupMap(groupConfigs = getProductGroupConfigs()) {
   return new Map(groupConfigs.map((group) => [group.key, group]));
