@@ -3791,9 +3791,12 @@ body.admin-page select[size]:not([size='1']) {
 }
 
 .sales-date-action-group {
-  display: inline-flex;
+  margin-left: auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
   flex-wrap: wrap;
 }
 
@@ -3803,17 +3806,29 @@ body.admin-page select[size]:not([size='1']) {
   background: var(--chip);
   padding: 10px;
   display: grid;
-  grid-template-columns: minmax(180px, 240px) auto auto;
+  grid-template-columns: minmax(180px, 240px) minmax(320px, 1fr);
   align-items: end;
   gap: 8px;
 }
 
-.sales-date-row-actions {
-  margin-left: auto;
-  display: flex;
+.sales-date-btn-group {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-date-action-group .chip {
+  min-height: 38px;
+}
+
+.sales-date-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
 }
 
 .sales-date-row-actions #salesRowActionHost {
@@ -3835,7 +3850,8 @@ body.admin-page select[size]:not([size='1']) {
 @media (max-width: 900px) {
   .sales-date-action-group {
     width: 100%;
-    justify-content: flex-end;
+    margin-left: 0;
+    justify-content: flex-start;
   }
 
   .sales-date-panel {
@@ -3843,9 +3859,9 @@ body.admin-page select[size]:not([size='1']) {
   }
 
   .sales-date-row-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-end;
+    padding-left: 0;
+    border-left: 0;
+    justify-content: flex-start;
   }
 
   .sales-round-top {
