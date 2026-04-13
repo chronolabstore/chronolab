@@ -1,5 +1,5 @@
 {
-  "name": "chrono-lab",
+  "name": "chronolab",
   "version": "0.1.0",
   "private": true,
   "description": "Chrono Lab watch shopping mall + admin",
@@ -17,7 +17,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.10.1",
+    "nodemailer": "^8.0.5",
     "sharp": "^0.34.4"
   },
   "devDependencies": {

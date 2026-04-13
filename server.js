@@ -54,7 +54,41 @@ const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
 const execFileAsync = promisify(execFile);
-const SESSION_SECRET = process.env.SESSION_SECRET || 'chronolab-local-secret';
+function normalizeOriginValue(origin = '') {
+  const raw = String(origin || '').trim().toLowerCase();
+  if (!raw) {
+    return '';
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function resolveSessionSecret() {
+  const configured = String(process.env.SESSION_SECRET || '').trim();
+  if (configured) {
+    return configured;
+  }
+  if (isProduction) {
+    throw new Error('SESSION_SECRET environment variable is required in production.');
+  }
+  return `chronolab-dev-${crypto.randomBytes(32).toString('hex')}`;
+}
+
+const TRUSTED_CSRF_ORIGINS = new Set(
+  String(process.env.TRUSTED_CSRF_ORIGINS || '')
+    .split(',')
+    .map((item) => normalizeOriginValue(item))
+    .filter(Boolean)
+);
+
+const SESSION_SECRET = resolveSessionSecret();
 const SESSION_DEFAULT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const SESSION_STORE_CLEANUP_INTERVAL_MS = 1000 * 60 * 15;
 const MEMBER_IDLE_TIMEOUT_MS = resolveIdleTimeoutMs({
@@ -636,8 +670,20 @@ const ALLOWED_UPLOAD_MIME = new Set([
   'image/gif',
   'image/avif'
 ]);
-const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-const MAX_UPLOAD_FILE_SIZE_MB = Math.round(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024));
+const UPLOAD_MIME_EXTENSION_MAP = Object.freeze({
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/avif': '.avif'
+});
+const ALLOWED_UPLOAD_EXTENSIONS = new Set(Object.values(UPLOAD_MIME_EXTENSION_MAP));
+const DEFAULT_MAX_UPLOAD_FILE_SIZE_MB = 20;
+const configuredUploadSizeMb = Number.parseInt(String(process.env.MAX_UPLOAD_FILE_SIZE_MB || ''), 10);
+const MAX_UPLOAD_FILE_SIZE_MB = Number.isInteger(configuredUploadSizeMb) && configuredUploadSizeMb > 0
+  ? Math.min(30, configuredUploadSizeMb)
+  : DEFAULT_MAX_UPLOAD_FILE_SIZE_MB;
+const MAX_UPLOAD_FILE_SIZE_BYTES = MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024;
 const WATERMARK_SUPPORTED_FORMATS = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif']);
 const WATERMARK_IMAGE_ALPHA = 0.18;
 const WATERMARK_DOMAIN_TEXT = 'www.chronolab.co.kr';
@@ -653,8 +699,8 @@ let mailTransporter = null;
 const uploadStorage = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    const safeExt = ext && ext.length <= 10 ? ext : '.jpg';
+    const mimeType = String(file?.mimetype || '').trim().toLowerCase();
+    const safeExt = UPLOAD_MIME_EXTENSION_MAP[mimeType] || '.jpg';
     cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`);
   }
 });
@@ -681,7 +727,34 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 app.use('/assets', express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/uploads', (req, res, next) => {
+  const requestedPath = String(req.path || '');
+  const ext = path.extname(requestedPath).toLowerCase();
+  if (ext && !ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+    return res.status(404).end();
+  }
+  return next();
+});
+app.use(
+  '/uploads',
+  express.static(UPLOAD_DIR, {
+    setHeaders: (res, filePath) => {
+      const ext = path.extname(String(filePath || '')).toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') {
+        res.setHeader('content-type', 'image/jpeg');
+      } else if (ext === '.png') {
+        res.setHeader('content-type', 'image/png');
+      } else if (ext === '.webp') {
+        res.setHeader('content-type', 'image/webp');
+      } else if (ext === '.gif') {
+        res.setHeader('content-type', 'image/gif');
+      } else if (ext === '.avif') {
+        res.setHeader('content-type', 'image/avif');
+      }
+      res.setHeader('x-content-type-options', 'nosniff');
+    }
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
@@ -705,6 +778,32 @@ app.use((req, res, next) => {
   const requestId = incomingRequestId && incomingRequestId.length <= 120 ? incomingRequestId : crypto.randomUUID();
   req.requestId = requestId;
   res.setHeader('x-request-id', requestId);
+  return next();
+});
+
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "script-src 'self' 'unsafe-inline' https://t1.daumcdn.net",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https: http:",
+  "frame-src 'self' https://*.daum.net",
+  "connect-src 'self'",
+  "form-action 'self'"
+].join('; ');
+
+app.use((req, res, next) => {
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('x-frame-options', 'SAMEORIGIN');
+  res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
+  res.setHeader('permissions-policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('content-security-policy', CONTENT_SECURITY_POLICY);
+  if (isProduction) {
+    res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  }
   return next();
 });
 
@@ -2127,16 +2226,46 @@ async function applyChronoLabWatermarkToUploads(files = []) {
   }
 }
 
+function resolvePathInsideRoot(rootDir = '', rawRelativePath = '') {
+  const root = path.resolve(String(rootDir || ''));
+  if (!root) {
+    return '';
+  }
+  const relativePath = String(rawRelativePath || '')
+    .replace(/\0/g, '')
+    .replace(/^[/\\]+/, '');
+  if (!relativePath) {
+    return '';
+  }
+  const resolved = path.resolve(root, relativePath);
+  if (resolved === root) {
+    return '';
+  }
+  if (!resolved.startsWith(`${root}${path.sep}`)) {
+    return '';
+  }
+  return resolved;
+}
+
 function resolveLocalPathFromImageUrl(imageUrl = '') {
   const src = String(imageUrl || '').trim();
   if (!src.startsWith('/')) {
     return '';
   }
-  if (src.startsWith('/uploads/')) {
-    return path.join(UPLOAD_DIR, src.slice('/uploads/'.length));
+
+  const withoutFragment = src.split('#')[0].split('?')[0];
+  let decodedPath = withoutFragment;
+  try {
+    decodedPath = decodeURIComponent(withoutFragment);
+  } catch {
+    decodedPath = withoutFragment;
   }
-  if (src.startsWith('/assets/')) {
-    return path.join(__dirname, 'public', src.slice('/assets/'.length));
+
+  if (decodedPath.startsWith('/uploads/')) {
+    return resolvePathInsideRoot(UPLOAD_DIR, decodedPath.slice('/uploads/'.length));
+  }
+  if (decodedPath.startsWith('/assets/')) {
+    return resolvePathInsideRoot(path.join(__dirname, 'public'), decodedPath.slice('/assets/'.length));
   }
   return '';
 }
@@ -3030,10 +3159,27 @@ function readAdminOtpSetup(req) {
   return { userId, secret, issuedAt };
 }
 
-function setAdminAuthSession(req, res, userRow) {
+function regenerateSessionAsync(req) {
+  return new Promise((resolve, reject) => {
+    if (!req?.session || typeof req.session.regenerate !== 'function') {
+      resolve();
+      return;
+    }
+    req.session.regenerate((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+async function setAdminAuthSession(req, res, userRow) {
   if (!req?.session || !userRow) {
     return;
   }
+  await regenerateSessionAsync(req);
   req.session.userId = Number(userRow.id);
   req.session.isAdmin = true;
   req.session.adminRole = normalizeAdminRole(userRow.admin_role);
@@ -7594,6 +7740,57 @@ function safeBackPath(req, fallback = '/main') {
   }
 }
 
+function parseOriginFromHeaderUrl(rawUrl = '') {
+  const raw = String(rawUrl || '').trim();
+  if (!raw) {
+    return '';
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
+}
+
+function getTrustedOriginSet(req) {
+  const trusted = new Set(TRUSTED_CSRF_ORIGINS);
+  const host = String(req.get('host') || '').trim().toLowerCase();
+  if (!host) {
+    return trusted;
+  }
+  trusted.add(`https://${host}`);
+  trusted.add(`http://${host}`);
+  return trusted;
+}
+
+function shouldEnforceOriginValidation(req) {
+  const method = String(req.method || '').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return false;
+  }
+  if (req.path === '/health') {
+    return false;
+  }
+  if (req.path.startsWith('/assets') || req.path.startsWith('/uploads')) {
+    return false;
+  }
+  return true;
+}
+
+function rejectInvalidOriginRequest(req, res) {
+  const message = '보안 검증에 실패했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
+  const acceptHeader = String(req.get('accept') || '').toLowerCase();
+  if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
+    return res.status(403).json({ ok: false, error: 'invalid_origin', message });
+  }
+  setFlash(req, 'error', message);
+  return res.redirect(safeBackPath(req, '/main'));
+}
+
 function cleanupAuthAttemptStore(nowMs) {
   if (authAttemptStore.size <= 1000) {
     return;
@@ -7752,6 +7949,33 @@ function loadUser(req, res, next) {
 }
 
 app.use(loadUser);
+
+app.use((req, res, next) => {
+  if (!shouldEnforceOriginValidation(req)) {
+    return next();
+  }
+
+  const trustedOrigins = getTrustedOriginSet(req);
+  const origin = normalizeOriginValue(req.get('origin'));
+  if (origin) {
+    if (trustedOrigins.has(origin)) {
+      return next();
+    }
+    return rejectInvalidOriginRequest(req, res);
+  }
+
+  const refererOrigin = parseOriginFromHeaderUrl(req.get('referer'));
+  if (refererOrigin && !trustedOrigins.has(refererOrigin)) {
+    return rejectInvalidOriginRequest(req, res);
+  }
+
+  const secFetchSite = String(req.get('sec-fetch-site') || '').trim().toLowerCase();
+  if (secFetchSite === 'cross-site') {
+    return rejectInvalidOriginRequest(req, res);
+  }
+
+  return next();
+});
 
 app.use((req, res, next) => {
   if (req.path === '/health') {
@@ -9941,6 +10165,7 @@ app.post(
 
     const createdUserId = createMember(email, account, nickname, phone, hash, signupBonusPoints);
 
+    await regenerateSessionAsync(req);
     req.session.userId = createdUserId;
     req.session.isAdmin = false;
     req.session.lastActivityAt = Date.now();
@@ -10438,6 +10663,7 @@ app.post(
     return res.redirect('/login');
   }
 
+  await regenerateSessionAsync(req);
   req.session.userId = Number(user.id);
   req.session.isAdmin = Number(user.is_admin) === 1;
   req.session.adminRole = Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '';
@@ -10524,7 +10750,7 @@ app.post(
     return res.redirect('/admin/otp/verify');
   }
 
-  setAdminAuthSession(req, res, user);
+  await setAdminAuthSession(req, res, user);
   resetAuthAttempt(req, 'admin-login');
 
   logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success');
@@ -10553,7 +10779,7 @@ app.get('/admin/otp/verify', (req, res) => {
 app.post(
   '/admin/otp/verify',
   authAttemptGuard({ key: 'admin-otp-verify', redirectPath: '/admin/otp/verify', limit: 12 }),
-  (req, res) => {
+  asyncRoute(async (req, res) => {
     const pending = readAdminOtpPending(req);
     if (!pending) {
       setFlash(req, 'error', 'OTP 인증이 만료되었습니다. 다시 로그인해 주세요.');
@@ -10611,13 +10837,13 @@ app.post(
       return res.redirect('/admin/otp/verify');
     }
 
-    setAdminAuthSession(req, res, user);
+    await setAdminAuthSession(req, res, user);
     resetAuthAttempt(req, 'admin-login');
     resetAuthAttempt(req, 'admin-otp-verify');
     logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success via otp');
     setFlash(req, 'success', '관리자 로그인되었습니다.');
     return res.redirect('/admin/dashboard');
-  }
+  })
 );
 
 app.post('/admin/change-password', requirePrimaryAdmin, asyncRoute(async (req, res) => {

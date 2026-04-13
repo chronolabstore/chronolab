@@ -2443,12 +2443,12 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   position: relative;
   margin: 0;
   min-height: 44px;
-  padding: 10px 76px 10px 12px;
+  padding: 10px 98px 10px 12px;
   border-radius: 12px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   background: var(--chip);
   border: 1px solid transparent;
 }
@@ -2466,17 +2466,17 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
-  margin-right: 22px;
+  margin-right: 36px;
   flex-shrink: 0;
 }
 
 .menu-brand-model-summary::after {
   content: "▾";
   position: absolute;
-  right: 22px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--muted);
   transition: transform 0.14s ease, color 0.14s ease;
 }
@@ -2517,7 +2517,7 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .menu-brand-model-sub-item > .menu-brand-model-summary {
   min-height: 40px;
-  padding: 8px 74px 8px 12px;
+  padding: 8px 94px 8px 12px;
   border-radius: 10px;
 }
 
@@ -3791,12 +3791,10 @@ body.admin-page select[size]:not([size='1']) {
 }
 
 .sales-date-action-group {
-  margin-left: auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -3806,9 +3804,9 @@ body.admin-page select[size]:not([size='1']) {
   background: var(--chip);
   padding: 10px;
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(320px, 1fr);
-  align-items: end;
-  gap: 8px;
+  grid-template-columns: minmax(220px, 280px) minmax(340px, 1fr);
+  align-items: center;
+  gap: 12px;
 }
 
 .sales-date-btn-group {
@@ -3827,14 +3825,15 @@ body.admin-page select[size]:not([size='1']) {
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
+  padding-left: 0;
+  border-left: 0;
 }
 
 .sales-date-row-actions #salesRowActionHost {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  justify-content: flex-start;
   flex-wrap: wrap;
 }
 
