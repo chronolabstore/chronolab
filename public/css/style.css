@@ -3756,7 +3756,32 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .sales-date-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-date-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) auto auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.sales-date-row-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sales-date-row-actions #salesRowActionHost {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3774,8 +3799,17 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 
 @media (max-width: 900px) {
   .sales-date-action-group {
-    margin-left: 0;
     width: 100%;
+    justify-content: flex-end;
+  }
+
+  .sales-date-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-date-row-actions {
+    width: 100%;
+    margin-left: 0;
     justify-content: flex-end;
   }
 
@@ -4880,6 +4914,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
@@ -4909,6 +4944,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,
@@ -4935,6 +4971,7 @@ body.admin-page :where(
   .security-denied-note,
   .shop-split-card,
   .sales-global-settings,
+  .sales-date-panel,
   .sales-round-panel,
   .sales-price-taxonomy-grid,
   .sales-price-sheet-group,

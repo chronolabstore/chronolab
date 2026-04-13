@@ -5298,12 +5298,14 @@
 
         if (scopeMode === 'date') {
           const action = document.createElement('div');
-          action.className = 'sales-scope-action-row';
+          action.className = 'sales-date-panel';
 
           const dateLabel = document.createElement('label');
           dateLabel.className = 'sales-round-select-wrap';
           const dateCaption = document.createElement('span');
-          dateCaption.textContent = isEn ? 'Date' : '날짜';
+          dateCaption.textContent = isEn
+            ? `Date (${scopes.length})`
+            : `날짜 (총 ${scopes.length}개)`;
           const datePickerInput = document.createElement('input');
           datePickerInput.type = 'date';
           datePickerInput.value = normalizeDate(
@@ -5421,12 +5423,13 @@
 
           const topActionGroup = document.createElement('div');
           topActionGroup.className = 'sales-date-action-group';
-          const groupSeparator = document.createElement('span');
-          groupSeparator.className = 'sales-date-action-separator';
-          groupSeparator.textContent = '|';
-          topActionGroup.append(groupSeparator, addBtn, saveDateBtn, deleteBtn);
+          topActionGroup.append(addBtn, saveDateBtn, deleteBtn);
 
-          action.append(dateLabel, topActionGroup);
+          const rowActionWrap = document.createElement('div');
+          rowActionWrap.className = 'sales-date-row-actions';
+          rowActionWrap.appendChild(rowActionHost);
+
+          action.append(dateLabel, topActionGroup, rowActionWrap);
           scopeControls.appendChild(action);
           return;
         }
