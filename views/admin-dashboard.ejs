@@ -156,7 +156,9 @@
   const salesManageTab =
     salesManageTabRaw === 'daily'
       ? 'daily'
-      : (salesManageTabRaw === 'price' ? 'price' : 'editor');
+      : (salesManageTabRaw === 'preorder'
+          ? 'preorder'
+          : (salesManageTabRaw === 'price' ? 'price' : 'editor'));
   const salesAllTabs = (() => {
     if (Array.isArray(salesMainTabs) && salesMainTabs.length > 0) {
       return salesMainTabs;
@@ -236,13 +238,17 @@
     return fallbackTabs;
   })();
   const salesPriceTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'factory');
-  const salesEditorTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') !== 'factory');
+  const salesPreorderTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'round');
+  const salesEditorTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'date');
+  const salesNonPriceTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') !== 'factory');
   const salesTabs =
     salesManageTab === 'price'
       ? (salesPriceTabs.length > 0 ? salesPriceTabs : salesAllTabs.slice(0, 1))
-      : (salesManageTab === 'editor'
+      : (salesManageTab === 'preorder'
+          ? (salesPreorderTabs.length > 0 ? salesPreorderTabs : (salesNonPriceTabs.length > 0 ? salesNonPriceTabs : salesAllTabs))
+          : (salesManageTab === 'editor'
           ? (salesEditorTabs.length > 0 ? salesEditorTabs : salesAllTabs)
-          : salesAllTabs);
+          : salesAllTabs));
   const salesDaily = salesDailyData || {
     filters: { groupFilter: 'all', dateFrom: '', dateTo: '' },
     groups: [],
@@ -3992,24 +3998,29 @@
     <h3><%= isEn ? 'Sales Management' : '매출관리' %></h3>
     <div class="security-subnav">
       <a href="/admin/sales?section=price<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'price' ? 'active' : '' %>"><%= isEn ? 'Price Table' : '가격표' %></a>
-      <a href="/admin/sales?section=editor<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'editor' ? 'active' : '' %>"><%= isEn ? 'Workbook Editor' : '매출 시트 편집' %></a>
+      <a href="/admin/sales?section=preorder<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'preorder' ? 'active' : '' %>"><%= isEn ? 'Pre-Order Settlement' : '선주문 정산' %></a>
+      <a href="/admin/sales?section=editor<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'editor' ? 'active' : '' %>"><%= isEn ? 'Sales Sheets' : '매출 시트' %></a>
       <a href="/admin/sales?section=daily<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'daily' ? 'active' : '' %>"><%= isEn ? 'Daily Summary' : '날짜별 전체 매출' %></a>
     </div>
   </article>
 
-  <% if (salesManageTab === 'editor' || salesManageTab === 'price') { %>
+  <% if (salesManageTab === 'editor' || salesManageTab === 'price' || salesManageTab === 'preorder') { %>
   <article class="block-card sales-editor-card">
     <div class="sales-global-settings">
+      <div class="sales-global-settings-head">
+        <strong id="salesGlobalContextTitle"><%= isEn ? 'Tab Settings' : '탭 설정' %></strong>
+        <small id="salesGlobalContextHint"><%= isEn ? 'Applied to the active tab/scope only.' : '현재 선택된 탭/분류에만 적용됩니다.' %></small>
+      </div>
       <label class="sales-global-field">
-        <span><%= isEn ? 'CNY Cash Buying (KRW)' : '위안화 환율 (하나은행 현찰 살때 KRW)' %></span>
+        <span id="salesExchangeRateLabel"><%= isEn ? 'Exchange Rate (KRW / CNY)' : '환율 (KRW / CNY)' %></span>
         <input type="number" min="0" step="0.01" id="salesExchangeRateInput" />
       </label>
       <label class="sales-global-field">
-        <span><%= isEn ? 'Shipping Fee (KRW)' : '배송비 (KRW)' %></span>
+        <span id="salesShippingFeeLabel"><%= isEn ? 'Shipping Fee (KRW)' : '배송비 (KRW)' %></span>
         <input type="number" min="0" step="1000" id="salesShippingFeeInput" />
       </label>
       <label class="sales-global-field">
-        <span><%= isEn ? 'Base Date (for round/date tabs)' : '기준일자 (차수/날짜 탭용)' %></span>
+        <span id="salesScopeDateLabel"><%= isEn ? 'Base Date' : '기준일자' %></span>
         <input type="date" id="salesScopeDateInput" />
       </label>
       <div class="sales-global-actions">
@@ -4077,6 +4088,11 @@
       const exchangeRateInput = document.getElementById('salesExchangeRateInput');
       const shippingFeeInput = document.getElementById('salesShippingFeeInput');
       const scopeDateInput = document.getElementById('salesScopeDateInput');
+      const globalContextTitle = document.getElementById('salesGlobalContextTitle');
+      const globalContextHint = document.getElementById('salesGlobalContextHint');
+      const exchangeRateLabel = document.getElementById('salesExchangeRateLabel');
+      const shippingFeeLabel = document.getElementById('salesShippingFeeLabel');
+      const scopeDateLabel = document.getElementById('salesScopeDateLabel');
       const summaryGrid = document.getElementById('salesSummaryGrid');
       const tableBody = document.getElementById('salesEditorTbody');
       const metaText = document.getElementById('salesMetaText');
@@ -4459,6 +4475,48 @@
         return scope.name || '-';
       };
 
+      const getTabDisplayName = (tabDef = getTabDef()) => {
+        if (!tabDef) {
+          return isEn ? 'Sales' : '매출';
+        }
+        const label = isEn
+          ? String(tabDef.labelEn || tabDef.labelKo || tabDef.key || 'Sales')
+          : String(tabDef.labelKo || tabDef.labelEn || tabDef.key || '매출');
+        return label.trim() || (isEn ? 'Sales' : '매출');
+      };
+
+      const renderGlobalContext = () => {
+        const tabDef = getTabDef();
+        const scope = getActiveScope();
+        const mode = getScopeMode(activeTabKey);
+        const tabLabel = getTabDisplayName(tabDef);
+        const scopeLabel = getScopeDisplayName(scope);
+
+        if (globalContextTitle) {
+          globalContextTitle.textContent = isEn ? `${tabLabel} Settings` : `${tabLabel} 설정`;
+        }
+        if (globalContextHint) {
+          globalContextHint.textContent = isEn
+            ? `Applied only to ${scopeLabel}.`
+            : `${scopeLabel}에만 적용됩니다.`;
+        }
+        if (exchangeRateLabel) {
+          exchangeRateLabel.textContent = isEn ? 'Exchange Rate (KRW / CNY)' : '환율 (KRW / CNY)';
+        }
+        if (shippingFeeLabel) {
+          shippingFeeLabel.textContent = isEn ? 'Shipping Fee (KRW)' : '배송비 (KRW)';
+        }
+        if (scopeDateLabel) {
+          if (mode === 'factory') {
+            scopeDateLabel.textContent = isEn ? 'Base Date (optional)' : '기준일 (선택)';
+          } else if (mode === 'round') {
+            scopeDateLabel.textContent = isEn ? 'Base Date (selected round)' : '기준일 (선택된 차수/회차)';
+          } else {
+            scopeDateLabel.textContent = isEn ? 'Base Date (selected date sheet)' : '기준일 (선택된 날짜 시트)';
+          }
+        }
+      };
+
       const calcRow = (row) => {
         const settings = getActiveSettings();
         const exchangeRate = Math.max(0.01, toPositive(settings?.exchangeRate, 0.01));
@@ -4499,6 +4557,7 @@
       const renderGlobalFields = () => {
         const activeSettings = getActiveSettings();
         if (!activeSettings) return;
+        renderGlobalContext();
         const exchangeRate = Number(roundToStep(toPositive(activeSettings.exchangeRate, 0), 0.01).toFixed(2));
         const shippingKrw = Math.round(roundToStep(toPositive(activeSettings.shippingFeeKrw, 0), 1000));
         exchangeRateInput.value = exchangeRate;
@@ -5372,14 +5431,19 @@
           return;
         }
 
-        const action = document.createElement('div');
-        action.className = 'sales-scope-action-row';
+        const roundPanel = document.createElement('section');
+        roundPanel.className = 'sales-round-panel';
 
-        const roundLabel = document.createElement('label');
-        roundLabel.className = 'sales-round-select-wrap';
+        const roundTop = document.createElement('div');
+        roundTop.className = 'sales-round-top';
+
+        const roundField = document.createElement('label');
+        roundField.className = 'sales-round-field';
         const roundCaption = document.createElement('span');
-        roundCaption.textContent = isEn ? 'Round/Batch' : '차수/회차';
+        roundCaption.className = 'sales-round-field-label';
+        roundCaption.textContent = isEn ? 'Round / Batch' : '차수/회차';
         const roundSelect = document.createElement('select');
+        roundSelect.className = 'sales-round-input';
         scopes.forEach((scope) => {
           ensureScopeSettings(scope, 'round');
           const option = document.createElement('option');
@@ -5397,15 +5461,25 @@
           renderSummary();
           renderMeta();
         });
-        roundLabel.append(roundCaption, roundSelect);
+        const roundMeta = document.createElement('small');
+        roundMeta.className = 'sales-round-field-meta';
+        roundMeta.textContent = isEn ? `${scopes.length} items` : `총 ${scopes.length}개`;
+        roundField.append(roundCaption, roundSelect, roundMeta);
+
+        const roundRowActions = document.createElement('div');
+        roundRowActions.className = 'sales-round-row-actions';
+        roundRowActions.appendChild(rowActionHost);
+        roundTop.append(roundField, roundRowActions);
 
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
+        nameInput.className = 'sales-round-input';
         nameInput.placeholder = isEn ? 'Round/Batch name' : '차수/회차명';
         nameInput.value = getActiveScope()?.name || '';
 
         const roundDateInput = document.createElement('input');
         roundDateInput.type = 'date';
+        roundDateInput.className = 'sales-round-input';
         roundDateInput.value = normalizeDate(getActiveScope()?.settings?.baseDate || getActiveScope()?.date || '');
 
         const addBtn = document.createElement('button');
@@ -5492,12 +5566,28 @@
           renderMeta();
         });
 
-        const rowSeparator = document.createElement('span');
-        rowSeparator.className = 'sales-scope-inline-separator';
-        rowSeparator.textContent = '|';
+        const roundEditRow = document.createElement('div');
+        roundEditRow.className = 'sales-round-editor-row';
 
-        action.append(roundLabel, nameInput, roundDateInput, addBtn, renameBtn, saveDateBtn, deleteBtn, rowSeparator, rowActionHost);
-        scopeControls.appendChild(action);
+        const nameField = document.createElement('label');
+        nameField.className = 'sales-round-inline-field';
+        const nameCaption = document.createElement('span');
+        nameCaption.textContent = isEn ? 'Name' : '이름';
+        nameField.append(nameCaption, nameInput);
+
+        const dateField = document.createElement('label');
+        dateField.className = 'sales-round-inline-field';
+        const dateCaption = document.createElement('span');
+        dateCaption.textContent = isEn ? 'Date' : '날짜';
+        dateField.append(dateCaption, roundDateInput);
+
+        const roundActionGroup = document.createElement('div');
+        roundActionGroup.className = 'sales-round-action-group';
+        roundActionGroup.append(addBtn, renameBtn, saveDateBtn, deleteBtn);
+
+        roundEditRow.append(nameField, dateField, roundActionGroup);
+        roundPanel.append(roundTop, roundEditRow);
+        scopeControls.appendChild(roundPanel);
       };
 
       const saveWorkbook = async (options = {}) => {
