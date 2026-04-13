@@ -3418,10 +3418,6 @@
               <label><span><%= isEn ? 'Replace Images' : '이미지 교체' %></span>
                 <input type="file" name="image" accept="image/*" multiple />
               </label>
-              <label class="check-row">
-                <input type="checkbox" name="isPopup" <%= item.is_popup ? 'checked' : '' %> />
-                <span><%= isEn ? 'Popup Notice' : '팝업 공지' %></span>
-              </label>
               <% if (Array.isArray(item.image_paths) && item.image_paths.length > 0) { %>
                 <div class="inline-file-preview-grid">
                   <% item.image_paths.forEach((src, imageIndex) => { %>
@@ -3429,6 +3425,10 @@
                   <% }) %>
                 </div>
               <% } %>
+              <label class="check-row notice-popup-check-row">
+                <input type="checkbox" name="isPopup" <%= item.is_popup ? 'checked' : '' %> />
+                <span><%= isEn ? 'Popup Notice' : '팝업 공지' %></span>
+              </label>
             </form>
             <div class="admin-field-chip-row admin-post-action-row">
               <button type="submit" form="noticeUpdateForm-<%= item.id %>" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>

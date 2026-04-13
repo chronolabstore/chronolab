@@ -2820,6 +2820,11 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   flex: 0 0 auto;
 }
 
+.notice-popup-check-row {
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
 .member-level-group-grid {
   gap: 8px;
 }
