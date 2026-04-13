@@ -17,6 +17,111 @@
     }
   }
 
+  function initHeaderControls() {
+    var langToggle = document.querySelector('[data-lang-panel-toggle]');
+    var langPanel = document.querySelector('[data-lang-panel]');
+    if (!langToggle || !langPanel) {
+      return;
+    }
+
+    function openPanel() {
+      langPanel.hidden = false;
+      langToggle.setAttribute('aria-expanded', 'true');
+    }
+
+    function closePanel() {
+      langPanel.hidden = true;
+      langToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function togglePanel() {
+      if (langPanel.hidden) {
+        openPanel();
+      } else {
+        closePanel();
+      }
+    }
+
+    langToggle.addEventListener('click', function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      togglePanel();
+    });
+
+    document.addEventListener('click', function (event) {
+      if (langPanel.hidden) {
+        return;
+      }
+      if (langPanel.contains(event.target) || langToggle.contains(event.target)) {
+        return;
+      }
+      closePanel();
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !langPanel.hidden) {
+        closePanel();
+      }
+    });
+
+    var searchInputs = Array.prototype.slice.call(langPanel.querySelectorAll('[data-lang-search]'));
+    searchInputs.forEach(function (input) {
+      var target = String(input.getAttribute('data-lang-search') || '').trim();
+      if (!target) {
+        return;
+      }
+      var list = langPanel.querySelector('[data-lang-list="' + target + '"]');
+      if (!list) {
+        return;
+      }
+
+      var listItems = Array.prototype.slice.call(list.querySelectorAll('[data-filter-item]'));
+      input.addEventListener('input', function () {
+        var keyword = String(input.value || '').trim().toLowerCase();
+        listItems.forEach(function (item) {
+          var baseText = String(item.getAttribute('data-filter-item') || '').toLowerCase();
+          var renderedText = String(item.textContent || '').toLowerCase();
+          var matched = !keyword || baseText.indexOf(keyword) !== -1 || renderedText.indexOf(keyword) !== -1;
+          item.hidden = !matched;
+        });
+      });
+    });
+
+    var currencyStorageKey = 'chronolab-selected-currency';
+    var currencyItems = Array.prototype.slice.call(langPanel.querySelectorAll('[data-currency-item][data-currency-value]'));
+
+    function applyCurrencySelection(value) {
+      var normalized = String(value || '').trim();
+      currencyItems.forEach(function (item) {
+        item.classList.toggle('is-active', String(item.getAttribute('data-currency-value') || '').trim() === normalized);
+      });
+    }
+
+    if (currencyItems.length) {
+      var storedCurrency = '';
+      try {
+        storedCurrency = String(localStorage.getItem(currencyStorageKey) || '').trim();
+      } catch (error) {
+        storedCurrency = '';
+      }
+      if (storedCurrency) {
+        applyCurrencySelection(storedCurrency);
+      }
+
+      currencyItems.forEach(function (item) {
+        item.addEventListener('click', function () {
+          var nextValue = String(item.getAttribute('data-currency-value') || '').trim();
+          applyCurrencySelection(nextValue);
+          try {
+            localStorage.setItem(currencyStorageKey, nextValue);
+          } catch (error) {
+            // ignore storage failures
+          }
+        });
+      });
+    }
+  }
+
   function initNoticePopup() {
     var popup = getNoticePopupRoot();
     if (!popup) {
@@ -1368,6 +1473,7 @@
   }
 
   function initApp() {
+    initHeaderControls();
     initNoticePopup();
     initFlashPopup();
     initProductGallery();
