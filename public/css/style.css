@@ -4891,8 +4891,13 @@ body.admin-page details.inquiry-admin-item > summary small {
 }
 
 body.admin-page .menu-brand-model-item > .menu-brand-model-summary {
+  background: var(--admin-surface-l2) !important;
   border-color: #d2dceb;
   color: #1a2a47 !important;
+}
+
+body.admin-page .menu-brand-model-item[open] > .menu-brand-model-summary {
+  border-bottom-color: #d2dceb;
 }
 
 body.admin-page .menu-brand-model-item > .menu-brand-model-summary strong {
@@ -4902,6 +4907,30 @@ body.admin-page .menu-brand-model-item > .menu-brand-model-summary strong {
 body.admin-page .menu-brand-model-item > .menu-brand-model-summary small,
 body.admin-page .menu-brand-model-item > .menu-brand-model-summary::after {
   color: #5f6b7e;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-body {
+  background: #ffffff !important;
+  border: 1px solid #d2dceb;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn {
+  background: #ffffff;
+  border-color: #bccae1;
+  color: #1a2a47;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn:hover {
+  background: #f5f8ff;
+  border-color: #9fb3d5;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn.active {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: #f8fafc;
 }
 
 body.admin-page .admin-list-item .admin-account-row:first-child {
