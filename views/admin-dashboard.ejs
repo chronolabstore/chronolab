@@ -1929,10 +1929,50 @@
         <p class="muted-label menu-manage-note">
           <%= isEn ? 'Manage category-level brand/factory/model filters used by shop search and product upload dropdowns.' : '쇼핑몰 검색 필터와 상품 업로드 드롭다운에서 사용할 분류별 브랜드/공장/모델 필터를 관리합니다.' %>
         </p>
+        <%
+          const preferredGroupFilterKeys = ['공장제', '젠파츠', '현지중고', '기타'];
+          const preferredGroupFilterGroups = preferredGroupFilterKeys
+            .map((key) => productGroupConfigList.find((group) => group.key === key))
+            .filter(Boolean);
+          const restGroupFilterGroups = productGroupConfigList.filter(
+            (group) => !preferredGroupFilterGroups.some((preferredGroup) => preferredGroup.key === group.key)
+          );
+          const fallbackGroupFilterGroups =
+            preferredGroupFilterGroups.length > 0
+              ? [...preferredGroupFilterGroups, ...restGroupFilterGroups]
+              : productGroupConfigList;
+          const requestedMenuGroupFilter = String(menuFieldGroupFilter || '').trim();
+          const availableMenuGroupFilterKeys = fallbackGroupFilterGroups.map((group) => String(group.key || '').trim());
+          const activeMenuGroupFilter =
+            availableMenuGroupFilterKeys.includes(requestedMenuGroupFilter) && requestedMenuGroupFilter
+              ? requestedMenuGroupFilter
+              : (availableMenuGroupFilterKeys[0] || '');
+          const menuGroupFilterBaseHref = `/admin/menus?section=group-filters${isEn ? '&lang=en' : ''}`;
+        %>
+        <% if (fallbackGroupFilterGroups.length > 0) { %>
+          <div class="chip-row menu-group-filter-row" data-menu-group-filter-wrap>
+            <% fallbackGroupFilterGroups.forEach((group) => { %>
+              <%
+                const normalizedGroupKey = String(group.key || '').trim();
+                const isGroupActive = normalizedGroupKey === activeMenuGroupFilter;
+              %>
+              <a
+                href="<%= `${menuGroupFilterBaseHref}&fieldGroup=${encodeURIComponent(normalizedGroupKey)}` %>"
+                class="chip <%= isGroupActive ? 'dark' : '' %>"
+                data-menu-group-filter="<%= normalizedGroupKey %>"
+                aria-pressed="<%= isGroupActive ? 'true' : 'false' %>"
+              >
+                <%= group.labelKo || group.key %>
+              </a>
+            <% }) %>
+          </div>
+        <% } %>
 
-        <div class="admin-list menu-manage-list">
-          <% productGroupConfigList.forEach((group) => { %>
+        <div class="admin-list menu-manage-list" data-menu-group-filter-list>
+          <% fallbackGroupFilterGroups.forEach((group) => { %>
             <%
+              const normalizedGroupKey = String(group.key || '').trim();
+              const isGroupActive = normalizedGroupKey === activeMenuGroupFilter;
               const brandFilters = Array.isArray(group.brandOptions) ? group.brandOptions : [];
               const factoryFilters = Array.isArray(group.factoryOptions) ? group.factoryOptions : [];
               const modelFilterMap =
@@ -1946,7 +1986,11 @@
                 String(group.key || '').trim() === '현지중고' ||
                 factoryFilters.length > 0;
             %>
-            <div class="admin-list-item">
+            <div
+              class="admin-list-item menu-group-filter-item"
+              data-menu-group-filter-group="<%= normalizedGroupKey %>"
+              <%= isGroupActive ? '' : 'hidden' %>
+            >
               <div class="menu-manage-item-row">
                 <div class="menu-manage-item-copy">
                   <strong><%= group.labelKo || group.key %> / <%= group.labelEn || group.key %></strong>
@@ -1956,7 +2000,7 @@
 
               <div class="admin-grid two-col menu-group-filter-grid">
                 <section class="kpi-card menu-brand-filter-card">
-                  <h4><%= isEn ? 'Brand + Models' : '브랜드 + 모델' %></h4>
+                  <h4><%= isEn ? 'Brand + Model Filters' : '브랜드 + 모델 필터' %></h4>
                   <p class="muted-label"><%= isEn ? 'Set Korean/English labels together. EN value is used for saved filter value unless edited.' : '한국어/영어 라벨을 함께 설정합니다. 별도 수정하지 않으면 영어명이 필터 저장값으로 사용됩니다.' %></p>
                   <% if (brandFilters.length === 0) { %>
                     <p class="muted-label"><%= isEn ? 'No brand filter options yet.' : '등록된 브랜드 필터가 없습니다.' %></p>
@@ -2033,36 +2077,43 @@
                                     const modelLabelEntry = resolveFilterLabelEntry(brandModelLabelMap, optionValue);
                                     const modelDisplayName = isEn ? (modelLabelEntry.labelEn || optionValue) : (modelLabelEntry.labelKo || optionValue);
                                   %>
-                                  <div class="admin-list-item">
-                                    <div class="menu-brand-model-row">
+                                  <details class="admin-list-item menu-brand-model-item menu-brand-model-sub-item">
+                                    <summary class="menu-brand-model-summary">
                                       <strong class="menu-brand-model-name"><%= modelDisplayName %></strong>
-                                      <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
-                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                                        <input type="hidden" name="filterType" value="model" />
-                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                        <label><%= isEn ? 'Stored Value' : '저장값' %>
-                                          <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
-                                        </label>
-                                        <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
-                                          <input type="text" name="optionLabelKo" value="<%= modelLabelEntry.labelKo || optionValue %>" required />
-                                        </label>
-                                        <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
-                                          <input type="text" name="optionLabelEn" value="<%= modelLabelEntry.labelEn || optionValue %>" required />
-                                        </label>
-                                        <div class="admin-account-actions">
-                                          <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Model' : '모델 수정' %></button>
-                                        </div>
-                                      </form>
-                                      <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
-                                        <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                        <input type="hidden" name="filterType" value="model" />
-                                        <input type="hidden" name="brandValue" value="<%= brandOption %>" />
-                                        <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                        <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                                      </form>
+                                      <small><%= isEn ? `Value: ${optionValue}` : `저장값: ${optionValue}` %></small>
+                                    </summary>
+                                    <div class="menu-brand-model-body">
+                                      <div class="admin-list-item">
+                                        <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                          <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                          <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                          <input type="hidden" name="filterType" value="model" />
+                                          <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                          <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                            <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
+                                          </label>
+                                          <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                            <input type="text" name="optionLabelKo" value="<%= modelLabelEntry.labelKo || optionValue %>" required />
+                                          </label>
+                                          <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                            <input type="text" name="optionLabelEn" value="<%= modelLabelEntry.labelEn || optionValue %>" required />
+                                          </label>
+                                          <div class="admin-account-actions menu-brand-model-actions">
+                                            <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Model' : '모델 수정' %></button>
+                                          </div>
+                                        </form>
+                                      </div>
+                                      <div class="admin-account-actions menu-brand-model-actions">
+                                        <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                          <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                          <input type="hidden" name="filterType" value="model" />
+                                          <input type="hidden" name="brandValue" value="<%= brandOption %>" />
+                                          <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                          <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                        </form>
+                                      </div>
                                     </div>
-                                  </div>
+                                  </details>
                                 <% }) %>
                               </div>
                             <% } %>
@@ -2116,40 +2167,47 @@
                           ? group.factoryOptionLabels
                           : {};
                       %>
-                      <div class="admin-list">
+                      <div class="admin-list menu-brand-model-wrap">
                         <% factoryFilters.forEach((optionValue) => { %>
                           <%
                             const factoryLabelEntry = resolveFilterLabelEntry(factoryLabelMap, optionValue);
                             const factoryDisplayName = isEn ? (factoryLabelEntry.labelEn || optionValue) : (factoryLabelEntry.labelKo || optionValue);
                           %>
-                          <div class="admin-list-item">
-                            <div class="menu-brand-model-row">
+                          <details class="admin-list-item menu-brand-model-item">
+                            <summary class="menu-brand-model-summary">
                               <strong><%= factoryDisplayName %></strong>
-                              <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
-                                <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                <input type="hidden" name="filterType" value="factory" />
-                                <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                <label><%= isEn ? 'Stored Value' : '저장값' %>
-                                  <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
-                                </label>
-                                <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
-                                  <input type="text" name="optionLabelKo" value="<%= factoryLabelEntry.labelKo || optionValue %>" required />
-                                </label>
-                                <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
-                                  <input type="text" name="optionLabelEn" value="<%= factoryLabelEntry.labelEn || optionValue %>" required />
-                                </label>
-                                <div class="admin-account-actions">
-                                  <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Factory' : '공장 수정' %></button>
-                                </div>
-                              </form>
-                              <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
-                                <input type="hidden" name="groupKey" value="<%= group.key %>" />
-                                <input type="hidden" name="filterType" value="factory" />
-                                <input type="hidden" name="optionValue" value="<%= optionValue %>" />
-                                <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
-                              </form>
+                              <small><%= isEn ? `Value: ${optionValue}` : `저장값: ${optionValue}` %></small>
+                            </summary>
+                            <div class="menu-brand-model-body">
+                              <div class="admin-list-item">
+                                <form method="post" action="/admin/product-group/filter/update" class="form-grid compact">
+                                  <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                  <input type="hidden" name="filterType" value="factory" />
+                                  <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                  <label><%= isEn ? 'Stored Value' : '저장값' %>
+                                    <input type="text" name="nextOptionValue" value="<%= optionValue %>" required />
+                                  </label>
+                                  <label><%= isEn ? 'Name (KR)' : '이름 (KR)' %>
+                                    <input type="text" name="optionLabelKo" value="<%= factoryLabelEntry.labelKo || optionValue %>" required />
+                                  </label>
+                                  <label><%= isEn ? 'Name (EN)' : '이름 (EN)' %>
+                                    <input type="text" name="optionLabelEn" value="<%= factoryLabelEntry.labelEn || optionValue %>" required />
+                                  </label>
+                                  <div class="admin-account-actions menu-brand-model-actions">
+                                    <button type="submit" class="chip dark filter-chip"><%= isEn ? 'Save Factory' : '공장 수정' %></button>
+                                  </div>
+                                </form>
+                              </div>
+                              <div class="admin-account-actions menu-brand-model-actions">
+                                <form method="post" action="/admin/product-group/filter/remove" class="inline-form">
+                                  <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                                  <input type="hidden" name="filterType" value="factory" />
+                                  <input type="hidden" name="optionValue" value="<%= optionValue %>" />
+                                  <button type="submit" class="chip filter-chip"><%= isEn ? 'Delete' : '삭제' %></button>
+                                </form>
+                              </div>
                             </div>
-                          </div>
+                          </details>
                         <% }) %>
                       </div>
                     <% } %>
@@ -2171,6 +2229,52 @@
             </div>
           <% }) %>
         </div>
+        <script>
+          (() => {
+            const wrap = document.querySelector('[data-menu-group-filter-wrap]');
+            const list = document.querySelector('[data-menu-group-filter-list]');
+            if (!wrap || !list) return;
+
+            const buttons = Array.from(wrap.querySelectorAll('[data-menu-group-filter]'));
+            const groups = Array.from(list.querySelectorAll('[data-menu-group-filter-group]'));
+            if (!buttons.length || !groups.length) return;
+            const normalizeKey = (value) => String(value || '').trim();
+
+            const applyFilter = (groupKey) => {
+              const normalizedGroupKey = normalizeKey(groupKey);
+              if (!normalizedGroupKey) return;
+              buttons.forEach((button) => {
+                const active = normalizeKey(button.dataset.menuGroupFilter) === normalizedGroupKey;
+                button.classList.toggle('dark', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+              });
+              groups.forEach((groupNode) => {
+                const isTarget = normalizeKey(groupNode.dataset.menuGroupFilterGroup) === normalizedGroupKey;
+                groupNode.hidden = !isTarget;
+              });
+            };
+
+            const activeButton = buttons.find((button) => button.classList.contains('dark')) || buttons[0];
+            const initialGroup = normalizeKey(activeButton?.dataset.menuGroupFilter || '');
+            if (initialGroup) {
+              applyFilter(initialGroup);
+            }
+
+            buttons.forEach((button) => {
+              button.addEventListener('click', (event) => {
+                event.preventDefault();
+                const nextGroup = normalizeKey(button.dataset.menuGroupFilter || '');
+                applyFilter(nextGroup);
+                if (nextGroup && window.history?.replaceState) {
+                  const nextUrl = new URL(window.location.href);
+                  nextUrl.searchParams.set('section', 'group-filters');
+                  nextUrl.searchParams.set('fieldGroup', nextGroup);
+                  window.history.replaceState(null, '', nextUrl.toString());
+                }
+              });
+            });
+          })();
+        </script>
       </div>
     <% } %>
 

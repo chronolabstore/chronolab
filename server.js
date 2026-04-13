@@ -152,6 +152,11 @@ const PRODUCT_GROUP_MODE = Object.freeze({
   SIMPLE: 'simple'
 });
 const PRODUCT_FIELD_TYPES = new Set(['text', 'textarea', 'number']);
+const PRODUCT_FILTER_BASELINE_VERSION_KEY = 'productFilterBaselineSeedV20260414';
+const PRODUCT_FILTER_BASELINE_VERSION = '2026-04-14-v1';
+const PRODUCT_FILTER_BASELINE_GROUP_KEYS = Object.freeze(['공장제', '젠파츠', '현지중고']);
+const SALES_PRICE_FILTER_BASELINE_VERSION_KEY = 'salesWorkbookPriceFilterSeedV20260414';
+const SALES_PRICE_FILTER_BASELINE_VERSION = '2026-04-14-v2';
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
@@ -848,6 +853,23 @@ function getDefaultGroupFilterSeeds() {
   };
 }
 
+function buildMergedProductFilterOptionMap(currentMap = {}, baselineMap = {}, allowedBrands = []) {
+  const normalizedCurrent = normalizeProductFilterOptionMap(currentMap, allowedBrands);
+  const normalizedBaseline = normalizeProductFilterOptionMap(baselineMap, allowedBrands);
+  const merged = {};
+
+  allowedBrands.forEach((brandValue) => {
+    const currentList = normalizedCurrent[brandValue] || [];
+    const baselineList = normalizedBaseline[brandValue] || [];
+    const mergedList = normalizeProductFilterOptionList([...currentList, ...baselineList]);
+    if (mergedList.length > 0) {
+      merged[brandValue] = mergedList;
+    }
+  });
+
+  return normalizeProductFilterOptionMap(merged, allowedBrands);
+}
+
 function cloneFieldTemplate(template = []) {
   return template.map((field) => ({ ...field }));
 }
@@ -1297,6 +1319,181 @@ function setProductGroupConfigs(configs) {
   setSetting('productGroupConfigs', JSON.stringify(normalized));
   return normalized;
 }
+
+function applyProductFilterBaselineSeedOnce() {
+  const currentVersion = String(getSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, '') || '').trim();
+  if (currentVersion === PRODUCT_FILTER_BASELINE_VERSION) {
+    return;
+  }
+
+  const baselineByKey = new Map(
+    getDefaultProductGroupConfigs()
+      .map((group) => [normalizeProductGroupKey(group?.key || ''), group])
+      .filter(([groupKey, group]) => Boolean(groupKey && group && typeof group === 'object'))
+  );
+  if (baselineByKey.size === 0) {
+    setSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, PRODUCT_FILTER_BASELINE_VERSION);
+    return;
+  }
+
+  const currentConfigs = getProductGroupConfigs();
+  const nextConfigs = [...currentConfigs];
+  const genpartsKey = normalizeProductGroupKey('젠파츠', '젠파츠');
+  let changed = false;
+
+  PRODUCT_FILTER_BASELINE_GROUP_KEYS.forEach((rawGroupKey) => {
+    const normalizedGroupKey = normalizeProductGroupKey(rawGroupKey, rawGroupKey);
+    if (!normalizedGroupKey) {
+      return;
+    }
+
+    const baselineGroup = baselineByKey.get(normalizedGroupKey);
+    if (!baselineGroup) {
+      return;
+    }
+
+    const targetIndex = nextConfigs.findIndex(
+      (group) => normalizeProductGroupKey(group?.key || '') === normalizedGroupKey
+    );
+
+    if (targetIndex < 0) {
+      nextConfigs.push(JSON.parse(JSON.stringify(baselineGroup)));
+      changed = true;
+      return;
+    }
+
+    const targetGroup = nextConfigs[targetIndex] || {};
+    const baselineBrandOptions = normalizeProductFilterOptionList(baselineGroup.brandOptions);
+    const currentBrandOptions = normalizeProductFilterOptionList(targetGroup.brandOptions);
+    const mergedBrandOptions = normalizeProductFilterOptionList([
+      ...currentBrandOptions,
+      ...baselineBrandOptions
+    ]);
+
+    const mergedModelOptionsByBrand = buildMergedProductFilterOptionMap(
+      targetGroup.modelOptionsByBrand,
+      baselineGroup.modelOptionsByBrand,
+      mergedBrandOptions
+    );
+    const hasModelOptionsByBrand = Object.keys(mergedModelOptionsByBrand).length > 0;
+
+    const baselineBrandLabelRaw =
+      baselineGroup.brandOptionLabels &&
+      typeof baselineGroup.brandOptionLabels === 'object' &&
+      !Array.isArray(baselineGroup.brandOptionLabels)
+        ? baselineGroup.brandOptionLabels
+        : {};
+    const currentBrandLabelRaw =
+      targetGroup.brandOptionLabels &&
+      typeof targetGroup.brandOptionLabels === 'object' &&
+      !Array.isArray(targetGroup.brandOptionLabels)
+        ? targetGroup.brandOptionLabels
+        : {};
+    const mergedBrandOptionLabels = normalizeProductFilterOptionLabelMap(
+      { ...baselineBrandLabelRaw, ...currentBrandLabelRaw },
+      mergedBrandOptions
+    );
+
+    const baselineModelLabelRawByBrand =
+      baselineGroup.modelOptionLabelsByBrand &&
+      typeof baselineGroup.modelOptionLabelsByBrand === 'object' &&
+      !Array.isArray(baselineGroup.modelOptionLabelsByBrand)
+        ? baselineGroup.modelOptionLabelsByBrand
+        : {};
+    const currentModelLabelRawByBrand =
+      targetGroup.modelOptionLabelsByBrand &&
+      typeof targetGroup.modelOptionLabelsByBrand === 'object' &&
+      !Array.isArray(targetGroup.modelOptionLabelsByBrand)
+        ? targetGroup.modelOptionLabelsByBrand
+        : {};
+    const rawMergedModelLabelsByBrand = {};
+    Object.keys(mergedModelOptionsByBrand).forEach((brandValue) => {
+      const baselineBrandLabelKey = findMatchingProductFilterKey(baselineModelLabelRawByBrand, brandValue);
+      const currentBrandLabelKey = findMatchingProductFilterKey(currentModelLabelRawByBrand, brandValue);
+      const baselineBrandLabelMap =
+        baselineBrandLabelKey &&
+        baselineModelLabelRawByBrand[baselineBrandLabelKey] &&
+        typeof baselineModelLabelRawByBrand[baselineBrandLabelKey] === 'object' &&
+        !Array.isArray(baselineModelLabelRawByBrand[baselineBrandLabelKey])
+          ? baselineModelLabelRawByBrand[baselineBrandLabelKey]
+          : {};
+      const currentBrandLabelMap =
+        currentBrandLabelKey &&
+        currentModelLabelRawByBrand[currentBrandLabelKey] &&
+        typeof currentModelLabelRawByBrand[currentBrandLabelKey] === 'object' &&
+        !Array.isArray(currentModelLabelRawByBrand[currentBrandLabelKey])
+          ? currentModelLabelRawByBrand[currentBrandLabelKey]
+          : {};
+
+      rawMergedModelLabelsByBrand[brandValue] = {
+        ...baselineBrandLabelMap,
+        ...currentBrandLabelMap
+      };
+    });
+    const mergedModelOptionLabelsByBrand = normalizeProductFilterOptionLabelMapByBrand(
+      rawMergedModelLabelsByBrand,
+      mergedModelOptionsByBrand,
+      mergedBrandOptions
+    );
+
+    let mergedFactoryOptions = [];
+    let mergedFactoryOptionLabels = {};
+    if (normalizedGroupKey !== genpartsKey) {
+      const baselineFactoryOptions = normalizeProductFilterOptionList(baselineGroup.factoryOptions);
+      const currentFactoryOptions = normalizeProductFilterOptionList(targetGroup.factoryOptions);
+      mergedFactoryOptions = normalizeProductFilterOptionList([
+        ...currentFactoryOptions,
+        ...baselineFactoryOptions
+      ]);
+
+      const baselineFactoryLabelRaw =
+        baselineGroup.factoryOptionLabels &&
+        typeof baselineGroup.factoryOptionLabels === 'object' &&
+        !Array.isArray(baselineGroup.factoryOptionLabels)
+          ? baselineGroup.factoryOptionLabels
+          : {};
+      const currentFactoryLabelRaw =
+        targetGroup.factoryOptionLabels &&
+        typeof targetGroup.factoryOptionLabels === 'object' &&
+        !Array.isArray(targetGroup.factoryOptionLabels)
+          ? targetGroup.factoryOptionLabels
+          : {};
+      mergedFactoryOptionLabels = normalizeProductFilterOptionLabelMap(
+        { ...baselineFactoryLabelRaw, ...currentFactoryLabelRaw },
+        mergedFactoryOptions
+      );
+    }
+
+    const baselineModelOptions = normalizeProductFilterOptionList(baselineGroup.modelOptions);
+    const currentModelOptions = normalizeProductFilterOptionList(targetGroup.modelOptions);
+    const mergedModelOptions = hasModelOptionsByBrand
+      ? []
+      : normalizeProductFilterOptionList([...currentModelOptions, ...baselineModelOptions]);
+
+    const nextGroup = {
+      ...targetGroup,
+      brandOptions: mergedBrandOptions,
+      factoryOptions: mergedFactoryOptions,
+      modelOptions: mergedModelOptions,
+      modelOptionsByBrand: mergedModelOptionsByBrand,
+      brandOptionLabels: mergedBrandOptionLabels,
+      factoryOptionLabels: mergedFactoryOptionLabels,
+      modelOptionLabelsByBrand: mergedModelOptionLabelsByBrand
+    };
+
+    if (JSON.stringify(nextGroup) !== JSON.stringify(targetGroup)) {
+      nextConfigs[targetIndex] = nextGroup;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    setProductGroupConfigs(nextConfigs);
+  }
+  setSetting(PRODUCT_FILTER_BASELINE_VERSION_KEY, PRODUCT_FILTER_BASELINE_VERSION);
+}
+
+applyProductFilterBaselineSeedOnce();
 
 function getProductGroupMap(groupConfigs = getProductGroupConfigs()) {
   return new Map(groupConfigs.map((group) => [group.key, group]));
@@ -4360,6 +4557,94 @@ function buildDefaultPriceScopes(groupKey = '') {
   }));
 }
 
+function buildSalesTaxonomyBaselineByGroupConfig(groupConfig = null) {
+  if (!groupConfig || typeof groupConfig !== 'object') {
+    return { brands: [] };
+  }
+
+  const brandOptions = getGroupBrandOptions(groupConfig);
+  const modelOptionMap = getGroupModelOptionsByBrand(groupConfig);
+  const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
+  const fallbackModelOptions = getGroupModelOptions(groupConfig);
+
+  const brands = brandOptions
+    .map((brandValue) => {
+      const brandName = normalizeSalesSheetName(brandValue, 80);
+      if (!brandName) {
+        return null;
+      }
+      const sourceModels = hasModelOptionMap
+        ? getGroupModelOptionsForBrand(groupConfig, brandValue)
+        : fallbackModelOptions;
+      const models = normalizeProductFilterOptionList(sourceModels)
+        .map((modelValue) => normalizeSalesSheetName(modelValue, 120))
+        .filter(Boolean)
+        .sort(compareSalesSheetNames);
+      return {
+        name: brandName,
+        models
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => compareSalesSheetNames(a.name, b.name));
+
+  return { brands };
+}
+
+function mergeSalesTaxonomyWithBaseline(currentTaxonomy = {}, rows = [], baselineTaxonomy = { brands: [] }) {
+  const current = normalizeSalesScopeTaxonomy(currentTaxonomy, rows);
+  const baselineBrands = Array.isArray(baselineTaxonomy?.brands) ? baselineTaxonomy.brands : [];
+  const brandMap = new Map();
+
+  const upsertBrand = (rawBrandName = '') => {
+    const brandName = normalizeSalesSheetName(rawBrandName, 80);
+    if (!brandName) {
+      return null;
+    }
+    const brandKey = normalizeSalesSheetNameKey(brandName);
+    if (!brandMap.has(brandKey)) {
+      brandMap.set(brandKey, { name: brandName, models: [] });
+    }
+    return brandMap.get(brandKey);
+  };
+
+  const upsertModel = (brandEntry, rawModelName = '') => {
+    if (!brandEntry) {
+      return;
+    }
+    const modelName = normalizeSalesSheetName(rawModelName, 120);
+    if (!modelName) {
+      return;
+    }
+    const modelKey = normalizeSalesSheetNameKey(modelName);
+    const duplicated = brandEntry.models.some((item) => normalizeSalesSheetNameKey(item) === modelKey);
+    if (!duplicated) {
+      brandEntry.models.push(modelName);
+    }
+  };
+
+  (Array.isArray(current.brands) ? current.brands : []).forEach((brandItem) => {
+    const brandEntry = upsertBrand(brandItem?.name || '');
+    const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+    models.forEach((modelName) => upsertModel(brandEntry, modelName));
+  });
+
+  baselineBrands.forEach((brandItem) => {
+    const brandEntry = upsertBrand(brandItem?.name || '');
+    const models = Array.isArray(brandItem?.models) ? brandItem.models : [];
+    models.forEach((modelName) => upsertModel(brandEntry, modelName));
+  });
+
+  const brands = [...brandMap.values()]
+    .map((brandItem) => ({
+      name: brandItem.name,
+      models: [...brandItem.models].sort(compareSalesSheetNames)
+    }))
+    .sort((a, b) => compareSalesSheetNames(a.name, b.name));
+
+  return { brands };
+}
+
 function createDefaultRoundName(tabKey = '', index = 1) {
   if (tabKey === 'preorder') {
     return `${index}차`;
@@ -4604,6 +4889,203 @@ function saveSalesWorkbook(inputWorkbook = null, options = {}) {
   setSetting(SALES_WORKBOOK_SETTING_KEY, JSON.stringify(next));
   return next;
 }
+
+function syncSalesWorkbookPriceFilters(options = {}) {
+  const force = options && options.force === true;
+  const respectVersion = options && options.respectVersion === true;
+  const markVersion = options && options.markVersion === false ? false : true;
+  const currentVersion = String(getSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, '') || '').trim();
+
+  if (!force && respectVersion && currentVersion === SALES_PRICE_FILTER_BASELINE_VERSION) {
+    return {
+      changed: false,
+      skipped: true,
+      workbook: getSalesWorkbook(),
+      stats: {
+        tabsProcessed: 0,
+        scopesAdded: 0,
+        namesUpdated: 0,
+        taxonomiesUpdated: 0,
+        categoryTypesFixed: 0
+      }
+    };
+  }
+
+  const productGroupConfigs = getProductGroupConfigs();
+  const salesTabs = getSalesMainTabs(productGroupConfigs).filter(
+    (tabInfo) => String(tabInfo?.scopeType || '').trim() === 'factory'
+  );
+  if (salesTabs.length === 0) {
+    if (markVersion) {
+      setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+    }
+    return {
+      changed: false,
+      skipped: false,
+      workbook: getSalesWorkbook(),
+      stats: {
+        tabsProcessed: 0,
+        scopesAdded: 0,
+        namesUpdated: 0,
+        taxonomiesUpdated: 0,
+        categoryTypesFixed: 0
+      }
+    };
+  }
+
+  const workbook = getSalesWorkbook();
+  const workbookTabs = workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs : {};
+  let changed = false;
+  const stats = {
+    tabsProcessed: 0,
+    scopesAdded: 0,
+    namesUpdated: 0,
+    taxonomiesUpdated: 0,
+    categoryTypesFixed: 0
+  };
+
+  salesTabs.forEach((tabInfo) => {
+    const tabKey = String(tabInfo?.key || '').trim();
+    if (!tabKey || !workbookTabs[tabKey] || typeof workbookTabs[tabKey] !== 'object') {
+      return;
+    }
+    stats.tabsProcessed += 1;
+    const tab = workbookTabs[tabKey];
+    if (!Array.isArray(tab.groups)) {
+      tab.groups = [];
+      changed = true;
+    }
+
+    const normalizedGroupKey = normalizeProductGroupKey(tabInfo?.groupKey || '');
+    const groupConfig = normalizedGroupKey
+      ? productGroupConfigs.find(
+          (group) => normalizeProductGroupKey(group?.key || '') === normalizedGroupKey
+        )
+      : null;
+    if (!groupConfig) {
+      return;
+    }
+
+    const baselineTaxonomy = buildSalesTaxonomyBaselineByGroupConfig(groupConfig);
+    const baselineFactoryNames = normalizeProductFilterOptionList(groupConfig.factoryOptions)
+      .map((value) => normalizeSalesSheetName(value, 80))
+      .filter(Boolean);
+    const hasGroups = Array.isArray(tab.groups) && tab.groups.length > 0;
+
+    if (!hasGroups) {
+      const scopeNames = baselineFactoryNames.length > 0 ? baselineFactoryNames : ['기본'];
+      tab.groups = scopeNames.map((scopeName, idx) => ({
+        id: createSalesId(`scope-p-seed-${idx + 1}`),
+        name: scopeName,
+        categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
+        taxonomy: mergeSalesTaxonomyWithBaseline({}, [], baselineTaxonomy),
+        rows: []
+      }));
+      changed = true;
+      stats.scopesAdded += tab.groups.length;
+    } else if (baselineFactoryNames.length > 0) {
+      const placeholderKeySet = new Set(['기본', 'factory 1', 'factory']);
+      if (tab.groups.length === 1) {
+        const onlyScope = tab.groups[0] && typeof tab.groups[0] === 'object' ? tab.groups[0] : null;
+        const onlyScopeName = normalizeSalesSheetName(onlyScope?.name || '', 80);
+        const onlyScopeKey = normalizeSalesSheetNameKey(onlyScopeName);
+        const rowCount = Array.isArray(onlyScope?.rows) ? onlyScope.rows.length : 0;
+        if (
+          onlyScope &&
+          rowCount === 0 &&
+          placeholderKeySet.has(onlyScopeKey) &&
+          onlyScopeName !== baselineFactoryNames[0]
+        ) {
+          onlyScope.name = baselineFactoryNames[0];
+          changed = true;
+          stats.namesUpdated += 1;
+        }
+      }
+
+      const existingScopeNameKeys = new Set(
+        tab.groups
+          .map((scope) => normalizeSalesSheetNameKey(scope?.name || ''))
+          .filter(Boolean)
+      );
+      baselineFactoryNames.forEach((factoryName) => {
+        const factoryKey = normalizeSalesSheetNameKey(factoryName);
+        if (!factoryKey || existingScopeNameKeys.has(factoryKey)) {
+          return;
+        }
+        tab.groups.push({
+          id: createSalesId(`scope-p-seed-${tab.groups.length + 1}`),
+          name: factoryName,
+          categoryType: SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY,
+          taxonomy: mergeSalesTaxonomyWithBaseline({}, [], baselineTaxonomy),
+          rows: []
+        });
+        existingScopeNameKeys.add(factoryKey);
+        changed = true;
+        stats.scopesAdded += 1;
+      });
+    }
+
+    tab.groups.forEach((scope) => {
+      if (!scope || typeof scope !== 'object') {
+        return;
+      }
+
+      const mergedTaxonomy = mergeSalesTaxonomyWithBaseline(
+        scope.taxonomy || {},
+        Array.isArray(scope.rows) ? scope.rows : [],
+        baselineTaxonomy
+      );
+      if (JSON.stringify(scope.taxonomy || {}) !== JSON.stringify(mergedTaxonomy)) {
+        scope.taxonomy = mergedTaxonomy;
+        changed = true;
+        stats.taxonomiesUpdated += 1;
+      }
+
+      if (
+        normalizeSalesPriceSheetCategoryType(scope.categoryType) !==
+        SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY
+      ) {
+        scope.categoryType = SALES_PRICE_SHEET_CATEGORY_TYPES.FACTORY;
+        changed = true;
+        stats.categoryTypesFixed += 1;
+      }
+    });
+  });
+
+  const savedWorkbook = changed
+    ? saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' })
+    : workbook;
+
+  if (markVersion) {
+    setSetting(SALES_PRICE_FILTER_BASELINE_VERSION_KEY, SALES_PRICE_FILTER_BASELINE_VERSION);
+  }
+
+  return {
+    changed,
+    skipped: false,
+    workbook: savedWorkbook,
+    stats
+  };
+}
+
+function applySalesWorkbookPriceFilterBaselineSeedOnce() {
+  syncSalesWorkbookPriceFilters({
+    force: false,
+    respectVersion: true,
+    markVersion: true
+  });
+}
+
+function syncSalesWorkbookPriceFiltersSafely(options = {}) {
+  try {
+    return syncSalesWorkbookPriceFilters(options);
+  } catch (error) {
+    console.error('[sales] workbook filter sync failed:', error);
+    return null;
+  }
+}
+
+applySalesWorkbookPriceFilterBaselineSeedOnce();
 
 function getSalesScopeList(tab = null) {
   if (!tab || typeof tab !== 'object') {
@@ -12504,6 +12986,35 @@ app.get(
 );
 
 app.post(
+  '/admin/sales/sync-filters',
+  requireAdmin,
+  asyncRoute(async (req, res) => {
+    const syncResult = syncSalesWorkbookPriceFiltersSafely({
+      force: true,
+      respectVersion: false,
+      markVersion: true
+    });
+    if (!syncResult || !syncResult.workbook) {
+      return res.status(500).json({
+        ok: false,
+        error: 'sales_filter_sync_failed',
+        message: '분류 필터 동기화 중 오류가 발생했습니다.'
+      });
+    }
+    const payload = buildSalesWorkbookPayload(syncResult.workbook);
+
+    logAdminActivity(req, 'SALES_FILTER_SYNC', `changed:${syncResult.changed ? '1' : '0'}`);
+    return res.json({
+      ok: true,
+      changed: Boolean(syncResult.changed),
+      stats: syncResult.stats,
+      mainTabs: getSalesMainTabs(),
+      ...payload
+    });
+  })
+);
+
+app.post(
   '/admin/sales/workbook',
   requireAdmin,
   asyncRoute(async (req, res) => {
@@ -12782,6 +13293,11 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
     customFields: useFactoryTemplate ? getFactoryDefaultFields() : getCompactDefaultFields()
   }];
   setProductGroupConfigs(nextConfigs);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
 
   setFlash(req, 'success', '쇼핑몰 분류가 추가되었습니다.');
   return res.redirect(backPath);
@@ -12819,6 +13335,11 @@ app.post('/admin/product-group/remove/:key', requireAdmin, (req, res) => {
 
   const nextConfigs = configs.filter((group) => group.key !== key);
   setProductGroupConfigs(nextConfigs);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(req, 'success', '쇼핑몰 분류가 삭제되었습니다.');
   return res.redirect(backPath);
 });
@@ -13097,6 +13618,11 @@ app.post('/admin/product-group/filter/add', requireAdmin, (req, res) => {
   };
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',
@@ -13252,6 +13778,11 @@ app.post('/admin/product-group/filter/remove', requireAdmin, (req, res) => {
   };
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',
@@ -13431,6 +13962,11 @@ app.post('/admin/product-group/filter/update', requireAdmin, (req, res) => {
   }
 
   setProductGroupConfigs(nextGroups);
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
   setFlash(
     req,
     'success',

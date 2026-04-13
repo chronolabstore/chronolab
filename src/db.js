@@ -51,30 +51,117 @@ export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+const DEFAULT_FILTER_BRAND_MODEL_SEEDS = Object.freeze([
+  Object.freeze({
+    value: 'Audemars Piguet',
+    labelKo: '오데마피게',
+    labelEn: 'Audemars Piguet',
+    models: Object.freeze([
+      Object.freeze({ value: 'Royal Oak', labelKo: '로얄오크', labelEn: 'Royal Oak' }),
+      Object.freeze({ value: 'Offshore', labelKo: '오프셔', labelEn: 'Offshore' })
+    ])
+  }),
+  Object.freeze({
+    value: 'Patek Philippe',
+    labelKo: '파텍필립',
+    labelEn: 'Patek Philippe',
+    models: Object.freeze([
+      Object.freeze({ value: 'Nautilus', labelKo: '노틸러스', labelEn: 'Nautilus' }),
+      Object.freeze({ value: 'Aquanaut', labelKo: '아쿠아넛', labelEn: 'Aquanaut' })
+    ])
+  }),
+  Object.freeze({
+    value: 'Rolex',
+    labelKo: '롤렉스',
+    labelEn: 'Rolex',
+    models: Object.freeze([
+      Object.freeze({ value: 'Datejust', labelKo: '데이저스트', labelEn: 'Datejust' }),
+      Object.freeze({ value: 'Day-Date', labelKo: '데이데이트', labelEn: 'Day-Date' }),
+      Object.freeze({ value: 'Submariner', labelKo: '서브마리너', labelEn: 'Submariner' }),
+      Object.freeze({ value: 'Daytona', labelKo: '데이토나', labelEn: 'Daytona' }),
+      Object.freeze({ value: 'GMT-Master', labelKo: 'GMT마스터', labelEn: 'GMT-Master' }),
+      Object.freeze({ value: 'Yacht-Master', labelKo: '요트마스터', labelEn: 'Yacht-Master' })
+    ])
+  }),
+  Object.freeze({
+    value: 'Cartier',
+    labelKo: '까르띠에',
+    labelEn: 'Cartier',
+    models: Object.freeze([
+      Object.freeze({ value: 'Santos', labelKo: '산토스', labelEn: 'Santos' })
+    ])
+  })
+]);
+
+const DEFAULT_FACTORY_FILTER_OPTIONS = Object.freeze([
+  'VS',
+  'APS',
+  'DD',
+  'PP',
+  'PPM',
+  'BV',
+  'RC',
+  'RG',
+  'Gold'
+]);
+
+const DEFAULT_FILTER_BRAND_OPTIONS = Object.freeze(
+  DEFAULT_FILTER_BRAND_MODEL_SEEDS.map((item) => item.value)
+);
+
+const DEFAULT_FILTER_BRAND_OPTION_LABELS = Object.freeze(
+  DEFAULT_FILTER_BRAND_MODEL_SEEDS.reduce((acc, item) => {
+    acc[item.value] = {
+      labelKo: item.labelKo,
+      labelEn: item.labelEn
+    };
+    return acc;
+  }, {})
+);
+
+const DEFAULT_FILTER_MODEL_OPTIONS_BY_BRAND = Object.freeze(
+  DEFAULT_FILTER_BRAND_MODEL_SEEDS.reduce((acc, item) => {
+    acc[item.value] = item.models.map((model) => model.value);
+    return acc;
+  }, {})
+);
+
+const DEFAULT_FILTER_MODEL_OPTION_LABELS_BY_BRAND = Object.freeze(
+  DEFAULT_FILTER_BRAND_MODEL_SEEDS.reduce((acc, item) => {
+    acc[item.value] = item.models.reduce((modelAcc, model) => {
+      modelAcc[model.value] = {
+        labelKo: model.labelKo,
+        labelEn: model.labelEn
+      };
+      return modelAcc;
+    }, {});
+    return acc;
+  }, {})
+);
+
+const DEFAULT_FACTORY_FILTER_OPTION_LABELS = Object.freeze(
+  DEFAULT_FACTORY_FILTER_OPTIONS.reduce((acc, value) => {
+    acc[value] = {
+      labelKo: value,
+      labelEn: value
+    };
+    return acc;
+  }, {})
+);
+
 export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
   {
     key: '공장제',
     labelKo: '공장제',
     labelEn: 'Factory',
     mode: 'factory',
-    brandOptions: [
-      'Audemars Piguet',
-      'Blancpain',
-      'Breguet',
-      'Breitling',
-      'Cartier',
-      'Hublot',
-      'IWC',
-      'Jaeger-LeCoultre',
-      'Omega',
-      'Panerai',
-      'Patek Philippe',
-      'Rolex',
-      'TAG Heuer',
-      'Zenith'
-    ],
-    factoryOptions: ['ZF', 'CF', 'VSF', 'Clean', 'BT', 'OMF', 'TF'],
+    brandOptions: [...DEFAULT_FILTER_BRAND_OPTIONS],
+    factoryOptions: [...DEFAULT_FACTORY_FILTER_OPTIONS],
     modelOptions: [],
+    modelOptionsByBrand: { ...DEFAULT_FILTER_MODEL_OPTIONS_BY_BRAND },
+    brandOptionLabels: { ...DEFAULT_FILTER_BRAND_OPTION_LABELS },
+    factoryOptionLabels: { ...DEFAULT_FACTORY_FILTER_OPTION_LABELS },
+    modelOptionLabelsByBrand: { ...DEFAULT_FILTER_MODEL_OPTION_LABELS_BY_BRAND },
     customFields: [
       { key: 'brand', labelKo: '브랜드', labelEn: 'Brand', type: 'text', required: true },
       { key: 'model', labelKo: '모델명', labelEn: 'Model', type: 'text', required: true },
@@ -97,18 +184,13 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
     labelKo: '젠파츠',
     labelEn: 'Gen Parts',
     mode: 'simple',
-    brandOptions: [
-      'Rolex',
-      'Omega',
-      'Cartier',
-      'IWC',
-      'Panerai',
-      'TAG Heuer',
-      'Patek Philippe',
-      'Audemars Piguet'
-    ],
+    brandOptions: [...DEFAULT_FILTER_BRAND_OPTIONS],
     factoryOptions: [],
     modelOptions: [],
+    modelOptionsByBrand: { ...DEFAULT_FILTER_MODEL_OPTIONS_BY_BRAND },
+    brandOptionLabels: { ...DEFAULT_FILTER_BRAND_OPTION_LABELS },
+    factoryOptionLabels: {},
+    modelOptionLabelsByBrand: { ...DEFAULT_FILTER_MODEL_OPTION_LABELS_BY_BRAND },
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
       { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true },
@@ -120,18 +202,13 @@ export const DEFAULT_PRODUCT_GROUP_CONFIGS = [
     labelKo: '현지중고',
     labelEn: 'Local Used',
     mode: 'simple',
-    brandOptions: [
-      'Rolex',
-      'Omega',
-      'Cartier',
-      'IWC',
-      'Panerai',
-      'TAG Heuer',
-      'Patek Philippe',
-      'Audemars Piguet'
-    ],
-    factoryOptions: [],
+    brandOptions: [...DEFAULT_FILTER_BRAND_OPTIONS],
+    factoryOptions: [...DEFAULT_FACTORY_FILTER_OPTIONS],
     modelOptions: [],
+    modelOptionsByBrand: { ...DEFAULT_FILTER_MODEL_OPTIONS_BY_BRAND },
+    brandOptionLabels: { ...DEFAULT_FILTER_BRAND_OPTION_LABELS },
+    factoryOptionLabels: { ...DEFAULT_FACTORY_FILTER_OPTION_LABELS },
+    modelOptionLabelsByBrand: { ...DEFAULT_FILTER_MODEL_OPTION_LABELS_BY_BRAND },
     customFields: [
       { key: 'title', labelKo: '제목', labelEn: 'Title', type: 'text', required: true },
       { key: 'detailed_description', labelKo: '상세설명', labelEn: 'Detailed Description', type: 'textarea', required: true },

@@ -2443,12 +2443,12 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   position: relative;
   margin: 0;
   min-height: 44px;
-  padding: 10px 40px 10px 12px;
+  padding: 10px 76px 10px 12px;
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   background: var(--chip);
   border: 1px solid transparent;
 }
@@ -2456,18 +2456,24 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 .menu-brand-model-summary strong {
   font-size: 0.93rem;
   line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-brand-model-summary small {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
+  margin-right: 22px;
+  flex-shrink: 0;
 }
 
 .menu-brand-model-summary::after {
   content: "▾";
   position: absolute;
-  right: 12px;
+  right: 22px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.78rem;
@@ -2507,6 +2513,25 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   padding: 8px 10px;
   border-radius: 10px;
   background: var(--chip);
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary {
+  min-height: 40px;
+  padding: 8px 74px 8px 12px;
+  border-radius: 10px;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary strong {
+  font-size: 0.88rem;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-summary small {
+  font-size: 0.75rem;
+}
+
+.menu-brand-model-sub-item > .menu-brand-model-body {
+  gap: 8px;
+  padding: 8px;
 }
 
 .menu-brand-model-row {
@@ -2624,6 +2649,15 @@ body.theme-night .menu-brand-model-list .admin-list-item {
 }
 
 .menu-field-filter-row .chip {
+  white-space: nowrap;
+}
+
+.menu-group-filter-row {
+  align-items: center;
+  margin: 8px 0 4px;
+}
+
+.menu-group-filter-row .chip {
   white-space: nowrap;
 }
 
@@ -3502,6 +3536,19 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   display: grid;
   align-content: center;
   gap: 2px;
+}
+
+.sales-global-hint strong {
+  font-size: 0.82rem;
+}
+
+.sales-global-hint small {
+  color: var(--muted);
+}
+
+.sales-global-actions .chip:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
 }
 
 .sales-scope-toolbar {
@@ -4778,7 +4825,15 @@ body.admin-page :where(
 }
 
 body.admin-page .admin-list-item .menu-inline-edit > summary {
-  background: var(--admin-surface-l3);
+  background: #eef3ff;
+  color: #1a2a47;
+  border-color: #c8d6ea;
+}
+
+body.admin-page .admin-list-item .menu-inline-edit[open] > summary {
+  background: var(--color-navy);
+  color: #f8fafc;
+  border-color: #2b3a56;
 }
 
 /* Admin table/list preset
@@ -4833,6 +4888,49 @@ body.admin-page details.inquiry-admin-item > summary {
 body.admin-page details.admin-list-item > summary small,
 body.admin-page details.inquiry-admin-item > summary small {
   color: rgba(248, 250, 252, 0.84);
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary {
+  background: var(--admin-surface-l2) !important;
+  border-color: #d2dceb;
+  color: #1a2a47 !important;
+}
+
+body.admin-page .menu-brand-model-item[open] > .menu-brand-model-summary {
+  border-bottom-color: #d2dceb;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary strong {
+  color: #1a2a47;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary small,
+body.admin-page .menu-brand-model-item > .menu-brand-model-summary::after {
+  color: #5f6b7e;
+}
+
+body.admin-page .menu-brand-model-item > .menu-brand-model-body {
+  background: #ffffff !important;
+  border: 1px solid #d2dceb;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn {
+  background: #ffffff;
+  border-color: #bccae1;
+  color: #1a2a47;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn:hover {
+  background: #f5f8ff;
+  border-color: #9fb3d5;
+}
+
+body.admin-page .kpi-card .kpi-toggle-btn.active {
+  background: var(--color-navy);
+  border-color: var(--color-navy);
+  color: #f8fafc;
 }
 
 body.admin-page .admin-list-item .admin-account-row:first-child {
