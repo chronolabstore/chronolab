@@ -4677,13 +4677,13 @@ body.theme-night .order-status-badge-delivered {
    level 3 (nested inner): white */
 body.admin-page {
   --admin-surface-l1: #ffffff;
-  --admin-surface-l2: #eaf1fb;
+  --admin-surface-l2: var(--chip);
   --admin-surface-l3: #ffffff;
 }
 
 body.admin-page.theme-night {
   --admin-surface-l1: #111b30;
-  --admin-surface-l2: #1b2941;
+  --admin-surface-l2: var(--chip);
   --admin-surface-l3: #111b30;
 }
 
