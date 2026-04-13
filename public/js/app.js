@@ -17,6 +17,149 @@
     }
   }
 
+  function isElementVisible(element) {
+    if (!element || element.hidden) {
+      return false;
+    }
+    var style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+    return element.getClientRects().length > 0;
+  }
+
+  function isEditableField(element) {
+    if (!element || element.disabled || element.readOnly) {
+      return false;
+    }
+    var tagName = String(element.tagName || '').toUpperCase();
+    if (tagName === 'TEXTAREA' || tagName === 'SELECT') {
+      return true;
+    }
+    if (tagName !== 'INPUT') {
+      return false;
+    }
+    var blockedTypes = {
+      hidden: true,
+      checkbox: true,
+      radio: true,
+      file: true,
+      submit: true,
+      button: true,
+      reset: true,
+      image: true,
+      range: true,
+      color: true
+    };
+    var inputType = String(element.type || 'text').toLowerCase();
+    return !blockedTypes[inputType];
+  }
+
+  function hasOpenBlockingLayer() {
+    var overlays = ['#flashPopup', '#noticePopupDeck', '#noticePopup', '#imageLightbox'];
+    return overlays.some(function (selector) {
+      var layer = document.querySelector(selector);
+      if (!layer || layer.classList.contains('hidden')) {
+        return false;
+      }
+      return isElementVisible(layer);
+    });
+  }
+
+  function focusField(element) {
+    if (!element) {
+      return;
+    }
+    try {
+      element.focus({ preventScroll: true });
+    } catch (_) {
+      element.focus();
+    }
+  }
+
+  function findFirstEditableField(scope) {
+    if (!scope) {
+      return null;
+    }
+    var candidates = scope.querySelectorAll('input, textarea, select');
+    for (var index = 0; index < candidates.length; index += 1) {
+      var field = candidates[index];
+      if (!isEditableField(field)) {
+        continue;
+      }
+      if (!isElementVisible(field)) {
+        continue;
+      }
+      return field;
+    }
+    return null;
+  }
+
+  function initPrimaryInputAutofocus() {
+    if (hasOpenBlockingLayer()) {
+      return;
+    }
+    var active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) {
+      return;
+    }
+
+    var explicitTarget = document.querySelector('[data-autofocus-primary]');
+    if (explicitTarget && isEditableField(explicitTarget) && isElementVisible(explicitTarget)) {
+      focusField(explicitTarget);
+      return;
+    }
+
+    var main = document.querySelector('main');
+    if (!main || !isElementVisible(main)) {
+      return;
+    }
+
+    var forms = main.querySelectorAll('form');
+    for (var formIndex = 0; formIndex < forms.length; formIndex += 1) {
+      var form = forms[formIndex];
+      if (!isElementVisible(form)) {
+        continue;
+      }
+      var firstFieldInForm = findFirstEditableField(form);
+      if (firstFieldInForm) {
+        focusField(firstFieldInForm);
+        return;
+      }
+    }
+
+    var firstFieldInMain = findFirstEditableField(main);
+    if (firstFieldInMain) {
+      focusField(firstFieldInMain);
+    }
+  }
+
+  function initDetailsFieldAutofocus() {
+    document.addEventListener(
+      'toggle',
+      function (event) {
+        var details = event.target;
+        if (!details || details.tagName !== 'DETAILS' || !details.open) {
+          return;
+        }
+        if (hasOpenBlockingLayer()) {
+          return;
+        }
+        var firstField = findFirstEditableField(details);
+        if (!firstField) {
+          return;
+        }
+        window.setTimeout(function () {
+          if (!details.open) {
+            return;
+          }
+          focusField(firstField);
+        }, 0);
+      },
+      true
+    );
+  }
+
   function initNoticePopup() {
     var popup = getNoticePopupRoot();
     if (!popup) {
@@ -1419,12 +1562,14 @@
   }
 
   function initApp() {
+    initDetailsFieldAutofocus();
     initNoticePopup();
     initFlashPopup();
     initProductGallery();
     initInlineImagePreviews();
     initImageLightbox();
     initPasswordVisibilityToggles();
+    initPrimaryInputAutofocus();
   }
 
   if (document.readyState === 'loading') {
