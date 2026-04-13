@@ -15,9 +15,9 @@ fi
 PM2_APP="${PM2_APP:-chronolab}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 
-echo "[1/3] restart pm2 app: $PM2_APP"
+echo "[1/3] reload pm2 app: $PM2_APP"
 if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-  pm2 restart "$PM2_APP" --update-env
+  pm2 reload "$PM2_APP" --update-env || pm2 restart "$PM2_APP" --update-env
 else
   if [ -f "$ENV_FILE" ]; then
     pm2 start "$APP_DIR/server.js" --name "$PM2_APP" --node-args="--env-file=$ENV_FILE"
