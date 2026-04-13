@@ -1556,6 +1556,14 @@
         <legend><%= isEn ? 'Main Hero Settings' : '메인 상단 카드 설정' %></legend>
 
         <div class="hero-settings-grid">
+          <label><%= isEn ? 'Left Title (KR)' : '좌측 타이틀 (KR)' %>
+            <input type="text" name="heroLeftTitleKo" value="<%= settings.heroLeftTitleKo || '' %>" />
+          </label>
+
+          <label><%= isEn ? 'Left Title (EN)' : '좌측 타이틀 (EN)' %>
+            <input type="text" name="heroLeftTitleEn" value="<%= settings.heroLeftTitleEn || '' %>" />
+          </label>
+
           <label><%= isEn ? 'Left Subtitle (KR)' : '좌측 설명 문구 (KR)' %>
             <textarea name="heroLeftSubtitleKo" rows="2"><%= settings.heroLeftSubtitleKo || '' %></textarea>
           </label>
@@ -1573,6 +1581,24 @@
 
           <label><%= isEn ? 'Left Background Color' : '좌측 배경 컬러' %>
             <input type="color" name="heroLeftBackgroundColor" value="<%= settings.heroLeftBackgroundColor || '#eef2f8' %>" />
+          </label>
+
+          <label><%= isEn ? 'Left Button Target Menu' : '좌측 버튼 대상 메뉴' %>
+            <select name="heroLeftCtaPath">
+              <% if (heroQuickMenuOptionsList.length === 0) { %>
+                <option value="/shop" <%= (settings.heroLeftCtaPath || '/shop') === '/shop' ? 'selected' : '' %>>/shop</option>
+              <% } %>
+              <% heroQuickMenuOptionsList.forEach((menuOption) => { %>
+                <%
+                  const optionLabel = isEn
+                    ? (menuOption.labelEn || menuOption.labelKo || menuOption.path)
+                    : (menuOption.labelKo || menuOption.labelEn || menuOption.path);
+                  const hiddenSuffix = menuOption.isHidden ? (isEn ? ' (Hidden)' : ' (숨김)') : '';
+                  const ctaPathSelected = String(settings.heroLeftCtaPath || '/shop') === String(menuOption.path || '');
+                %>
+                <option value="<%= menuOption.path %>" <%= ctaPathSelected ? 'selected' : '' %>><%= optionLabel %><%= hiddenSuffix %></option>
+              <% }) %>
+            </select>
           </label>
 
           <label class="hero-settings-full-row"><%= isEn ? 'Left Background Image Upload' : '좌측 배경 이미지 업로드' %>
@@ -1613,6 +1639,7 @@
               <label>
                 <%= isEn ? `Quick Menu #${i + 1}` : `퀵메뉴 ${i + 1}번` %>
                 <select name="heroQuickMenuPath<%= i + 1 %>">
+                  <option value="" <%= !selectedHeroPath ? 'selected' : '' %>><%= isEn ? 'Not selected' : '선택 안함' %></option>
                   <% if (heroQuickMenuOptionsList.length === 0) { %>
                     <option value="/main" <%= selectedHeroPath === '/main' ? 'selected' : '' %>>/main</option>
                   <% } %>
