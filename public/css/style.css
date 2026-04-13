@@ -2443,7 +2443,7 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   position: relative;
   margin: 0;
   min-height: 44px;
-  padding: 10px 40px 10px 12px;
+  padding: 10px 56px 10px 12px;
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -2456,18 +2456,24 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 .menu-brand-model-summary strong {
   font-size: 0.93rem;
   line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-brand-model-summary small {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
+  margin-right: 10px;
+  flex-shrink: 0;
 }
 
 .menu-brand-model-summary::after {
   content: "▾";
   position: absolute;
-  right: 12px;
+  right: 16px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.78rem;
