@@ -2811,6 +2811,8 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  margin-top: 10px;
+  padding-top: 2px;
 }
 
 .admin-post-action-row > .chip,
