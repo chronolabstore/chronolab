@@ -11,19 +11,11 @@
     });
     return generated;
   })();
-  const heroQuickMenusRaw = Array.isArray(ctx.settings?.heroQuickMenus) ? ctx.settings.heroQuickMenus : [];
-  const heroQuickMenus =
-    heroQuickMenusRaw.length > 0
-      ? heroQuickMenusRaw
-      : [
-          { path: '/notice', label: isEn ? 'Notice' : '공지사항' },
-          { path: '/news', label: isEn ? 'News' : '뉴스' },
-          { path: '/shop', label: isEn ? 'Shop' : '쇼핑몰' },
-          { path: '/qc', label: 'QC' },
-          { path: '/review', label: isEn ? 'Reviews' : '구매후기' },
-          { path: '/inquiry', label: isEn ? 'Inquiry' : '문의' }
-        ];
+  const heroQuickMenus = Array.isArray(ctx.settings?.heroQuickMenus) ? ctx.settings.heroQuickMenus : [];
+  const heroLeftTitle = String(ctx.settings?.heroLeftTitle || '').trim() || ctx.t('homeHeroTitle');
   const heroLeftSubtitle = String(ctx.settings?.heroLeftSubtitle || '').trim() || ctx.t('homeHeroSubtitle');
+  const heroLeftCtaPath = String(ctx.settings?.heroLeftCtaPath || '').trim() || '/shop';
+  const heroLeftCtaLabel = String(ctx.settings?.heroLeftCtaLabel || '').trim() || ctx.t('goToShop');
   const heroRightTitle = String(ctx.settings?.heroRightTitle || '').trim() || ctx.t('welcome');
   const heroRightSubtitle = String(ctx.settings?.heroRightSubtitle || '').trim() || ctx.t('orderBankOnly');
 %>
@@ -31,9 +23,9 @@
 <section class="hero-wrap">
   <div class="hero-image-pane" style="<%= ctx.settings?.heroLeftPaneStyle || '' %>">
     <div class="hero-badge"><%= ctx.settings.siteName || 'Chrono Lab' %></div>
-    <h1><%= ctx.t('homeHeroTitle') %></h1>
+    <h1><%= heroLeftTitle %></h1>
     <p><%= heroLeftSubtitle %></p>
-    <a href="/shop" class="cta-main cta-pill"><%= ctx.t('goToShop') %></a>
+    <a href="<%= heroLeftCtaPath %>" class="cta-main cta-pill"><%= heroLeftCtaLabel %></a>
   </div>
 
   <div class="hero-dark-card" style="<%= ctx.settings?.heroRightPaneStyle || '' %>">

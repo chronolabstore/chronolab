@@ -258,6 +258,8 @@ const PREVIOUS_NIGHT_THEME_COLORS_V1 = Object.freeze({
 });
 const THEME_REFINED_V4_FLAG_KEY = 'themeRefinedV4Applied';
 const HERO_QUICK_MENU_LIMIT = 6;
+const HERO_DEFAULT_LEFT_TITLE_KO = 'Chrono Lab';
+const HERO_DEFAULT_LEFT_TITLE_EN = 'Chrono Lab';
 const HERO_DEFAULT_LEFT_SUBTITLE_KO = '심플하고 신뢰감 있는 시계 쇼핑 경험';
 const HERO_DEFAULT_LEFT_SUBTITLE_EN = 'Simple, trustworthy watch shopping experience.';
 const HERO_DEFAULT_RIGHT_TITLE_KO = '프리미엄 위치 셀렉션';
@@ -266,6 +268,7 @@ const HERO_DEFAULT_RIGHT_SUBTITLE_KO = '결제는 계좌이체만 지원됩니�
 const HERO_DEFAULT_RIGHT_SUBTITLE_EN = 'Bank transfer only for payment.';
 const HERO_DEFAULT_LEFT_BACKGROUND_COLOR = '#eef2f8';
 const HERO_DEFAULT_RIGHT_BACKGROUND_COLOR = '#0f172a';
+const HERO_DEFAULT_LEFT_CTA_PATH = '/shop';
 const HERO_DEFAULT_QUICK_MENUS = Object.freeze([
   { path: '/notice', labelKo: '공지사항', labelEn: 'Notice' },
   { path: '/news', labelKo: '뉴스', labelEn: 'News' },
@@ -5596,12 +5599,39 @@ function normalizeHeroQuickMenuPathList(rawValues = []) {
   };
 
   sourceValues.forEach((rawPath) => pushPath(rawPath));
-  HERO_DEFAULT_QUICK_MENUS.forEach((item) => pushPath(item.path));
 
   return normalized.slice(0, HERO_QUICK_MENU_LIMIT);
 }
 
+function getDefaultHeroQuickMenuPaths() {
+  return HERO_DEFAULT_QUICK_MENUS.map((item) => normalizeHeroQuickMenuPath(item.path))
+    .filter(Boolean)
+    .slice(0, HERO_QUICK_MENU_LIMIT);
+}
+
+function hasSiteSettingKey(settingKey = '') {
+  const key = String(settingKey || '').trim();
+  if (!key) {
+    return false;
+  }
+  const row = db
+    .prepare(
+      `
+        SELECT 1
+        FROM site_settings
+        WHERE setting_key = ?
+        LIMIT 1
+      `
+    )
+    .get(key);
+  return Boolean(row);
+}
+
 function getHeroQuickMenuPathsSetting() {
+  if (!hasSiteSettingKey('heroQuickMenuPaths')) {
+    return getDefaultHeroQuickMenuPaths();
+  }
+
   const rawValue = String(getSetting('heroQuickMenuPaths', '') || '').trim();
   let sourceValues = [];
   if (rawValue) {
@@ -5668,6 +5698,12 @@ function buildHeroLeftPaneStyle(backgroundType = 'color', backgroundColor = '#ee
 
 function getMainHeroSettings(lang = 'ko') {
   const isEn = lang === 'en';
+  const leftTitleKo =
+    String(getSetting('heroLeftTitleKo', HERO_DEFAULT_LEFT_TITLE_KO) || '').trim() ||
+    HERO_DEFAULT_LEFT_TITLE_KO;
+  const leftTitleEn =
+    String(getSetting('heroLeftTitleEn', HERO_DEFAULT_LEFT_TITLE_EN) || '').trim() ||
+    HERO_DEFAULT_LEFT_TITLE_EN;
   const leftSubtitleKo =
     String(getSetting('heroLeftSubtitleKo', HERO_DEFAULT_LEFT_SUBTITLE_KO) || '').trim() ||
     HERO_DEFAULT_LEFT_SUBTITLE_KO;
@@ -5713,6 +5749,19 @@ function getMainHeroSettings(lang = 'ko') {
   const quickMenuFallbackMap = new Map(
     HERO_DEFAULT_QUICK_MENUS.map((item) => [String(item.path || '').toLowerCase(), item])
   );
+  const leftCtaPath = normalizeHeroQuickMenuPath(
+    getSetting('heroLeftCtaPath', HERO_DEFAULT_LEFT_CTA_PATH)
+  ) || HERO_DEFAULT_LEFT_CTA_PATH;
+  const leftCtaMatchedOption =
+    quickMenuOptionMap.get(String(leftCtaPath || '').toLowerCase()) ||
+    quickMenuFallbackMap.get(String(leftCtaPath || '').toLowerCase()) ||
+    null;
+  const leftCtaLabelKo = String(
+    leftCtaMatchedOption?.labelKo || leftCtaMatchedOption?.labelEn || leftCtaPath
+  ).trim();
+  const leftCtaLabelEn = String(
+    leftCtaMatchedOption?.labelEn || leftCtaMatchedOption?.labelKo || leftCtaPath
+  ).trim();
   const quickMenuPaths = getHeroQuickMenuPathsSetting();
   const quickMenus = quickMenuPaths.map((pathValue) => {
     const matchedOption =
@@ -5730,9 +5779,18 @@ function getMainHeroSettings(lang = 'ko') {
   });
 
   return {
+    leftTitleKo,
+    leftTitleEn,
+    leftTitle: isEn ? (leftTitleEn || leftTitleKo) : (leftTitleKo || leftTitleEn),
     leftSubtitleKo,
     leftSubtitleEn,
     leftSubtitle: isEn ? (leftSubtitleEn || leftSubtitleKo) : (leftSubtitleKo || leftSubtitleEn),
+    leftCtaPath,
+    leftCtaLabelKo,
+    leftCtaLabelEn,
+    leftCtaLabel: isEn
+      ? `Go to ${leftCtaLabelEn || leftCtaLabelKo || 'Menu'}`
+      : `${leftCtaLabelKo || leftCtaLabelEn || '메뉴'} 바로가기`,
     leftBackgroundType,
     leftBackgroundColor,
     leftBackgroundImagePath: leftBackgroundType === 'image' ? leftBackgroundImagePath : '',
@@ -7002,9 +7060,16 @@ app.use((req, res, next) => {
       businessInfo: getSetting('businessInfo', ''),
       footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
       footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
+      heroLeftTitle: heroSettings.leftTitle,
+      heroLeftTitleKo: heroSettings.leftTitleKo,
+      heroLeftTitleEn: heroSettings.leftTitleEn,
       heroLeftSubtitle: heroSettings.leftSubtitle,
       heroLeftSubtitleKo: heroSettings.leftSubtitleKo,
       heroLeftSubtitleEn: heroSettings.leftSubtitleEn,
+      heroLeftCtaPath: heroSettings.leftCtaPath,
+      heroLeftCtaLabel: heroSettings.leftCtaLabel,
+      heroLeftCtaLabelKo: heroSettings.leftCtaLabelKo,
+      heroLeftCtaLabelEn: heroSettings.leftCtaLabelEn,
       heroLeftBackgroundType: heroSettings.leftBackgroundType,
       heroLeftBackgroundColor: heroSettings.leftBackgroundColor,
       heroLeftBackgroundImagePath: heroSettings.leftBackgroundImagePath,
@@ -11054,8 +11119,11 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
     languageDefault: getSetting('languageDefault', 'ko'),
     menusJson: JSON.stringify(publicMenus, null, 2),
+    heroLeftTitleKo: heroSettings.leftTitleKo,
+    heroLeftTitleEn: heroSettings.leftTitleEn,
     heroLeftSubtitleKo: heroSettings.leftSubtitleKo,
     heroLeftSubtitleEn: heroSettings.leftSubtitleEn,
+    heroLeftCtaPath: heroSettings.leftCtaPath,
     heroLeftBackgroundType: heroSettings.leftBackgroundType,
     heroLeftBackgroundColor: heroSettings.leftBackgroundColor,
     heroLeftBackgroundImagePath: heroSettings.leftBackgroundImagePath,
@@ -13427,6 +13495,12 @@ app.post(
       const footerBrandCopyKo = String(req.body.footerBrandCopyKo || '').trim().slice(0, 300);
       const footerBrandCopyEn = String(req.body.footerBrandCopyEn || '').trim().slice(0, 300);
       const languageDefault = resolveLanguage(req.body.languageDefault || getSetting('languageDefault', 'ko'), 'ko');
+      const heroLeftTitleKo = String(req.body.heroLeftTitleKo || '')
+        .trim()
+        .slice(0, 120);
+      const heroLeftTitleEn = String(req.body.heroLeftTitleEn || '')
+        .trim()
+        .slice(0, 120);
       const heroLeftSubtitleKo = String(req.body.heroLeftSubtitleKo || '')
         .trim()
         .slice(0, 220);
@@ -13454,6 +13528,8 @@ app.post(
         req.body.heroRightBackgroundColor || getSetting('heroRightBackgroundColor', HERO_DEFAULT_RIGHT_BACKGROUND_COLOR),
         HERO_DEFAULT_RIGHT_BACKGROUND_COLOR
       );
+      const heroLeftCtaPath = normalizeHeroQuickMenuPath(req.body.heroLeftCtaPath || HERO_DEFAULT_LEFT_CTA_PATH) ||
+        HERO_DEFAULT_LEFT_CTA_PATH;
       const heroQuickMenuRawValues = Array.from({ length: HERO_QUICK_MENU_LIMIT }, (_, index) =>
         String(req.body[`heroQuickMenuPath${index + 1}`] || '')
       );
@@ -13466,6 +13542,14 @@ app.post(
       setSetting('footerBrandCopyKo', footerBrandCopyKo);
       setSetting('footerBrandCopyEn', footerBrandCopyEn);
       setSetting('languageDefault', languageDefault);
+      setSetting(
+        'heroLeftTitleKo',
+        heroLeftTitleKo || getSetting('heroLeftTitleKo', HERO_DEFAULT_LEFT_TITLE_KO)
+      );
+      setSetting(
+        'heroLeftTitleEn',
+        heroLeftTitleEn || getSetting('heroLeftTitleEn', HERO_DEFAULT_LEFT_TITLE_EN)
+      );
       setSetting(
         'heroLeftSubtitleKo',
         heroLeftSubtitleKo || getSetting('heroLeftSubtitleKo', HERO_DEFAULT_LEFT_SUBTITLE_KO)
@@ -13492,6 +13576,7 @@ app.post(
       );
       setSetting('heroLeftBackgroundType', heroLeftBackgroundType);
       setSetting('heroLeftBackgroundColor', heroLeftBackgroundColor);
+      setSetting('heroLeftCtaPath', heroLeftCtaPath);
       setSetting('heroRightBackgroundColor', heroRightBackgroundColor);
       setSetting('heroQuickMenuPaths', JSON.stringify(heroQuickMenuPaths));
 
