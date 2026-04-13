@@ -4671,6 +4671,110 @@ body.theme-night .order-status-badge-delivered {
   border-color: var(--line);
 }
 
+/* Admin panel surface layers
+   level 1 (outer): white card
+   level 2 (inner): soft blue
+   level 3 (nested inner): white */
+body.admin-page {
+  --admin-surface-l1: var(--card);
+  --admin-surface-l2: var(--chip);
+  --admin-surface-l3: var(--card);
+}
+
+body.admin-page .block-card {
+  background: var(--admin-surface-l1) !important;
+}
+
+body.admin-page .block-card .block-card {
+  background: var(--admin-surface-l2) !important;
+  box-shadow: none !important;
+}
+
+body.admin-page :where(
+  .kpi-card,
+  .menu-manage-form,
+  .admin-list-item,
+  .inquiry-admin-item,
+  .product-upload-mode-box,
+  .product-simple-fields,
+  .watermark-preview-wrap,
+  .watermark-preview-item,
+  .security-denied-note,
+  .shop-split-card,
+  .sales-global-settings,
+  .sales-price-taxonomy-grid,
+  .sales-price-sheet-group,
+  .sales-summary-card,
+  .sales-daily-metric-cell.total,
+  .sales-global-hint,
+  .table-wrap,
+  .theme-color-fieldset,
+  .hero-site-fieldset,
+  .hero-settings-card,
+  .menu-brand-model-summary,
+  .menu-brand-model-body,
+  .check-chip
+) {
+  background: var(--admin-surface-l2) !important;
+}
+
+body.admin-page :where(
+  .kpi-card,
+  .menu-manage-form,
+  .admin-list-item,
+  .inquiry-admin-item,
+  .product-upload-mode-box,
+  .product-simple-fields,
+  .watermark-preview-wrap,
+  .watermark-preview-item,
+  .security-denied-note,
+  .shop-split-card,
+  .sales-global-settings,
+  .sales-price-taxonomy-grid,
+  .sales-price-sheet-group,
+  .sales-summary-card,
+  .sales-daily-metric-cell.total,
+  .sales-global-hint,
+  .table-wrap,
+  .theme-color-fieldset,
+  .hero-site-fieldset,
+  .hero-settings-card,
+  .menu-brand-model-summary,
+  .menu-brand-model-body,
+  .check-chip
+) :where(
+  .block-card,
+  .kpi-card,
+  .menu-manage-form,
+  .admin-list-item,
+  .inquiry-admin-item,
+  .product-upload-mode-box,
+  .product-simple-fields,
+  .watermark-preview-wrap,
+  .watermark-preview-item,
+  .security-denied-note,
+  .shop-split-card,
+  .sales-global-settings,
+  .sales-price-taxonomy-grid,
+  .sales-price-sheet-group,
+  .sales-summary-card,
+  .sales-daily-metric-cell.total,
+  .sales-global-hint,
+  .table-wrap,
+  .theme-color-fieldset,
+  .hero-site-fieldset,
+  .hero-settings-card,
+  .menu-brand-model-summary,
+  .menu-brand-model-body,
+  .check-chip
+) {
+  background: var(--admin-surface-l3) !important;
+}
+
+body.admin-page .admin-list-item .menu-inline-edit > summary {
+  background: var(--admin-surface-l3);
+}
+
 @media (max-width: 820px) {
   .popup-notice-deck-shell {
     --popup-card-width: 100%;
