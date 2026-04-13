@@ -7,6 +7,7 @@
     var popup = getNoticePopupRoot();
     if (popup) {
       popup.classList.add('hidden');
+      window.setTimeout(initPrimaryInputAutofocus, 0);
     }
   }
 
@@ -14,6 +15,7 @@
     var popup = document.getElementById('flashPopup');
     if (popup) {
       popup.classList.add('hidden');
+      window.setTimeout(initPrimaryInputAutofocus, 0);
     }
   }
 
@@ -101,7 +103,9 @@
     }
     var active = document.activeElement;
     if (active && active !== document.body && active !== document.documentElement) {
-      return;
+      if (isElementVisible(active)) {
+        return;
+      }
     }
 
     var explicitTarget = document.querySelector('[data-autofocus-primary]');

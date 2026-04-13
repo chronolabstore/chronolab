@@ -6,7 +6,7 @@
     <h2><%= isEn ? 'Admin Login' : '관리자 로그인' %></h2>
     <form method="post" action="/admin/login" class="form-grid">
       <label><%= isEn ? 'Account' : '계정' %>
-        <input type="text" name="account" autocomplete="username" required />
+        <input type="text" name="account" autocomplete="username" data-autofocus-primary required />
       </label>
       <label><%= isEn ? 'Password' : '비밀번호' %>
         <input type="password" name="password" autocomplete="current-password" required />
