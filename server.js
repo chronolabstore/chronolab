@@ -57,12 +57,38 @@ const execFileAsync = promisify(execFile);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'chronolab-local-secret';
 const SESSION_DEFAULT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const SESSION_STORE_CLEANUP_INTERVAL_MS = 1000 * 60 * 15;
+const MEMBER_IDLE_TIMEOUT_MS = resolveIdleTimeoutMs({
+  envKey: 'MEMBER_IDLE_TIMEOUT_MINUTES',
+  fallbackMinutes: 120,
+  minMinutes: 10,
+  maxMinutes: 60 * 24 * 30
+});
+const ADMIN_IDLE_TIMEOUT_MS = resolveIdleTimeoutMs({
+  envKey: 'ADMIN_IDLE_TIMEOUT_MINUTES',
+  fallbackMinutes: 30,
+  minMinutes: 5,
+  maxMinutes: 60 * 24 * 30
+});
 const AUTH_PERSIST_COOKIE_NAME = 'cl_auth';
 const AUTH_PERSIST_COOKIE_MAX_AGE_MS = SESSION_DEFAULT_MAX_AGE_MS;
 const AUTH_PERSIST_HMAC_KEY = crypto
   .createHash('sha256')
   .update(`${SESSION_SECRET}:auth-cookie-v1`)
   .digest();
+
+function resolveIdleTimeoutMs({
+  envKey = '',
+  fallbackMinutes = 60,
+  minMinutes = 5,
+  maxMinutes = 60 * 24
+} = {}) {
+  const parsed = Number.parseInt(String(process.env[String(envKey || '').trim()] || ''), 10);
+  const fallback = Number.isFinite(Number(fallbackMinutes)) ? Number(fallbackMinutes) : 60;
+  const min = Number.isFinite(Number(minMinutes)) ? Number(minMinutes) : 5;
+  const max = Number.isFinite(Number(maxMinutes)) ? Number(maxMinutes) : 60 * 24;
+  const minutes = Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  return Math.max(min, Math.min(max, minutes)) * 60 * 1000;
+}
 
 function resolveSessionExpiryTimeMs(sess = {}) {
   const cookie = sess && typeof sess.cookie === 'object' ? sess.cookie : {};
@@ -201,17 +227,25 @@ function signPersistAuthPayload(payloadBase64 = '') {
   return crypto.createHmac('sha256', AUTH_PERSIST_HMAC_KEY).update(String(payloadBase64 || '')).digest('base64url');
 }
 
-function createPersistAuthToken(userId) {
+function createPersistAuthToken(userId, options = {}) {
   const normalizedUserId = Number(userId || 0);
   if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
     return '';
   }
 
   const now = Date.now();
+  const normalizedLastActivityAt = Number(options.lastActivityAt || now);
+  const lastActivityAt =
+    Number.isFinite(normalizedLastActivityAt) && normalizedLastActivityAt > 0
+      ? normalizedLastActivityAt
+      : now;
+  const isAdmin = options.isAdmin === true;
   const payload = {
     uid: normalizedUserId,
+    adm: isAdmin ? 1 : 0,
+    la: lastActivityAt,
     iat: now,
-    exp: now + AUTH_PERSIST_COOKIE_MAX_AGE_MS
+    exp: lastActivityAt + AUTH_PERSIST_COOKIE_MAX_AGE_MS
   };
   const payloadBase64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const signature = signPersistAuthPayload(payloadBase64);
@@ -250,13 +284,17 @@ function parsePersistAuthToken(rawToken = '') {
 
   const userId = Number(payload?.uid || 0);
   const expiresAt = Number(payload?.exp || 0);
+  const lastActivityAt = Number(payload?.la || 0);
+  const isAdmin = Number(payload?.adm || 0) === 1;
   if (!Number.isInteger(userId) || userId <= 0 || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     return null;
   }
 
   return {
     userId,
-    expiresAt
+    expiresAt,
+    lastActivityAt: Number.isFinite(lastActivityAt) && lastActivityAt > 0 ? lastActivityAt : Date.now(),
+    isAdmin
   };
 }
 
@@ -272,11 +310,11 @@ function clearPersistAuthCookie(res) {
   });
 }
 
-function setPersistAuthCookie(res, userId) {
+function setPersistAuthCookie(res, userId, options = {}) {
   if (!res || typeof res.cookie !== 'function') {
     return;
   }
-  const token = createPersistAuthToken(userId);
+  const token = createPersistAuthToken(userId, options);
   if (!token) {
     clearPersistAuthCookie(res);
     return;
@@ -312,7 +350,17 @@ function tryRestoreSessionFromPersistCookie(req, res) {
   }
 
   req.session.userId = parsed.userId;
+  req.session.isAdmin = parsed.isAdmin;
+  req.session.lastActivityAt = parsed.lastActivityAt;
   return true;
+}
+
+function getSessionIdleTimeoutMs(sessionState = {}) {
+  const isAdminSession =
+    Boolean(sessionState?.isAdmin) ||
+    normalizeAdminRole(String(sessionState?.adminRole || '')) === ADMIN_ROLE.PRIMARY ||
+    normalizeAdminRole(String(sessionState?.adminRole || '')) === ADMIN_ROLE.SUB;
+  return isAdminSession ? ADMIN_IDLE_TIMEOUT_MS : MEMBER_IDLE_TIMEOUT_MS;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -2989,7 +3037,11 @@ function setAdminAuthSession(req, res, userRow) {
   req.session.userId = Number(userRow.id);
   req.session.isAdmin = true;
   req.session.adminRole = normalizeAdminRole(userRow.admin_role);
-  setPersistAuthCookie(res, Number(userRow.id));
+  req.session.lastActivityAt = Date.now();
+  setPersistAuthCookie(res, Number(userRow.id), {
+    isAdmin: true,
+    lastActivityAt: req.session.lastActivityAt
+  });
   clearAdminOtpPending(req);
 }
 
@@ -7597,6 +7649,20 @@ function loadUser(req, res, next) {
     return next();
   }
 
+  const nowMs = Date.now();
+  const lastActivityAt = Number(req.session.lastActivityAt || 0);
+  const idleTimeoutMs = getSessionIdleTimeoutMs(req.session);
+  if (lastActivityAt > 0 && nowMs - lastActivityAt > idleTimeoutMs) {
+    req.session.userId = null;
+    req.session.isAdmin = false;
+    req.session.adminRole = '';
+    req.session.lastActivityAt = 0;
+    clearAdminOtpPending(req);
+    clearPersistAuthCookie(res);
+    req.user = null;
+    return next();
+  }
+
   const user = db
     .prepare(
       `
@@ -7673,9 +7739,11 @@ function loadUser(req, res, next) {
   };
 
   req.session.isAdmin = req.user.isAdmin;
-  if (!String(req.cookies?.[AUTH_PERSIST_COOKIE_NAME] || '').trim()) {
-    setPersistAuthCookie(res, req.user.id);
-  }
+  req.session.lastActivityAt = nowMs;
+  setPersistAuthCookie(res, req.user.id, {
+    isAdmin: req.user.isAdmin,
+    lastActivityAt: nowMs
+  });
 
   return next();
 }
@@ -9872,7 +9940,11 @@ app.post(
 
     req.session.userId = createdUserId;
     req.session.isAdmin = false;
-    setPersistAuthCookie(res, createdUserId);
+    req.session.lastActivityAt = Date.now();
+    setPersistAuthCookie(res, createdUserId, {
+      isAdmin: false,
+      lastActivityAt: req.session.lastActivityAt
+    });
     clearSignupCaptcha(req);
     resetAuthAttempt(req, 'signup');
 
@@ -10366,7 +10438,11 @@ app.post(
   req.session.userId = Number(user.id);
   req.session.isAdmin = Number(user.is_admin) === 1;
   req.session.adminRole = Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '';
-  setPersistAuthCookie(res, Number(user.id));
+  req.session.lastActivityAt = Date.now();
+  setPersistAuthCookie(res, Number(user.id), {
+    isAdmin: req.session.isAdmin === true,
+    lastActivityAt: req.session.lastActivityAt
+  });
   resetAuthAttempt(req, 'login');
 
   setFlash(req, 'success', '로그인되었습니다.');
