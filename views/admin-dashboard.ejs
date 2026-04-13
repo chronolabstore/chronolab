@@ -3408,7 +3408,7 @@
               <small><%= item.is_popup ? (isEn ? 'Popup' : '팝업') : (isEn ? 'Normal' : '일반') %></small>
               <small><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Hidden' : '숨김') : (isEn ? 'Visible' : '노출중') %></small>
             </summary>
-            <form id="noticeUpdateForm-<%= item.id %>" method="post" action="/admin/notice/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
+            <form method="post" action="/admin/notice/<%= item.id %>/update" enctype="multipart/form-data" class="form-grid compact">
               <label><span><%= isEn ? 'Title' : '제목' %></span>
                 <input type="text" name="title" value="<%= item.title %>" required />
               </label>
@@ -3429,9 +3429,11 @@
                   <% }) %>
                 </div>
               <% } %>
+              <div class="admin-field-chip-row">
+                <button type="submit" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+              </div>
             </form>
-            <div class="admin-field-chip-row notice-admin-action-row">
-              <button type="submit" form="noticeUpdateForm-<%= item.id %>" class="chip dark"><%= isEn ? 'Save' : '수정 저장' %></button>
+            <div class="admin-field-chip-row">
               <form method="post" action="/admin/notice/<%= item.id %>/toggle" class="inline-form">
                 <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
               </form>
