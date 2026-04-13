@@ -3002,6 +3002,37 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   min-width: 112px;
 }
 
+body.admin-page select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.75L10 12.25L14.5 7.75' stroke='%2364758b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  background-position: right 12px center;
+  padding-right: 38px;
+  line-height: 1.2;
+}
+
+body.admin-page select[multiple],
+body.admin-page select[size]:not([size='1']) {
+  -webkit-appearance: auto;
+  appearance: auto;
+  background-image: none;
+  padding-right: 10px;
+}
+
+body.admin-page input[type='date'] {
+  min-height: 40px;
+  padding-right: 38px;
+  line-height: 1.2;
+}
+
+body.admin-page input[type='date']::-webkit-calendar-picker-indicator {
+  margin: 0;
+  opacity: 0.92;
+  cursor: pointer;
+}
+
 .member-filter-row .member-search-item input {
   min-width: 240px;
   width: min(52vw, 420px);
@@ -3673,6 +3704,11 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   font: inherit;
 }
 
+.sales-round-input:is(select, input[type='date']) {
+  padding-right: 36px;
+  background-position: right 10px center;
+}
+
 .sales-round-action-group {
   display: inline-flex;
   align-items: center;
@@ -3714,7 +3750,6 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   white-space: nowrap;
 }
 
-.sales-price-taxonomy-row select,
 .sales-price-taxonomy-row input {
   width: 100%;
   min-height: 36px;
@@ -3724,6 +3759,18 @@ body.theme-night .menu-brand-model-list .admin-list-item {
   color: var(--text);
   font: inherit;
   padding: 0 10px;
+}
+
+.sales-price-taxonomy-row select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  padding: 0 36px 0 10px;
+  background-position: right 10px center;
 }
 
 .sales-price-taxonomy-actions {
