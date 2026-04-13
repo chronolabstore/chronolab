@@ -6,7 +6,7 @@
     <title><%= title %> | <%= ctx.settings.siteName %></title>
     <link rel="stylesheet" href="/assets/css/style.css?v=<%= encodeURIComponent(ctx.assetVersion) %>" />
   </head>
-  <body class="theme-<%= ctx.themeMode %>" style="<%- ctx.settings.themeCssVars %>; <%- ctx.settings.backgroundStyle %>">
+  <body class="theme-<%= ctx.themeMode %> <%= ctx.isAdminPage ? 'admin-page' : '' %>" style="<%- ctx.settings.themeCssVars %>; <%- ctx.settings.backgroundStyle %>">
     <div class="app-shell">
       <%- include('./header') %>
 
