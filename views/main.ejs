@@ -11,26 +11,38 @@
     });
     return generated;
   })();
+  const heroQuickMenusRaw = Array.isArray(ctx.settings?.heroQuickMenus) ? ctx.settings.heroQuickMenus : [];
+  const heroQuickMenus =
+    heroQuickMenusRaw.length > 0
+      ? heroQuickMenusRaw
+      : [
+          { path: '/notice', label: isEn ? 'Notice' : '공지사항' },
+          { path: '/news', label: isEn ? 'News' : '뉴스' },
+          { path: '/shop', label: isEn ? 'Shop' : '쇼핑몰' },
+          { path: '/qc', label: 'QC' },
+          { path: '/review', label: isEn ? 'Reviews' : '구매후기' },
+          { path: '/inquiry', label: isEn ? 'Inquiry' : '문의' }
+        ];
+  const heroLeftSubtitle = String(ctx.settings?.heroLeftSubtitle || '').trim() || ctx.t('homeHeroSubtitle');
+  const heroRightTitle = String(ctx.settings?.heroRightTitle || '').trim() || ctx.t('welcome');
+  const heroRightSubtitle = String(ctx.settings?.heroRightSubtitle || '').trim() || ctx.t('orderBankOnly');
 %>
 
 <section class="hero-wrap">
-  <div class="hero-image-pane">
-    <div class="hero-badge">Chrono Lab</div>
+  <div class="hero-image-pane" style="<%= ctx.settings?.heroLeftPaneStyle || '' %>">
+    <div class="hero-badge"><%= ctx.settings.siteName || 'Chrono Lab' %></div>
     <h1><%= ctx.t('homeHeroTitle') %></h1>
-    <p><%= ctx.t('homeHeroSubtitle') %></p>
+    <p><%= heroLeftSubtitle %></p>
     <a href="/shop" class="cta-main cta-pill"><%= ctx.t('goToShop') %></a>
   </div>
 
-  <div class="hero-dark-card">
-    <h3><%= ctx.t('welcome') %></h3>
-    <p><%= ctx.t('orderBankOnly') %></p>
+  <div class="hero-dark-card" style="<%= ctx.settings?.heroRightPaneStyle || '' %>">
+    <h3><%= heroRightTitle %></h3>
+    <p><%= heroRightSubtitle %></p>
     <div class="hero-quick-grid">
-      <a href="/notice"><%= isEn ? 'Notice' : '공지사항' %></a>
-      <a href="/news"><%= isEn ? 'News' : '뉴스' %></a>
-      <a href="/shop"><%= isEn ? 'Shop' : '쇼핑몰' %></a>
-      <a href="/qc">QC</a>
-      <a href="/review"><%= isEn ? 'Reviews' : '구매후기' %></a>
-      <a href="/inquiry"><%= isEn ? 'Inquiry' : '문의' %></a>
+      <% heroQuickMenus.forEach((menuItem) => { %>
+        <a href="<%= menuItem.path %>"><%= menuItem.label %></a>
+      <% }) %>
     </div>
   </div>
 </section>

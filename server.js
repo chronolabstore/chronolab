@@ -257,6 +257,23 @@ const PREVIOUS_NIGHT_THEME_COLORS_V1 = Object.freeze({
   chipColor: '#0f172a'
 });
 const THEME_REFINED_V4_FLAG_KEY = 'themeRefinedV4Applied';
+const HERO_QUICK_MENU_LIMIT = 6;
+const HERO_DEFAULT_LEFT_SUBTITLE_KO = '심플하고 신뢰감 있는 시계 쇼핑 경험';
+const HERO_DEFAULT_LEFT_SUBTITLE_EN = 'Simple, trustworthy watch shopping experience.';
+const HERO_DEFAULT_RIGHT_TITLE_KO = '프리미엄 위치 셀렉션';
+const HERO_DEFAULT_RIGHT_TITLE_EN = 'Premium Shortcut Selection';
+const HERO_DEFAULT_RIGHT_SUBTITLE_KO = '결제는 계좌이체만 지원됩니다.';
+const HERO_DEFAULT_RIGHT_SUBTITLE_EN = 'Bank transfer only for payment.';
+const HERO_DEFAULT_LEFT_BACKGROUND_COLOR = '#eef2f8';
+const HERO_DEFAULT_RIGHT_BACKGROUND_COLOR = '#0f172a';
+const HERO_DEFAULT_QUICK_MENUS = Object.freeze([
+  { path: '/notice', labelKo: '공지사항', labelEn: 'Notice' },
+  { path: '/news', labelKo: '뉴스', labelEn: 'News' },
+  { path: '/shop', labelKo: '쇼핑몰', labelEn: 'Shop' },
+  { path: '/qc', labelKo: 'QC', labelEn: 'QC' },
+  { path: '/review', labelKo: '구매후기', labelEn: 'Reviews' },
+  { path: '/inquiry', labelKo: '문의', labelEn: 'Inquiry' }
+]);
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
@@ -5544,6 +5561,196 @@ function sanitizePath(pathValue = '') {
   return `/${pathValue}`;
 }
 
+function normalizeHeroLeftBackgroundType(rawType = 'color') {
+  return String(rawType || '').trim().toLowerCase() === 'image' ? 'image' : 'color';
+}
+
+function normalizeHeroQuickMenuPath(rawPath = '') {
+  const candidate = String(rawPath || '').trim();
+  if (!candidate) {
+    return '';
+  }
+  const pathValue = sanitizePath(candidate);
+  if (!pathValue || pathValue.startsWith('/admin')) {
+    return '';
+  }
+  return pathValue;
+}
+
+function normalizeHeroQuickMenuPathList(rawValues = []) {
+  const sourceValues = Array.isArray(rawValues) ? rawValues : [];
+  const normalized = [];
+  const seen = new Set();
+
+  const pushPath = (rawPath) => {
+    const pathValue = normalizeHeroQuickMenuPath(rawPath);
+    if (!pathValue) {
+      return;
+    }
+    const dedupeKey = pathValue.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    normalized.push(pathValue);
+  };
+
+  sourceValues.forEach((rawPath) => pushPath(rawPath));
+  HERO_DEFAULT_QUICK_MENUS.forEach((item) => pushPath(item.path));
+
+  return normalized.slice(0, HERO_QUICK_MENU_LIMIT);
+}
+
+function getHeroQuickMenuPathsSetting() {
+  const rawValue = String(getSetting('heroQuickMenuPaths', '') || '').trim();
+  let sourceValues = [];
+  if (rawValue) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      if (Array.isArray(parsed)) {
+        sourceValues = parsed;
+      } else {
+        sourceValues = rawValue.split(',');
+      }
+    } catch {
+      sourceValues = rawValue.split(',');
+    }
+  }
+  return normalizeHeroQuickMenuPathList(sourceValues);
+}
+
+function getHeroQuickMenuOptions() {
+  const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())), {
+    includeHidden: true
+  });
+  const menuMap = new Map();
+
+  const pushOption = (item = {}) => {
+    const pathValue = normalizeHeroQuickMenuPath(item.path);
+    if (!pathValue) {
+      return;
+    }
+    const dedupeKey = pathValue.toLowerCase();
+    if (menuMap.has(dedupeKey)) {
+      return;
+    }
+    const labelKo = String(item.labelKo || item.labelEn || pathValue).trim() || pathValue;
+    const labelEn = String(item.labelEn || item.labelKo || pathValue).trim() || labelKo;
+    menuMap.set(dedupeKey, {
+      path: pathValue,
+      labelKo,
+      labelEn,
+      isHidden: Boolean(item.isHidden)
+    });
+  };
+
+  publicMenus.forEach((menuItem) => pushOption(menuItem));
+  HERO_DEFAULT_QUICK_MENUS.forEach((menuItem) => pushOption(menuItem));
+
+  return [...menuMap.values()];
+}
+
+function buildHeroLeftPaneStyle(backgroundType = 'color', backgroundColor = '#eef2f8', backgroundImagePath = '') {
+  const nextType = normalizeHeroLeftBackgroundType(backgroundType);
+  const safeColor = normalizeHexColor(backgroundColor, HERO_DEFAULT_LEFT_BACKGROUND_COLOR);
+  const styleParts = [`background-color: ${safeColor};`];
+
+  if (nextType === 'image' && String(backgroundImagePath || '').trim()) {
+    const safePath = String(backgroundImagePath || '').trim().replace(/'/g, '%27');
+    styleParts.push(`background-image: url('${safePath}');`);
+    styleParts.push('background-size: cover;');
+    styleParts.push('background-position: center;');
+    styleParts.push('background-repeat: no-repeat;');
+  }
+
+  return styleParts.join(' ');
+}
+
+function getMainHeroSettings(lang = 'ko') {
+  const isEn = lang === 'en';
+  const leftSubtitleKo =
+    String(getSetting('heroLeftSubtitleKo', HERO_DEFAULT_LEFT_SUBTITLE_KO) || '').trim() ||
+    HERO_DEFAULT_LEFT_SUBTITLE_KO;
+  const leftSubtitleEn =
+    String(getSetting('heroLeftSubtitleEn', HERO_DEFAULT_LEFT_SUBTITLE_EN) || '').trim() ||
+    HERO_DEFAULT_LEFT_SUBTITLE_EN;
+  const rightTitleKo =
+    String(getSetting('heroRightTitleKo', HERO_DEFAULT_RIGHT_TITLE_KO) || '').trim() ||
+    HERO_DEFAULT_RIGHT_TITLE_KO;
+  const rightTitleEn =
+    String(getSetting('heroRightTitleEn', HERO_DEFAULT_RIGHT_TITLE_EN) || '').trim() ||
+    HERO_DEFAULT_RIGHT_TITLE_EN;
+  const rightSubtitleKo =
+    String(getSetting('heroRightSubtitleKo', HERO_DEFAULT_RIGHT_SUBTITLE_KO) || '').trim() ||
+    HERO_DEFAULT_RIGHT_SUBTITLE_KO;
+  const rightSubtitleEn =
+    String(getSetting('heroRightSubtitleEn', HERO_DEFAULT_RIGHT_SUBTITLE_EN) || '').trim() ||
+    HERO_DEFAULT_RIGHT_SUBTITLE_EN;
+
+  const leftBackgroundType = normalizeHeroLeftBackgroundType(
+    getSetting('heroLeftBackgroundType', 'color')
+  );
+  const leftBackgroundColor = normalizeHexColor(
+    getSetting('heroLeftBackgroundColor', HERO_DEFAULT_LEFT_BACKGROUND_COLOR),
+    HERO_DEFAULT_LEFT_BACKGROUND_COLOR
+  );
+  const leftBackgroundImagePath = String(getSetting('heroLeftBackgroundImagePath', '') || '').trim();
+  const leftPaneStyle = buildHeroLeftPaneStyle(
+    leftBackgroundType,
+    leftBackgroundColor,
+    leftBackgroundImagePath
+  );
+  const rightBackgroundColor = normalizeHexColor(
+    getSetting('heroRightBackgroundColor', HERO_DEFAULT_RIGHT_BACKGROUND_COLOR),
+    HERO_DEFAULT_RIGHT_BACKGROUND_COLOR
+  );
+  const rightPaneStyle = `background: ${rightBackgroundColor};`;
+
+  const quickMenuOptions = getHeroQuickMenuOptions();
+  const quickMenuOptionMap = new Map(
+    quickMenuOptions.map((item) => [String(item.path || '').toLowerCase(), item])
+  );
+  const quickMenuFallbackMap = new Map(
+    HERO_DEFAULT_QUICK_MENUS.map((item) => [String(item.path || '').toLowerCase(), item])
+  );
+  const quickMenuPaths = getHeroQuickMenuPathsSetting();
+  const quickMenus = quickMenuPaths.map((pathValue) => {
+    const matchedOption =
+      quickMenuOptionMap.get(String(pathValue || '').toLowerCase()) ||
+      quickMenuFallbackMap.get(String(pathValue || '').toLowerCase()) ||
+      null;
+    const labelKo = String(matchedOption?.labelKo || matchedOption?.labelEn || pathValue).trim() || pathValue;
+    const labelEn = String(matchedOption?.labelEn || matchedOption?.labelKo || pathValue).trim() || labelKo;
+    return {
+      path: pathValue,
+      labelKo,
+      labelEn,
+      label: isEn ? (labelEn || labelKo || pathValue) : (labelKo || labelEn || pathValue)
+    };
+  });
+
+  return {
+    leftSubtitleKo,
+    leftSubtitleEn,
+    leftSubtitle: isEn ? (leftSubtitleEn || leftSubtitleKo) : (leftSubtitleKo || leftSubtitleEn),
+    leftBackgroundType,
+    leftBackgroundColor,
+    leftBackgroundImagePath: leftBackgroundType === 'image' ? leftBackgroundImagePath : '',
+    leftPaneStyle,
+    rightTitleKo,
+    rightTitleEn,
+    rightTitle: isEn ? (rightTitleEn || rightTitleKo) : (rightTitleKo || rightTitleEn),
+    rightSubtitleKo,
+    rightSubtitleEn,
+    rightSubtitle: isEn ? (rightSubtitleEn || rightSubtitleKo) : (rightSubtitleKo || rightSubtitleEn),
+    rightBackgroundColor,
+    rightPaneStyle,
+    quickMenuPaths,
+    quickMenuOptions,
+    quickMenus
+  };
+}
+
 function parsePositiveInt(rawValue, fallback = 1) {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -6713,6 +6920,7 @@ app.use((req, res, next) => {
   const nightThemeColors = getThemeColorConfig('night');
   const dayThemeAssets = getThemeAssetConfig('day');
   const nightThemeAssets = getThemeAssetConfig('night');
+  const heroSettings = getMainHeroSettings(lang);
   const activeThemeColors = themeMode === 'night' ? nightThemeColors : dayThemeColors;
   const activeThemeAssets = themeMode === 'night' ? nightThemeAssets : dayThemeAssets;
 
@@ -6793,7 +7001,24 @@ app.use((req, res, next) => {
       contactInfo: getSetting('contactInfo', ''),
       businessInfo: getSetting('businessInfo', ''),
       footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
-      footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.')
+      footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
+      heroLeftSubtitle: heroSettings.leftSubtitle,
+      heroLeftSubtitleKo: heroSettings.leftSubtitleKo,
+      heroLeftSubtitleEn: heroSettings.leftSubtitleEn,
+      heroLeftBackgroundType: heroSettings.leftBackgroundType,
+      heroLeftBackgroundColor: heroSettings.leftBackgroundColor,
+      heroLeftBackgroundImagePath: heroSettings.leftBackgroundImagePath,
+      heroLeftPaneStyle: heroSettings.leftPaneStyle,
+      heroRightTitle: heroSettings.rightTitle,
+      heroRightTitleKo: heroSettings.rightTitleKo,
+      heroRightTitleEn: heroSettings.rightTitleEn,
+      heroRightSubtitle: heroSettings.rightSubtitle,
+      heroRightSubtitleKo: heroSettings.rightSubtitleKo,
+      heroRightSubtitleEn: heroSettings.rightSubtitleEn,
+      heroRightBackgroundColor: heroSettings.rightBackgroundColor,
+      heroRightPaneStyle: heroSettings.rightPaneStyle,
+      heroQuickMenus: heroSettings.quickMenus,
+      heroQuickMenuPaths: heroSettings.quickMenuPaths
     },
     metrics: {
       visitToday: visitCounts.today,
@@ -10803,6 +11028,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const nightThemeColors = getThemeColorConfig('night');
   const dayThemeAssets = getThemeAssetConfig('day');
   const nightThemeAssets = getThemeAssetConfig('night');
+  const heroSettings = getMainHeroSettings(lang);
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
     headerColor: dayThemeColors.headerColor,
@@ -10827,7 +11053,18 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
     footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
     languageDefault: getSetting('languageDefault', 'ko'),
-    menusJson: JSON.stringify(publicMenus, null, 2)
+    menusJson: JSON.stringify(publicMenus, null, 2),
+    heroLeftSubtitleKo: heroSettings.leftSubtitleKo,
+    heroLeftSubtitleEn: heroSettings.leftSubtitleEn,
+    heroLeftBackgroundType: heroSettings.leftBackgroundType,
+    heroLeftBackgroundColor: heroSettings.leftBackgroundColor,
+    heroLeftBackgroundImagePath: heroSettings.leftBackgroundImagePath,
+    heroRightTitleKo: heroSettings.rightTitleKo,
+    heroRightTitleEn: heroSettings.rightTitleEn,
+    heroRightSubtitleKo: heroSettings.rightSubtitleKo,
+    heroRightSubtitleEn: heroSettings.rightSubtitleEn,
+    heroRightBackgroundColor: heroSettings.rightBackgroundColor,
+    heroQuickMenuPaths: heroSettings.quickMenuPaths
   };
 
   const productGroupConfigs = getProductGroupConfigs();
@@ -11035,6 +11272,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     salesGroupFilter,
     salesDateFrom,
     salesDateTo,
+    heroQuickMenuOptions: heroSettings.quickMenuOptions,
     dashboardStats: includeDashboardStats ? getCachedAdminDashboardStats() : null,
     trackingCarriers: TRACKING_CARRIERS,
     formatPrice,
@@ -13152,7 +13390,8 @@ app.post(
     { name: 'headerLogo', maxCount: 1 },
     { name: 'headerSymbol', maxCount: 1 },
     { name: 'footerLogo', maxCount: 1 },
-    { name: 'backgroundImage', maxCount: 1 }
+    { name: 'backgroundImage', maxCount: 1 },
+    { name: 'heroLeftBackgroundImage', maxCount: 1 }
   ]),
   (req, res) => {
     const hasThemePayload = [
@@ -13188,6 +13427,37 @@ app.post(
       const footerBrandCopyKo = String(req.body.footerBrandCopyKo || '').trim().slice(0, 300);
       const footerBrandCopyEn = String(req.body.footerBrandCopyEn || '').trim().slice(0, 300);
       const languageDefault = resolveLanguage(req.body.languageDefault || getSetting('languageDefault', 'ko'), 'ko');
+      const heroLeftSubtitleKo = String(req.body.heroLeftSubtitleKo || '')
+        .trim()
+        .slice(0, 220);
+      const heroLeftSubtitleEn = String(req.body.heroLeftSubtitleEn || '')
+        .trim()
+        .slice(0, 220);
+      const heroRightTitleKo = String(req.body.heroRightTitleKo || '')
+        .trim()
+        .slice(0, 120);
+      const heroRightTitleEn = String(req.body.heroRightTitleEn || '')
+        .trim()
+        .slice(0, 120);
+      const heroRightSubtitleKo = String(req.body.heroRightSubtitleKo || '')
+        .trim()
+        .slice(0, 240);
+      const heroRightSubtitleEn = String(req.body.heroRightSubtitleEn || '')
+        .trim()
+        .slice(0, 240);
+      const heroLeftBackgroundType = normalizeHeroLeftBackgroundType(req.body.heroLeftBackgroundType || 'color');
+      const heroLeftBackgroundColor = normalizeHexColor(
+        req.body.heroLeftBackgroundColor || getSetting('heroLeftBackgroundColor', HERO_DEFAULT_LEFT_BACKGROUND_COLOR),
+        HERO_DEFAULT_LEFT_BACKGROUND_COLOR
+      );
+      const heroRightBackgroundColor = normalizeHexColor(
+        req.body.heroRightBackgroundColor || getSetting('heroRightBackgroundColor', HERO_DEFAULT_RIGHT_BACKGROUND_COLOR),
+        HERO_DEFAULT_RIGHT_BACKGROUND_COLOR
+      );
+      const heroQuickMenuRawValues = Array.from({ length: HERO_QUICK_MENU_LIMIT }, (_, index) =>
+        String(req.body[`heroQuickMenuPath${index + 1}`] || '')
+      );
+      const heroQuickMenuPaths = normalizeHeroQuickMenuPathList(heroQuickMenuRawValues);
 
       setSetting('siteName', siteName || 'Chrono Lab');
       setSetting('bankAccountInfo', bankAccountInfo);
@@ -13196,6 +13466,42 @@ app.post(
       setSetting('footerBrandCopyKo', footerBrandCopyKo);
       setSetting('footerBrandCopyEn', footerBrandCopyEn);
       setSetting('languageDefault', languageDefault);
+      setSetting(
+        'heroLeftSubtitleKo',
+        heroLeftSubtitleKo || getSetting('heroLeftSubtitleKo', HERO_DEFAULT_LEFT_SUBTITLE_KO)
+      );
+      setSetting(
+        'heroLeftSubtitleEn',
+        heroLeftSubtitleEn || getSetting('heroLeftSubtitleEn', HERO_DEFAULT_LEFT_SUBTITLE_EN)
+      );
+      setSetting(
+        'heroRightTitleKo',
+        heroRightTitleKo || getSetting('heroRightTitleKo', HERO_DEFAULT_RIGHT_TITLE_KO)
+      );
+      setSetting(
+        'heroRightTitleEn',
+        heroRightTitleEn || getSetting('heroRightTitleEn', HERO_DEFAULT_RIGHT_TITLE_EN)
+      );
+      setSetting(
+        'heroRightSubtitleKo',
+        heroRightSubtitleKo || getSetting('heroRightSubtitleKo', HERO_DEFAULT_RIGHT_SUBTITLE_KO)
+      );
+      setSetting(
+        'heroRightSubtitleEn',
+        heroRightSubtitleEn || getSetting('heroRightSubtitleEn', HERO_DEFAULT_RIGHT_SUBTITLE_EN)
+      );
+      setSetting('heroLeftBackgroundType', heroLeftBackgroundType);
+      setSetting('heroLeftBackgroundColor', heroLeftBackgroundColor);
+      setSetting('heroRightBackgroundColor', heroRightBackgroundColor);
+      setSetting('heroQuickMenuPaths', JSON.stringify(heroQuickMenuPaths));
+
+      const heroLeftBackgroundImageFile = req.files?.heroLeftBackgroundImage?.[0];
+      if (heroLeftBackgroundImageFile) {
+        setSetting('heroLeftBackgroundImagePath', fileUrl(heroLeftBackgroundImageFile));
+      }
+      if (heroLeftBackgroundType === 'color') {
+        setSetting('heroLeftBackgroundImagePath', '');
+      }
 
       if (typeof req.body.menusJson === 'string') {
         try {

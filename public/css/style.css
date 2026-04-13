@@ -2111,6 +2111,41 @@ body.theme-night .watermark-preview-canvas {
   align-items: start;
 }
 
+.hero-site-fieldset {
+  margin-top: 2px;
+}
+
+.hero-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.hero-settings-full-row {
+  grid-column: 1 / -1;
+}
+
+.hero-settings-grid textarea {
+  min-height: 74px;
+}
+
+.hero-quick-menu-config {
+  margin-top: 6px;
+  display: grid;
+  gap: 8px;
+}
+
+.hero-quick-menu-config .muted-label {
+  margin: 0;
+}
+
+.hero-quick-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
 .check-row {
   display: flex !important;
   align-items: center;
