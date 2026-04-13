@@ -47,7 +47,9 @@
                   <% if (popupNotice.imagePath) { %>
                     <img src="<%= popupNotice.imagePath %>" alt="popup notice" class="popup-image" />
                   <% } %>
-                  <p class="popup-notice-content"><%= popupNotice.content %></p>
+                  <div class="popup-notice-body" data-popup-scrollable>
+                    <p class="popup-notice-content"><%= popupNotice.content %></p>
+                  </div>
                   <div class="popup-actions">
                     <button type="button" data-popup-action="hide7" class="chip ghost"><%= ctx.lang === 'en' ? "Don't show for 7 days" : '7일간 보지 않기' %></button>
                     <button type="button" data-popup-action="close" class="chip"><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
