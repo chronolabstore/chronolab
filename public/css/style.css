@@ -4442,8 +4442,7 @@ body.theme-night .order-status-badge-delivered {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.5rem;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
   z-index: 8;
   position: absolute;
@@ -4452,22 +4451,23 @@ body.theme-night .order-status-badge-delivered {
   user-select: none;
 }
 
-.popup-deck-nav > span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  line-height: 1;
-  transform: translateY(-1px);
+.popup-deck-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .popup-deck-nav-prev {
-  left: 22px;
+  left: 14px;
 }
 
 .popup-deck-nav-next {
-  right: 22px;
+  right: 14px;
 }
 
 .popup-deck-nav:hover {
@@ -4486,13 +4486,13 @@ body.theme-night .order-status-badge-delivered {
   align-items: center;
   justify-content: center;
   overflow: visible;
-  padding: 4px 52px;
+  padding: 4px 56px;
 }
 
 .popup-notice-deck-meta {
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 0;
+  left: 0;
   z-index: 9;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -4502,19 +4502,21 @@ body.theme-night .order-status-badge-delivered {
   color: var(--muted);
   background: var(--card);
   pointer-events: none;
+  transform: translate(-108%, -38%);
 }
 
 .popup-notice-deck-stack {
   position: relative;
   width: min(100%, 600px);
-  min-height: 0;
+  min-height: 220px;
+  margin-inline: auto;
 }
 
 .popup-notice-card {
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  left: 50%;
+  right: auto;
   width: 100%;
   max-width: none;
   max-height: min(82vh, 840px);
@@ -4523,34 +4525,38 @@ body.theme-night .order-status-badge-delivered {
   gap: 0;
   pointer-events: none;
   opacity: 0;
-  transform: translateX(18px) scale(0.98);
-  transition: transform 0.24s ease, opacity 0.24s ease;
+  transform: translate3d(calc(-50% + 16px), 0, 0) scale(0.98);
+  transform-origin: top center;
+  transition: transform 0.24s ease, opacity 0.24s ease, filter 0.24s ease;
 }
 
 .popup-notice-card.is-active {
-  position: relative;
   opacity: 1;
-  transform: translateX(0) scale(1);
+  transform: translate3d(-50%, 0, 0) scale(1);
   pointer-events: auto;
   z-index: 5;
+  filter: none;
 }
 
 .popup-notice-card.is-next {
-  opacity: 0.84;
-  transform: translateX(48px) scale(0.96);
+  opacity: 0.9;
+  transform: translate3d(calc(-50% + 38px), 0, 0) scale(0.97);
   z-index: 4;
+  filter: blur(0.8px);
 }
 
 .popup-notice-card.is-next-2 {
-  opacity: 0.56;
-  transform: translateX(84px) scale(0.92);
+  opacity: 0.72;
+  transform: translate3d(calc(-50% + 64px), 0, 0) scale(0.94);
   z-index: 3;
+  filter: blur(1.35px);
 }
 
 .popup-notice-card.is-previous {
   opacity: 0;
-  transform: translateX(-24px) scale(0.95);
+  transform: translate3d(calc(-50% - 24px), 0, 0) scale(0.95);
   z-index: 1;
+  filter: blur(1.2px);
 }
 
 .popup-notice-card .popup-notice-content {
@@ -4596,20 +4602,24 @@ body.theme-night .order-status-badge-delivered {
   .popup-deck-nav {
     width: 38px;
     height: 38px;
-    font-size: 1.3rem;
+  }
+
+  .popup-deck-icon {
+    width: 22px;
+    height: 22px;
   }
 
   .popup-deck-nav-prev {
-    left: 2px;
+    left: 8px;
   }
 
   .popup-deck-nav-next {
-    right: 2px;
+    right: 8px;
   }
 
   .popup-notice-deck-viewport {
     min-height: 0;
-    padding: 4px 40px;
+    padding: 4px 44px;
   }
 
   .popup-notice-card {
@@ -4619,17 +4629,18 @@ body.theme-night .order-status-badge-delivered {
   }
 
   .popup-notice-card.is-next {
-    transform: translateX(24px) scale(0.96);
+    transform: translate3d(calc(-50% + 26px), 0, 0) scale(0.97);
   }
 
   .popup-notice-card.is-next-2 {
-    transform: translateX(40px) scale(0.93);
+    transform: translate3d(calc(-50% + 42px), 0, 0) scale(0.94);
   }
 
   .popup-notice-deck-meta {
-    top: 8px;
-    left: 8px;
+    top: 0;
+    left: 0;
     font-size: 0.75rem;
+    transform: translate(-90%, -34%);
   }
 }
 
