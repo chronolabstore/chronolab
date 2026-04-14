@@ -7729,6 +7729,20 @@ function incrementFunnelEventUniqueInSession(req, eventKey, scopeKey = '') {
 }
 
 function safeBackPath(req, fallback = '/main') {
+  const toSafeLocalPath = (value = '') => {
+    const candidate = String(value || '').trim();
+    if (!candidate.startsWith('/')) {
+      return '';
+    }
+    if (candidate.startsWith('//') || candidate.startsWith('/\\')) {
+      return '';
+    }
+    if (/[\u0000-\u001f\u007f]/.test(candidate)) {
+      return '';
+    }
+    return candidate;
+  };
+
   const referer = String(req.get('referer') || '');
   if (!referer) {
     return fallback;
@@ -7740,10 +7754,11 @@ function safeBackPath(req, fallback = '/main') {
     if (currentHost && parsed.host !== currentHost) {
       return fallback;
     }
-    return `${parsed.pathname}${parsed.search}` || fallback;
+    return toSafeLocalPath(`${parsed.pathname}${parsed.search}`) || fallback;
   } catch {
-    if (referer.startsWith('/')) {
-      return referer;
+    const safePath = toSafeLocalPath(referer);
+    if (safePath) {
+      return safePath;
     }
     return fallback;
   }
