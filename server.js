@@ -729,6 +729,7 @@ const UPLOAD_MIME_EXTENSION_MAP = Object.freeze({
 });
 const ALLOWED_UPLOAD_EXTENSIONS = new Set(Object.values(UPLOAD_MIME_EXTENSION_MAP));
 const DEFAULT_MAX_UPLOAD_FILE_SIZE_MB = 20;
+const MAX_UPLOAD_IMAGE_COUNT = 20;
 const configuredUploadSizeMb = Number.parseInt(String(process.env.MAX_UPLOAD_FILE_SIZE_MB || ''), 10);
 const MAX_UPLOAD_FILE_SIZE_MB = Number.isInteger(configuredUploadSizeMb) && configuredUploadSizeMb > 0
   ? Math.min(30, configuredUploadSizeMb)
@@ -8291,7 +8292,9 @@ app.use((req, res, next) => {
       heroRightBackgroundColor: heroSettings.rightBackgroundColor,
       heroRightPaneStyle: heroSettings.rightPaneStyle,
       heroQuickMenus: heroSettings.quickMenus,
-      heroQuickMenuPaths: heroSettings.quickMenuPaths
+      heroQuickMenuPaths: heroSettings.quickMenuPaths,
+      maxUploadFileSizeMb: MAX_UPLOAD_FILE_SIZE_MB,
+      maxUploadImageCount: MAX_UPLOAD_IMAGE_COUNT
     },
     metrics: {
       visitToday: visitCounts.today,
@@ -15056,7 +15059,7 @@ app.post(
   }
 );
 
-app.post('/admin/product/create', requireAdmin, upload.array('images', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
+app.post('/admin/product/create', requireAdmin, upload.array('images', MAX_UPLOAD_IMAGE_COUNT), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=upload');
   const productGroupConfigs = getProductGroupConfigs();
   const defaultFilterSeeds = getDefaultGroupFilterSeeds();
@@ -15172,7 +15175,7 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), requ
   res.redirect(backPath);
 }));
 
-app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
+app.post('/admin/product/:id/update', requireAdmin, upload.array('images', MAX_UPLOAD_IMAGE_COUNT), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -15235,28 +15238,78 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
   const uploadedFiles = Array.isArray(req.files) ? req.files : [];
   await applyChronoLabWatermarkToUploads(uploadedFiles);
   const uploadedImages = uploadedFiles.map((file) => fileUrl(file)).filter(Boolean);
+  const normalizeImagePathList = (rawList) => {
+    const list = [];
+    const seen = new Set();
+    (Array.isArray(rawList) ? rawList : []).forEach((rawPath) => {
+      const safePath = String(rawPath || '').trim();
+      if (!safePath) return;
+      const dedupeKey = safePath.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      list.push(safePath);
+    });
+    return list;
+  };
+  const parseExistingImageOrderPayload = (rawValue) => {
+    const rawText = String(rawValue || '').trim();
+    if (!rawText) return [];
 
-  let imagePath = '';
-  if (uploadedImages.length > 0) {
-    imagePath = uploadedImages[0];
-  } else {
-    const existingImage = db
-      .prepare(
-        `
-          SELECT image_path
-          FROM product_images
-          WHERE product_id = ?
-          ORDER BY sort_order ASC, id ASC
-          LIMIT 1
-        `
-      )
-      .get(id);
-    imagePath = String(existingImage?.image_path || '').trim();
-    if (!imagePath) {
-      const baseImage = db.prepare('SELECT image_path FROM products WHERE id = ? LIMIT 1').get(id);
-      imagePath = String(baseImage?.image_path || '').trim();
+    const candidateTexts = [rawText];
+    try {
+      const decoded = decodeURIComponent(rawText);
+      if (decoded && decoded !== rawText) {
+        candidateTexts.push(decoded);
+      }
+    } catch {
+      // ignore malformed URI sequence and fall back to original text
+    }
+
+    for (const candidateText of candidateTexts) {
+      try {
+        const parsed = JSON.parse(candidateText);
+        return normalizeImagePathList(parsed);
+      } catch {
+        // try next candidate
+      }
+    }
+
+    return [];
+  };
+
+  const currentImageRows = db
+    .prepare(
+      `
+        SELECT image_path
+        FROM product_images
+        WHERE product_id = ?
+        ORDER BY sort_order ASC, id ASC
+      `
+    )
+    .all(id);
+  const currentImageList = normalizeImagePathList(currentImageRows.map((row) => row.image_path));
+  if (currentImageList.length === 0) {
+    const baseImage = db.prepare('SELECT image_path FROM products WHERE id = ? LIMIT 1').get(id);
+    const fallbackImagePath = String(baseImage?.image_path || '').trim();
+    if (fallbackImagePath) {
+      currentImageList.push(fallbackImagePath);
     }
   }
+
+  const hasExistingImageOrderPayload = Object.prototype.hasOwnProperty.call(req.body || {}, 'existingImageOrderJson');
+  const requestedExistingImageOrder = parseExistingImageOrderPayload(req.body?.existingImageOrderJson);
+  const currentImageSet = new Set(currentImageList.map((pathValue) => pathValue.toLowerCase()));
+  const keptExistingImageList = hasExistingImageOrderPayload
+    ? requestedExistingImageOrder.filter((pathValue) => currentImageSet.has(pathValue.toLowerCase()))
+    : currentImageList;
+
+  if (keptExistingImageList.length + uploadedImages.length > MAX_UPLOAD_IMAGE_COUNT) {
+    setFlash(req, 'error', `이미지는 최대 ${MAX_UPLOAD_IMAGE_COUNT}장까지 유지할 수 있습니다. 기존 이미지를 일부 삭제하거나 새 업로드 수를 줄여 주세요.`);
+    return res.redirect(backPath);
+  }
+
+  const finalImageList = [...keptExistingImageList, ...uploadedImages];
+  const imagePath = finalImageList[0] || '';
 
   db.prepare(
     `
@@ -15302,15 +15355,15 @@ app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), 
     id
   );
 
-  if (uploadedImages.length > 0) {
-    db.prepare('DELETE FROM product_images WHERE product_id = ?').run(id);
+  db.prepare('DELETE FROM product_images WHERE product_id = ?').run(id);
+  if (finalImageList.length > 0) {
     const insertImage = db.prepare(
       `
         INSERT INTO product_images (product_id, image_path, sort_order)
         VALUES (?, ?, ?)
       `
     );
-    uploadedImages.forEach((src, index) => {
+    finalImageList.forEach((src, index) => {
       insertImage.run(id, src, index);
     });
   }
