@@ -2443,12 +2443,12 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   position: relative;
   margin: 0;
   min-height: 44px;
-  padding: 10px 98px 10px 12px;
+  padding: 10px 116px 10px 12px;
   border-radius: 12px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: var(--chip);
   border: 1px solid transparent;
 }
@@ -2466,14 +2466,19 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   color: var(--muted);
   font-size: 0.78rem;
   white-space: nowrap;
-  margin-right: 36px;
+  display: block;
+  max-width: min(40vw, 280px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 26px;
+  margin-right: 0;
   flex-shrink: 0;
 }
 
 .menu-brand-model-summary::after {
   content: "▾";
   position: absolute;
-  right: 14px;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.82rem;
@@ -2517,7 +2522,7 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .menu-brand-model-sub-item > .menu-brand-model-summary {
   min-height: 40px;
-  padding: 8px 94px 8px 12px;
+  padding: 8px 108px 8px 12px;
   border-radius: 10px;
 }
 
@@ -2527,6 +2532,8 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .menu-brand-model-sub-item > .menu-brand-model-summary small {
   font-size: 0.75rem;
+  max-width: min(44vw, 300px);
+  padding-right: 24px;
 }
 
 .menu-brand-model-sub-item > .menu-brand-model-body {
@@ -3008,9 +3015,9 @@ body.admin-page select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.75L10 12.25L14.5 7.75' stroke='%2364758b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-size: 14px 14px;
-  background-position: right 12px center;
-  padding-right: 38px;
-  line-height: 1.2;
+  background-position: right 14px center;
+  padding-right: 44px;
+  line-height: 1.35;
 }
 
 body.admin-page select[multiple],
