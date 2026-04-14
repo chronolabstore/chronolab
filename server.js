@@ -958,6 +958,26 @@ function normalizeProductFilterOption(rawOption = '') {
     .slice(0, 80);
 }
 
+function normalizeBooleanLike(rawValue, fallback = false) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return Boolean(fallback);
+  }
+  if (typeof rawValue === 'boolean') {
+    return rawValue;
+  }
+  if (typeof rawValue === 'number') {
+    return rawValue !== 0;
+  }
+  const normalized = String(rawValue).trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes', 'y'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'off', 'no', 'n'].includes(normalized)) {
+    return false;
+  }
+  return Boolean(fallback);
+}
+
 function resolveRawProductFilterOptionValue(rawOption = '') {
   if (rawOption && typeof rawOption === 'object' && !Array.isArray(rawOption)) {
     return (
@@ -1397,6 +1417,22 @@ function isDomesticStockGroup(group = null) {
   return normalizedKeys.some((value) => value === '국내재고' || value === 'domesticstock');
 }
 
+function getGroupFilterToggleState(groupConfig = null) {
+  const safeGroup = groupConfig && typeof groupConfig === 'object' ? groupConfig : {};
+  const factoryEnabledFallback = (
+    String(safeGroup.mode || '').trim().toLowerCase() === PRODUCT_GROUP_MODE.FACTORY ||
+    String(safeGroup.key || '').trim() === '현지중고' ||
+    isDomesticStockGroup(safeGroup) ||
+    normalizeProductFilterOptionList(safeGroup.factoryOptions).length > 0
+  );
+
+  return {
+    brand: normalizeBooleanLike(safeGroup.enableBrandFilter, true),
+    model: normalizeBooleanLike(safeGroup.enableModelFilter, true),
+    factory: normalizeBooleanLike(safeGroup.enableFactoryFilter, factoryEnabledFallback)
+  };
+}
+
 function getGroupDefaultFields(group = {}) {
   if (isFactoryTemplateGroup(group)) {
     return getFactoryDefaultFields();
@@ -1655,6 +1691,9 @@ function normalizeProductGroupConfigs(rawValue) {
     const hasExplicitBrandOptionLabels = Object.prototype.hasOwnProperty.call(group, 'brandOptionLabels');
     const hasExplicitFactoryOptionLabels = Object.prototype.hasOwnProperty.call(group, 'factoryOptionLabels');
     const hasExplicitModelOptionLabelsByBrand = Object.prototype.hasOwnProperty.call(group, 'modelOptionLabelsByBrand');
+    const hasExplicitBrandFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableBrandFilter');
+    const hasExplicitModelFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableModelFilter');
+    const hasExplicitFactoryFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableFactoryFilter');
     const fallbackBrandOptions = normalizeProductFilterOptionList(fallbackGroup.brandOptions);
     const fallbackFactoryOptions = normalizeProductFilterOptionList(fallbackGroup.factoryOptions);
     const fallbackModelOptions = normalizeProductFilterOptionList(fallbackGroup.modelOptions);
@@ -1760,12 +1799,30 @@ function normalizeProductGroupConfigs(rawValue) {
           brandOptions
         )
       : fallbackModelOptionLabelsByBrand;
+    const factoryFilterEnabledDefault = (
+      mode === PRODUCT_GROUP_MODE.FACTORY ||
+      key === '현지중고' ||
+      isDomesticStockGroup({ key, labelKo, labelEn }) ||
+      factoryOptions.length > 0
+    );
+    const brandFilterEnabled = hasExplicitBrandFilterToggle
+      ? normalizeBooleanLike(group.enableBrandFilter, true)
+      : true;
+    const modelFilterEnabled = hasExplicitModelFilterToggle
+      ? normalizeBooleanLike(group.enableModelFilter, true)
+      : true;
+    const factoryFilterEnabled = hasExplicitFactoryFilterToggle
+      ? normalizeBooleanLike(group.enableFactoryFilter, factoryFilterEnabledDefault)
+      : factoryFilterEnabledDefault;
 
     normalizedGroups.push({
       key,
       labelKo: labelKo || key,
       labelEn: labelEn || key,
       mode,
+      enableBrandFilter: brandFilterEnabled,
+      enableModelFilter: modelFilterEnabled,
+      enableFactoryFilter: factoryFilterEnabled,
       brandOptions,
       factoryOptions,
       modelOptions,
@@ -8557,6 +8614,18 @@ app.get('/shop', (req, res) => {
   const selectedBrandRaw = normalizeProductFilterOption(req.query.brand || '');
   const selectedFactoryRaw = normalizeProductFilterOption(req.query.factory || '');
   const selectedModelRaw = normalizeProductFilterOption(req.query.model || '');
+  const selectedGroupFilterToggles = getGroupFilterToggleState(selectedGroupConfig);
+  const allGroupFilterToggles = productGroupConfigs.reduce(
+    (acc, groupConfig) => {
+      const toggles = getGroupFilterToggleState(groupConfig);
+      return {
+        brand: acc.brand || toggles.brand,
+        model: acc.model || toggles.model,
+        factory: acc.factory || toggles.factory
+      };
+    },
+    { brand: false, model: false, factory: false }
+  );
 
   const mergeFilterLabelMap = (target = {}, source = {}) => {
     if (!source || typeof source !== 'object' || Array.isArray(source)) return;
@@ -8594,6 +8663,7 @@ app.get('/shop', (req, res) => {
     });
   };
 
+  let supportsBrandFilter = false;
   let supportsFactoryFilter = false;
   let supportsModelFilter = false;
   let brands = [];
@@ -8614,58 +8684,82 @@ app.get('/shop', (req, res) => {
     const mergedFactoryOptionSet = new Set();
     const mergedModelOptionMapByBrand = {};
     const defaultFilterSeeds = getDefaultGroupFilterSeeds();
+    supportsBrandFilter = allGroupFilterToggles.brand;
+    supportsModelFilter = allGroupFilterToggles.model && supportsBrandFilter;
+    supportsFactoryFilter = allGroupFilterToggles.factory;
+
     productGroupConfigs.forEach((groupConfig) => {
-      getGroupBrandOptions(groupConfig).forEach((value) => {
+      const toggles = getGroupFilterToggleState(groupConfig);
+      if (supportsBrandFilter && toggles.brand) {
+        getGroupBrandOptions(groupConfig).forEach((value) => {
+          const safeValue = normalizeProductFilterOption(value);
+          if (safeValue) mergedBrandOptionSet.add(safeValue);
+        });
+        mergeFilterLabelMap(mergedBrandLabels, getGroupBrandOptionLabels(groupConfig));
+      }
+      if (supportsFactoryFilter && toggles.factory) {
+        getGroupFactoryOptions(groupConfig).forEach((value) => {
+          const safeValue = normalizeProductFilterOption(value);
+          if (safeValue) mergedFactoryOptionSet.add(safeValue);
+        });
+        mergeFilterLabelMap(mergedFactoryLabels, getGroupFactoryOptionLabels(groupConfig));
+      }
+      if (supportsModelFilter && toggles.model) {
+        mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
+        mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, getGroupModelOptionsByBrand(groupConfig));
+      }
+    });
+    if (supportsBrandFilter) {
+      getGroupBrandOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
         const safeValue = normalizeProductFilterOption(value);
         if (safeValue) mergedBrandOptionSet.add(safeValue);
       });
-      getGroupFactoryOptions(groupConfig).forEach((value) => {
+      getGroupBrandOptions(defaultFilterSeeds.simple || {}).forEach((value) => {
+        const safeValue = normalizeProductFilterOption(value);
+        if (safeValue) mergedBrandOptionSet.add(safeValue);
+      });
+      mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.factory?.brandOptionLabels || {});
+      mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.simple?.brandOptionLabels || {});
+    }
+    if (supportsFactoryFilter) {
+      getGroupFactoryOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
         const safeValue = normalizeProductFilterOption(value);
         if (safeValue) mergedFactoryOptionSet.add(safeValue);
       });
-      mergeFilterLabelMap(mergedBrandLabels, getGroupBrandOptionLabels(groupConfig));
-      mergeFilterLabelMap(mergedFactoryLabels, getGroupFactoryOptionLabels(groupConfig));
-      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
-      mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, getGroupModelOptionsByBrand(groupConfig));
-    });
-    getGroupBrandOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
-      const safeValue = normalizeProductFilterOption(value);
-      if (safeValue) mergedBrandOptionSet.add(safeValue);
-    });
-    getGroupBrandOptions(defaultFilterSeeds.simple || {}).forEach((value) => {
-      const safeValue = normalizeProductFilterOption(value);
-      if (safeValue) mergedBrandOptionSet.add(safeValue);
-    });
-    getGroupFactoryOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
-      const safeValue = normalizeProductFilterOption(value);
-      if (safeValue) mergedFactoryOptionSet.add(safeValue);
-    });
-    mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.factory?.brandOptionLabels || {});
-    mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.simple?.brandOptionLabels || {});
-    mergeFilterLabelMap(mergedFactoryLabels, defaultFilterSeeds.factory?.factoryOptionLabels || {});
-    mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.factory?.modelOptionLabelsByBrand || {});
-    mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.simple?.modelOptionLabelsByBrand || {});
-    mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.factory?.modelOptionsByBrand || {});
-    mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.simple?.modelOptionsByBrand || {});
+      mergeFilterLabelMap(mergedFactoryLabels, defaultFilterSeeds.factory?.factoryOptionLabels || {});
+    }
+    if (supportsModelFilter) {
+      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.factory?.modelOptionLabelsByBrand || {});
+      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.simple?.modelOptionLabelsByBrand || {});
+      mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.factory?.modelOptionsByBrand || {});
+      mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.simple?.modelOptionsByBrand || {});
+    }
 
-    const discoveredBrands = db
-      .prepare(
-        `
-          SELECT DISTINCT brand
-          FROM products
-          WHERE is_active = 1
-          ORDER BY brand ASC
-        `
-      )
-      .all()
-      .map((row) => normalizeProductFilterOption(row.brand))
-      .filter(Boolean);
-    const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
-    const mergedBrandOptions = normalizeProductFilterOptionList(Array.from(mergedBrandOptionSet));
-    brands = mergedBrandOptions.length > 0 ? mergedBrandOptions : discoveredBrandOptions;
-    brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
+    if (supportsBrandFilter) {
+      const discoveredBrands = db
+        .prepare(
+          `
+            SELECT DISTINCT brand
+            FROM products
+            WHERE is_active = 1
+            ORDER BY brand ASC
+          `
+        )
+        .all()
+        .map((row) => normalizeProductFilterOption(row.brand))
+        .filter(Boolean);
+      const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
+      const mergedBrandOptions = normalizeProductFilterOptionList(Array.from(mergedBrandOptionSet));
+      brands = mergedBrandOptions.length > 0 ? mergedBrandOptions : discoveredBrandOptions;
+      brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
+      brandItems = getProductFilterOptionItems(brands, mergedBrandLabels, res.locals.ctx.lang);
+    } else {
+      brands = [];
+      brand = '';
+      brandItems = [];
+    }
 
-    if (brand) {
+    if (supportsModelFilter && brand) {
       const matchedModelMapBrand = findMatchingProductFilterKey(mergedModelOptionMapByBrand, brand);
       const configuredModelsForBrand = matchedModelMapBrand
         ? normalizeProductFilterOptionList(mergedModelOptionMapByBrand[matchedModelMapBrand] || [])
@@ -8688,63 +8782,55 @@ app.get('/shop', (req, res) => {
     } else {
       models = [];
     }
-    model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
-
-    const mergedFactoryOptions = normalizeProductFilterOptionList(Array.from(mergedFactoryOptionSet));
-    const discoveredFactoriesAll = db
-      .prepare(
-        `
-          SELECT DISTINCT factory_name
-          FROM products
-          WHERE is_active = 1
-            AND TRIM(COALESCE(factory_name, '')) != ''
-          ORDER BY factory_name ASC
-        `
-      )
-      .all()
-      .map((row) => normalizeProductFilterOption(row.factory_name))
-      .filter(Boolean);
-    supportsFactoryFilter = mergedFactoryOptions.length > 0 || discoveredFactoriesAll.length > 0;
-    const factoryWhere = ['is_active = 1', "TRIM(COALESCE(factory_name, '')) != ''"];
-    const factoryParams = [];
-    if (brand) {
-      factoryWhere.push('brand = ?');
-      factoryParams.push(brand);
-    }
-    if (model) {
-      factoryWhere.push('model = ?');
-      factoryParams.push(model);
-    }
-    const discoveredFactoriesFiltered = db
-      .prepare(
-        `
-          SELECT DISTINCT factory_name
-          FROM products
-          WHERE ${factoryWhere.join(' AND ')}
-          ORDER BY factory_name ASC
-        `
-      )
-      .all(...factoryParams)
-      .map((row) => normalizeProductFilterOption(row.factory_name))
-      .filter(Boolean);
-    const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactoriesFiltered);
-    factories = mergedFactoryOptions.length > 0 ? mergedFactoryOptions : discoveredFactoryOptions;
-    factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
-      ? selectedFactoryRaw
+    model = supportsModelFilter && models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase())
+      ? selectedModelRaw
       : '';
-
     const modelOptionLabels = (() => {
-      if (!brand) return {};
+      if (!supportsModelFilter || !brand) return {};
       const matchedBrandKey = findMatchingProductFilterKey(mergedModelLabelsByBrand, brand);
       if (!matchedBrandKey) return {};
       const source = mergedModelLabelsByBrand[matchedBrandKey];
       return source && typeof source === 'object' && !Array.isArray(source) ? source : {};
     })();
+    modelItems = supportsModelFilter
+      ? getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang)
+      : [];
 
-    brandItems = getProductFilterOptionItems(brands, mergedBrandLabels, res.locals.ctx.lang);
-    factoryItems = getProductFilterOptionItems(factories, mergedFactoryLabels, res.locals.ctx.lang);
-    modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
-    supportsModelFilter = brands.length > 0 || models.length > 0;
+    if (supportsFactoryFilter) {
+      const mergedFactoryOptions = normalizeProductFilterOptionList(Array.from(mergedFactoryOptionSet));
+      const factoryWhere = ['is_active = 1', "TRIM(COALESCE(factory_name, '')) != ''"];
+      const factoryParams = [];
+      if (supportsBrandFilter && brand) {
+        factoryWhere.push('brand = ?');
+        factoryParams.push(brand);
+      }
+      if (supportsModelFilter && model) {
+        factoryWhere.push('model = ?');
+        factoryParams.push(model);
+      }
+      const discoveredFactoriesFiltered = db
+        .prepare(
+          `
+            SELECT DISTINCT factory_name
+            FROM products
+            WHERE ${factoryWhere.join(' AND ')}
+            ORDER BY factory_name ASC
+          `
+        )
+        .all(...factoryParams)
+        .map((row) => normalizeProductFilterOption(row.factory_name))
+        .filter(Boolean);
+      const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactoriesFiltered);
+      factories = mergedFactoryOptions.length > 0 ? mergedFactoryOptions : discoveredFactoryOptions;
+      factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
+        ? selectedFactoryRaw
+        : '';
+      factoryItems = getProductFilterOptionItems(factories, mergedFactoryLabels, res.locals.ctx.lang);
+    } else {
+      factories = [];
+      factory = '';
+      factoryItems = [];
+    }
   } else {
     const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
     const groupFactorySeedOptions = getGroupFactoryOptions(selectedGroupConfig);
@@ -8786,17 +8872,23 @@ app.get('/shop', (req, res) => {
     const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
     const configuredBrands = getGroupBrandOptions(selectedGroupConfig);
     const configuredBrandLabels = getGroupBrandOptionLabels(selectedGroupConfig);
-    brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
+    supportsBrandFilter = selectedGroupFilterToggles.brand;
+    brands = supportsBrandFilter
+      ? (configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions)
+      : [];
 
     const configuredFactories = groupFactorySeedOptions;
     const configuredFactoryLabels = getGroupFactoryOptionLabels(selectedGroupConfig);
-    factories = supportsFactoryFilter
+    factories = (selectedGroupFilterToggles.factory && supportsFactoryFilter)
       ? configuredFactories.length > 0
         ? configuredFactories
         : discoveredFactoryOptions
       : [];
+    supportsFactoryFilter = selectedGroupFilterToggles.factory && supportsFactoryFilter;
 
-    brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
+    brand = supportsBrandFilter && brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase())
+      ? selectedBrandRaw
+      : '';
     factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
       ? selectedFactoryRaw
       : '';
@@ -8808,12 +8900,23 @@ app.get('/shop', (req, res) => {
       : hasModelOptionMap
         ? []
         : fallbackModelOptions;
-    model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
+    supportsModelFilter = selectedGroupFilterToggles.model && supportsBrandFilter && (
+      hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0
+    );
+    if (!supportsModelFilter) {
+      models = [];
+    }
+    model = supportsModelFilter && models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase())
+      ? selectedModelRaw
+      : '';
     const modelOptionLabels = getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand);
-    brandItems = getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang);
+    brandItems = supportsBrandFilter
+      ? getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang)
+      : [];
     factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
-    modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
-    supportsModelFilter = hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0;
+    modelItems = supportsModelFilter
+      ? getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang)
+      : [];
   }
 
   const where = ['is_active = 1'];
@@ -8872,6 +8975,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
+    supportsBrandFilter,
     supportsModelFilter,
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
@@ -14271,12 +14375,21 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
 
   const useFactoryTemplate =
     templateType === PRODUCT_GROUP_MODE.FACTORY || requestedKey === '공장제' || labelKo === '공장제';
+  const enableFactoryFilterByDefault = (
+    useFactoryTemplate ||
+    requestedKey === '현지중고' ||
+    labelKo === '현지중고' ||
+    isDomesticStockGroup({ key: requestedKey, labelKo, labelEn })
+  );
   const filterSeeds = getDefaultGroupFilterSeeds();
   const nextConfigs = [...configs, {
     key: requestedKey,
     labelKo,
     labelEn,
     mode: useFactoryTemplate ? PRODUCT_GROUP_MODE.FACTORY : PRODUCT_GROUP_MODE.SIMPLE,
+    enableBrandFilter: true,
+    enableModelFilter: true,
+    enableFactoryFilter: enableFactoryFilterByDefault,
     brandOptions: useFactoryTemplate ? filterSeeds.factory.brandOptions : filterSeeds.simple.brandOptions,
     factoryOptions: useFactoryTemplate ? filterSeeds.factory.factoryOptions : [],
     modelOptions: useFactoryTemplate ? filterSeeds.factory.modelOptions : filterSeeds.simple.modelOptions,
@@ -14343,6 +14456,43 @@ app.post('/admin/product-group/remove/:key', requireAdmin, (req, res) => {
     markVersion: true
   });
   setFlash(req, 'success', '쇼핑몰 분류가 삭제되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/filter/visibility', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=group-filters');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  if (!groupKey) {
+    setFlash(req, 'error', '분류 키를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const enableBrandFilter = req.body.enableBrandFilter === 'on';
+  const enableModelFilter = req.body.enableModelFilter === 'on';
+  const enableFactoryFilter = req.body.enableFactoryFilter === 'on';
+
+  if (!enableBrandFilter && enableModelFilter) {
+    setFlash(req, 'error', '모델 필터를 사용하려면 브랜드 필터를 함께 켜 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const nextGroups = [...configs];
+  nextGroups[targetIndex] = {
+    ...nextGroups[targetIndex],
+    enableBrandFilter,
+    enableModelFilter,
+    enableFactoryFilter
+  };
+
+  setProductGroupConfigs(nextGroups);
+  setFlash(req, 'success', '분류 필터 적용 설정이 저장되었습니다.');
   return res.redirect(backPath);
 });
 

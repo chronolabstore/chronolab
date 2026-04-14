@@ -50,6 +50,15 @@
     const entry = resolveFilterLabelEntry(map, rawValue);
     return isEn ? (entry.labelEn || entry.labelKo || normalizeFilterValue(rawValue)) : (entry.labelKo || entry.labelEn || normalizeFilterValue(rawValue));
   };
+  const resolveMenuGroupFilterToggle = (rawValue, fallback = true) => {
+    if (rawValue === undefined || rawValue === null || rawValue === '') return Boolean(fallback);
+    if (typeof rawValue === 'boolean') return rawValue;
+    if (typeof rawValue === 'number') return rawValue !== 0;
+    const normalized = String(rawValue).trim().toLowerCase();
+    if (['1', 'true', 'on', 'yes', 'y'].includes(normalized)) return true;
+    if (['0', 'false', 'off', 'no', 'n'].includes(normalized)) return false;
+    return Boolean(fallback);
+  };
   const defaultGroupKey = productGroupKeys[0] || '공장제';
   const activeOrderFilterKey = (() => {
     const candidate = String(orderGroupFilter || 'all');
@@ -1987,10 +1996,19 @@
                   : {};
               const modelFilterBrandKeys = Object.keys(modelFilterMap);
               const legacyModelFilters = Array.isArray(group.modelOptions) ? group.modelOptions : [];
+              const brandFilterEnabled = resolveMenuGroupFilterToggle(group.enableBrandFilter, true);
+              const modelFilterEnabled = resolveMenuGroupFilterToggle(group.enableModelFilter, true);
+              const factoryFilterEnabled = resolveMenuGroupFilterToggle(
+                group.enableFactoryFilter,
+                String(group.key || '').trim() === '공장제' ||
+                String(group.key || '').trim() === '현지중고' ||
+                factoryFilters.length > 0
+              );
               const supportsFactoryFilterGroup =
                 String(group.key || '').trim() === '공장제' ||
                 String(group.key || '').trim() === '현지중고' ||
-                factoryFilters.length > 0;
+                factoryFilters.length > 0 ||
+                factoryFilterEnabled;
             %>
             <div
               class="admin-list-item menu-group-filter-item"
@@ -2003,6 +2021,27 @@
                   <span><%= isEn ? 'Key' : '키' %>: <code><%= group.key %></code></span>
                 </div>
               </div>
+
+              <section class="kpi-card menu-filter-toggle-card">
+                <h4><%= isEn ? 'Filter Visibility' : '필터 적용 설정' %></h4>
+                <p class="muted-label"><%= isEn ? 'Choose which filters are shown in this shop category.' : '해당 쇼핑몰 분류에 어떤 필터를 노출할지 선택하세요.' %></p>
+                <form method="post" action="/admin/product-group/filter/visibility" class="menu-filter-toggle-form">
+                  <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                  <label class="check-row menu-filter-toggle-check">
+                    <input type="checkbox" name="enableBrandFilter" <%= brandFilterEnabled ? 'checked' : '' %> />
+                    <span><%= isEn ? 'Show Brand Filter' : '브랜드 필터 표시' %></span>
+                  </label>
+                  <label class="check-row menu-filter-toggle-check">
+                    <input type="checkbox" name="enableModelFilter" <%= modelFilterEnabled ? 'checked' : '' %> />
+                    <span><%= isEn ? 'Show Model Filter' : '모델 필터 표시' %></span>
+                  </label>
+                  <label class="check-row menu-filter-toggle-check">
+                    <input type="checkbox" name="enableFactoryFilter" <%= factoryFilterEnabled ? 'checked' : '' %> />
+                    <span><%= isEn ? 'Show Factory Filter' : '공장 필터 표시' %></span>
+                  </label>
+                  <button type="submit" class="chip dark menu-filter-toggle-submit"><%= isEn ? 'Save Visibility' : '적용 설정 저장' %></button>
+                </form>
+              </section>
 
               <div class="admin-grid two-col menu-group-filter-grid">
                 <section class="kpi-card menu-brand-filter-card">
