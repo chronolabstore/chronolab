@@ -1164,6 +1164,8 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
 
 .admin-product-badge-row {
   margin-top: 6px;
+  justify-content: center;
+  align-items: center;
 }
 
 .news-card-grid {
