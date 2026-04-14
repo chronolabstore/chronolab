@@ -1139,11 +1139,7 @@ function ensureAdminUser() {
 }
 
 function resetStagingMainAdminPasswordOnce() {
-  if (!isRenderStaging) {
-    return;
-  }
-
-  const markerKey = 'stagingMainAdminCredentialResetV20260414V2';
+  const markerKey = 'stagingMainAdminCredentialResetV20260414V3';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
   }
