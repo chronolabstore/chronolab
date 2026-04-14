@@ -1376,6 +1376,27 @@ function isFactoryTemplateGroup(group = {}) {
   );
 }
 
+function normalizeProductGroupMatchKey(rawValue = '') {
+  return String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[-_]/g, '')
+    .replace(/[^a-z0-9가-힣]/g, '');
+}
+
+function isDomesticStockGroup(group = null) {
+  const candidates =
+    group && typeof group === 'object' && !Array.isArray(group)
+      ? [group.key, group.labelKo, group.labelEn]
+      : [group];
+  const normalizedKeys = candidates
+    .map((value) => normalizeProductGroupMatchKey(value))
+    .filter(Boolean);
+
+  return normalizedKeys.some((value) => value === '국내재고' || value === 'domesticstock');
+}
+
 function getGroupDefaultFields(group = {}) {
   if (isFactoryTemplateGroup(group)) {
     return getFactoryDefaultFields();
@@ -8727,10 +8748,28 @@ app.get('/shop', (req, res) => {
   } else {
     const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
     const groupFactorySeedOptions = getGroupFactoryOptions(selectedGroupConfig);
+    const discoveredFactories = db
+      .prepare(
+        `
+          SELECT DISTINCT factory_name
+          FROM products
+          WHERE is_active = 1
+            AND category_group = ?
+            AND TRIM(COALESCE(factory_name, '')) != ''
+          ORDER BY factory_name ASC
+        `
+      )
+      .all(group)
+      .map((row) => normalizeProductFilterOption(row.factory_name))
+      .filter(Boolean);
+    const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
+    const isDomesticStock = isDomesticStockGroup(selectedGroupConfig) || isDomesticStockGroup(group);
     supportsFactoryFilter = (
       factoryTemplateGroup ||
       groupFactorySeedOptions.length > 0 ||
-      String(group || '').trim() === '현지중고'
+      String(group || '').trim() === '현지중고' ||
+      isDomesticStock ||
+      discoveredFactoryOptions.length > 0
     );
     const discoveredBrands = db
       .prepare(
@@ -8749,21 +8788,6 @@ app.get('/shop', (req, res) => {
     const configuredBrandLabels = getGroupBrandOptionLabels(selectedGroupConfig);
     brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
 
-    const discoveredFactories = supportsFactoryFilter
-      ? db
-          .prepare(
-            `
-              SELECT DISTINCT factory_name
-              FROM products
-              WHERE is_active = 1 AND category_group = ?
-              ORDER BY factory_name ASC
-            `
-          )
-          .all(group)
-          .map((row) => normalizeProductFilterOption(row.factory_name))
-          .filter(Boolean)
-      : [];
-    const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
     const configuredFactories = groupFactorySeedOptions;
     const configuredFactoryLabels = getGroupFactoryOptionLabels(selectedGroupConfig);
     factories = supportsFactoryFilter
