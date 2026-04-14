@@ -1565,7 +1565,79 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
+  function initCsrfRequestProtection() {
+    var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    var csrfToken = tokenMeta ? String(tokenMeta.getAttribute('content') || '').trim() : '';
+    if (!csrfToken) {
+      return;
+    }
+
+    function shouldProtectMethod(method) {
+      var normalized = String(method || '').toUpperCase();
+      return normalized === 'POST' || normalized === 'PUT' || normalized === 'PATCH' || normalized === 'DELETE';
+    }
+
+    function ensureFormToken(form) {
+      if (!form || form.tagName !== 'FORM') {
+        return;
+      }
+      var method = String(form.getAttribute('method') || 'GET').toUpperCase();
+      if (!shouldProtectMethod(method)) {
+        return;
+      }
+      var tokenInput = form.querySelector('input[name="_csrf"]');
+      if (!tokenInput) {
+        tokenInput = document.createElement('input');
+        tokenInput.type = 'hidden';
+        tokenInput.name = '_csrf';
+        form.appendChild(tokenInput);
+      }
+      tokenInput.value = csrfToken;
+    }
+
+    document.querySelectorAll('form').forEach(ensureFormToken);
+
+    var formObserver = new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        Array.prototype.forEach.call(mutation.addedNodes || [], function (node) {
+          if (!node || node.nodeType !== 1) {
+            return;
+          }
+          if (node.matches && node.matches('form')) {
+            ensureFormToken(node);
+          }
+          if (node.querySelectorAll) {
+            node.querySelectorAll('form').forEach(ensureFormToken);
+          }
+        });
+      });
+    });
+    formObserver.observe(document.body, { childList: true, subtree: true });
+
+    if (typeof window.fetch === 'function' && window.__chronolabCsrfWrappedFetch !== true) {
+      var originalFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        var requestInit = init ? Object.assign({}, init) : {};
+        var requestMethod = String(
+          requestInit.method || (input && typeof input === 'object' && 'method' in input ? input.method : 'GET')
+        ).toUpperCase();
+        if (shouldProtectMethod(requestMethod)) {
+          var headers = new Headers(
+            requestInit.headers || (input && typeof input === 'object' && 'headers' in input ? input.headers : undefined)
+          );
+          if (!headers.has('x-csrf-token')) {
+            headers.set('x-csrf-token', csrfToken);
+          }
+          requestInit.headers = headers;
+        }
+        return originalFetch(input, requestInit);
+      };
+      window.__chronolabCsrfWrappedFetch = true;
+    }
+  }
+
   function initApp() {
+    initCsrfRequestProtection();
     initDetailsFieldAutofocus();
     initNoticePopup();
     initFlashPopup();

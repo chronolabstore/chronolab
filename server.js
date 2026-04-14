@@ -109,6 +109,9 @@ const AUTH_PERSIST_HMAC_KEY = crypto
   .createHash('sha256')
   .update(`${SESSION_SECRET}:auth-cookie-v1`)
   .digest();
+const CSRF_TOKEN_SIZE_BYTES = 32;
+const CSRF_TOKEN_REGEX = /^[a-f0-9]{64}$/i;
+const ORDER_COMPLETE_VIEW_TTL_MS = 1000 * 60 * 60;
 
 function resolveIdleTimeoutMs({
   envKey = '',
@@ -360,6 +363,53 @@ function setPersistAuthCookie(res, userId, options = {}) {
     sameSite: 'lax',
     secure: isProduction
   });
+}
+
+function normalizeCsrfTokenValue(rawValue = '') {
+  const token = String(rawValue || '').trim().toLowerCase();
+  if (!CSRF_TOKEN_REGEX.test(token)) {
+    return '';
+  }
+  return token;
+}
+
+function ensureSessionCsrfToken(req) {
+  if (!req?.session) {
+    return '';
+  }
+  const existingToken = normalizeCsrfTokenValue(req.session.csrfToken || '');
+  if (existingToken) {
+    req.session.csrfToken = existingToken;
+    return existingToken;
+  }
+  const nextToken = crypto.randomBytes(CSRF_TOKEN_SIZE_BYTES).toString('hex');
+  req.session.csrfToken = nextToken;
+  return nextToken;
+}
+
+function readCsrfTokenFromRequest(req) {
+  const headerToken = normalizeCsrfTokenValue(req.get('x-csrf-token') || req.get('x-xsrf-token') || '');
+  if (headerToken) {
+    return headerToken;
+  }
+  if (req?.body && typeof req.body === 'object') {
+    return normalizeCsrfTokenValue(req.body._csrf || '');
+  }
+  return '';
+}
+
+function isCsrfTokenEqual(expectedToken = '', providedToken = '') {
+  const expected = normalizeCsrfTokenValue(expectedToken);
+  const provided = normalizeCsrfTokenValue(providedToken);
+  if (!expected || !provided) {
+    return false;
+  }
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  const providedBuffer = Buffer.from(provided, 'utf8');
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 function tryRestoreSessionFromPersistCookie(req, res) {
@@ -7764,6 +7814,40 @@ function safeBackPath(req, fallback = '/main') {
   }
 }
 
+function rememberOrderCompleteAccess(req, orderNo = '') {
+  if (!req?.session) {
+    return;
+  }
+  const safeOrderNo = String(orderNo || '').trim().slice(0, 120);
+  if (!safeOrderNo) {
+    return;
+  }
+  req.session.orderCompleteAccess = {
+    orderNo: safeOrderNo,
+    issuedAt: Date.now()
+  };
+}
+
+function hasRecentOrderCompleteAccess(req, orderNo = '') {
+  const safeOrderNo = String(orderNo || '').trim();
+  if (!safeOrderNo) {
+    return false;
+  }
+  const accessState = req?.session?.orderCompleteAccess;
+  if (!accessState || typeof accessState !== 'object') {
+    return false;
+  }
+  const storedOrderNo = String(accessState.orderNo || '').trim();
+  const issuedAt = Number(accessState.issuedAt || 0);
+  if (!storedOrderNo || storedOrderNo !== safeOrderNo) {
+    return false;
+  }
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0) {
+    return false;
+  }
+  return Date.now() - issuedAt <= ORDER_COMPLETE_VIEW_TTL_MS;
+}
+
 function parseOriginFromHeaderUrl(rawUrl = '') {
   const raw = String(rawUrl || '').trim();
   if (!raw) {
@@ -7805,11 +7889,32 @@ function shouldEnforceOriginValidation(req) {
   return true;
 }
 
+function shouldEnforceCsrfTokenValidation(req) {
+  if (!shouldEnforceOriginValidation(req)) {
+    return false;
+  }
+  const contentType = String(req.get('content-type') || '').toLowerCase();
+  if (contentType.startsWith('multipart/form-data')) {
+    return false;
+  }
+  return Number(req?.session?.userId || 0) > 0;
+}
+
 function rejectInvalidOriginRequest(req, res) {
   const message = '보안 검증에 실패했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
   const acceptHeader = String(req.get('accept') || '').toLowerCase();
   if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
     return res.status(403).json({ ok: false, error: 'invalid_origin', message });
+  }
+  setFlash(req, 'error', message);
+  return res.redirect(safeBackPath(req, '/main'));
+}
+
+function rejectInvalidCsrfTokenRequest(req, res) {
+  const message = '보안 토큰이 유효하지 않습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
+  const acceptHeader = String(req.get('accept') || '').toLowerCase();
+  if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
+    return res.status(403).json({ ok: false, error: 'invalid_csrf_token', message });
   }
   setFlash(req, 'error', message);
   return res.redirect(safeBackPath(req, '/main'));
@@ -7964,6 +8069,7 @@ function loadUser(req, res, next) {
 
   req.session.isAdmin = req.user.isAdmin;
   req.session.lastActivityAt = nowMs;
+  ensureSessionCsrfToken(req);
   setPersistAuthCookie(res, req.user.id, {
     isAdmin: req.user.isAdmin,
     lastActivityAt: nowMs
@@ -7999,6 +8105,18 @@ app.use((req, res, next) => {
   }
 
   return next();
+});
+
+app.use((req, res, next) => {
+  if (!shouldEnforceCsrfTokenValidation(req)) {
+    return next();
+  }
+  const expectedToken = ensureSessionCsrfToken(req);
+  const providedToken = readCsrfTokenFromRequest(req);
+  if (isCsrfTokenEqual(expectedToken, providedToken)) {
+    return next();
+  }
+  return rejectInvalidCsrfTokenRequest(req, res);
 });
 
 app.use((req, res, next) => {
@@ -8103,6 +8221,7 @@ app.use((req, res, next) => {
     isAdmin: Boolean(req.user?.isAdmin),
     isPrimaryAdmin: Boolean(req.user?.isPrimaryAdmin),
     isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
+    csrfToken: req.session?.csrfToken || '',
     flash: getFlash(req),
     popupFlash: getPopupFlash(req),
     formatPrice,
@@ -9084,11 +9203,11 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   }
 
   incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.ORDER_CREATED);
-
+  rememberOrderCompleteAccess(req, orderNo);
   return res.redirect(`/shop/order-complete/${orderNo}`);
 });
 
-app.post('/order/create', (req, res) => {
+app.post('/order/create', requireAuth, (req, res) => {
   const productId = Number(req.body.productId);
   const buyerName = String(req.body.buyerName || '').trim();
   const buyerContact = String(req.body.buyerContact || '').trim();
@@ -9225,7 +9344,7 @@ app.post('/order/create', (req, res) => {
   );
 
   incrementFunnelEvent(toKstDate(), FUNNEL_EVENT.ORDER_CREATED);
-
+  rememberOrderCompleteAccess(req, orderNo);
   res.redirect(`/shop/order-complete/${orderNo}`);
 });
 
@@ -9245,6 +9364,17 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
 
   if (!order) {
     return res.status(404).render('simple-error', { title: 'Not Found', message: '주문을 찾을 수 없습니다.' });
+  }
+
+  const orderOwnerUserId = Number(order.created_by_user_id || 0);
+  const viewerUserId = Number(req.user?.id || 0);
+  const canViewByRole = Boolean(req.user?.isAdmin) || (orderOwnerUserId > 0 && viewerUserId === orderOwnerUserId);
+  const canViewGuestOrder = orderOwnerUserId <= 0 && hasRecentOrderCompleteAccess(req, orderNo);
+  if (!canViewByRole && !canViewGuestOrder) {
+    return res.status(403).render('simple-error', {
+      title: 'Forbidden',
+      message: '주문 정보 접근 권한이 없습니다.'
+    });
   }
 
   const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang, 'member');
@@ -10914,6 +11044,10 @@ app.post('/admin/change-password', requirePrimaryAdmin, asyncRoute(async (req, r
 }));
 
 app.get('/admin/logout', requireAdmin, (req, res) => {
+  return res.redirect('/admin/dashboard');
+});
+
+app.post('/admin/logout', requireAdmin, (req, res) => {
   req.session.destroy(() => {
     clearPersistAuthCookie(res);
     res.redirect('/admin/login');

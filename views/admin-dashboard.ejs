@@ -4104,6 +4104,7 @@
 
       const isEn = <%= isEn ? 'true' : 'false' %>;
       const tabDefs = <%- JSON.stringify(salesTabs || []) %>;
+      const csrfToken = <%- JSON.stringify(ctx.csrfToken || '') %>;
       const integerFmt = new Intl.NumberFormat(isEn ? 'en-US' : 'ko-KR');
 
       let workbook = null;
@@ -5616,7 +5617,8 @@
             method: 'POST',
             headers: {
               'content-type': 'application/json',
-              accept: 'application/json'
+              accept: 'application/json',
+              'x-csrf-token': csrfToken
             },
             body: JSON.stringify({ workbook })
           });
@@ -5910,7 +5912,8 @@
             method: 'POST',
             headers: {
               accept: 'application/json',
-              'content-type': 'application/json'
+              'content-type': 'application/json',
+              'x-csrf-token': csrfToken
             },
             body: JSON.stringify(requestBody)
           });
@@ -5942,7 +5945,8 @@
             method: 'POST',
             headers: {
               'content-type': 'application/json',
-              accept: 'application/json'
+              accept: 'application/json',
+              'x-csrf-token': csrfToken
             },
             body: JSON.stringify({ workbook }),
             keepalive: true

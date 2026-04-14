@@ -35,16 +35,17 @@ const isRenderStaging =
   renderExternalUrl.includes('chronolab-staging.onrender.com') ||
   renderServiceName.includes('staging') ||
   renderGitBranch === 'staging';
-const defaultBootstrapEnabled = nodeEnv !== 'production' || isRenderStaging;
+const defaultMaintenanceEnabled = nodeEnv !== 'production' || isRenderStaging;
+const defaultSeedEnabled = nodeEnv === 'development' || nodeEnv === 'dev';
 
 const shouldBootstrapSeedData = parseEnvFlag(
   process.env.ENABLE_BOOTSTRAP_SEED,
-  defaultBootstrapEnabled
+  defaultSeedEnabled
 );
 
 const shouldRunStartupDataMaintenance = parseEnvFlag(
   process.env.ENABLE_STARTUP_DATA_MAINTENANCE,
-  defaultBootstrapEnabled
+  defaultMaintenanceEnabled
 );
 
 export const db = new Database(dbPath);
