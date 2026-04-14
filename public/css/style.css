@@ -3611,6 +3611,15 @@ body.admin-page select[size]:not([size='1']) {
   flex-wrap: wrap;
 }
 
+#salesRowActionHost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
 .sales-scope-inline-separator {
   color: var(--muted);
   font-weight: 700;
@@ -3803,6 +3812,7 @@ body.admin-page select[size]:not([size='1']) {
   justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .sales-date-panel {
@@ -3834,6 +3844,7 @@ body.admin-page select[size]:not([size='1']) {
   gap: 8px;
   padding-left: 0;
   border-left: 0;
+  min-height: 38px;
 }
 
 .sales-date-row-actions #salesRowActionHost {
@@ -5459,6 +5470,20 @@ body.theme-night .inline-file-preview-image {
 
   .header-actions .icon-action {
     padding: 7px 11px;
+  }
+
+  body.admin-page .menu-brand-model-summary {
+    padding-right: 108px;
+  }
+
+  body.admin-page .menu-brand-model-summary small {
+    max-width: calc(100% - 18px);
+    padding-right: 22px;
+  }
+
+  body.admin-page select {
+    background-position: right 12px center;
+    padding-right: 40px;
   }
 
   .icon-circle-action {
