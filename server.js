@@ -8685,7 +8685,7 @@ app.get('/shop', (req, res) => {
     const mergedModelOptionMapByBrand = {};
     const defaultFilterSeeds = getDefaultGroupFilterSeeds();
     supportsBrandFilter = allGroupFilterToggles.brand;
-    supportsModelFilter = allGroupFilterToggles.model && supportsBrandFilter;
+    supportsModelFilter = allGroupFilterToggles.model;
     supportsFactoryFilter = allGroupFilterToggles.factory;
 
     productGroupConfigs.forEach((groupConfig) => {
@@ -8779,6 +8779,28 @@ app.get('/shop', (req, res) => {
         .filter(Boolean);
       const discoveredModelOptions = normalizeProductFilterOptionList(discoveredModels);
       models = configuredModelsForBrand.length > 0 ? configuredModelsForBrand : discoveredModelOptions;
+    } else if (supportsModelFilter && !supportsBrandFilter) {
+      const configuredAllModels = normalizeProductFilterOptionList(
+        Object.values(mergedModelOptionMapByBrand).flat()
+      );
+      if (configuredAllModels.length > 0) {
+        models = configuredAllModels;
+      } else {
+        const discoveredModels = db
+          .prepare(
+            `
+              SELECT DISTINCT model
+              FROM products
+              WHERE is_active = 1
+                AND TRIM(COALESCE(model, '')) != ''
+              ORDER BY model ASC
+            `
+          )
+          .all()
+          .map((row) => normalizeProductFilterOption(row.model))
+          .filter(Boolean);
+        models = normalizeProductFilterOptionList(discoveredModels);
+      }
     } else {
       models = [];
     }
@@ -8786,7 +8808,16 @@ app.get('/shop', (req, res) => {
       ? selectedModelRaw
       : '';
     const modelOptionLabels = (() => {
-      if (!supportsModelFilter || !brand) return {};
+      if (!supportsModelFilter) return {};
+      if (!supportsBrandFilter) {
+        const flattenedLabelMap = {};
+        Object.values(mergedModelLabelsByBrand).forEach((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+          mergeFilterLabelMap(flattenedLabelMap, entry);
+        });
+        return flattenedLabelMap;
+      }
+      if (!brand) return {};
       const matchedBrandKey = findMatchingProductFilterKey(mergedModelLabelsByBrand, brand);
       if (!matchedBrandKey) return {};
       const source = mergedModelLabelsByBrand[matchedBrandKey];
@@ -8895,21 +8926,53 @@ app.get('/shop', (req, res) => {
     const modelOptionMap = getGroupModelOptionsByBrand(selectedGroupConfig);
     const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
     const fallbackModelOptions = getGroupModelOptions(selectedGroupConfig);
-    models = brand
-      ? getGroupModelOptionsForBrand(selectedGroupConfig, brand)
-      : hasModelOptionMap
-        ? []
-        : fallbackModelOptions;
-    supportsModelFilter = selectedGroupFilterToggles.model && supportsBrandFilter && (
+    supportsModelFilter = selectedGroupFilterToggles.model && (
       hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0
     );
+    models = brand
+      ? getGroupModelOptionsForBrand(selectedGroupConfig, brand)
+      : (supportsModelFilter && !supportsBrandFilter)
+        ? (() => {
+            const configuredAllModels = getGroupAllModelOptions(selectedGroupConfig);
+            if (configuredAllModels.length > 0) {
+              return configuredAllModels;
+            }
+            const discoveredModels = db
+              .prepare(
+                `
+                  SELECT DISTINCT model
+                  FROM products
+                  WHERE is_active = 1
+                    AND category_group = ?
+                    AND TRIM(COALESCE(model, '')) != ''
+                  ORDER BY model ASC
+                `
+              )
+              .all(group)
+              .map((row) => normalizeProductFilterOption(row.model))
+              .filter(Boolean);
+            return normalizeProductFilterOptionList(discoveredModels);
+          })()
+        : hasModelOptionMap
+          ? []
+          : fallbackModelOptions;
     if (!supportsModelFilter) {
       models = [];
     }
     model = supportsModelFilter && models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase())
       ? selectedModelRaw
       : '';
-    const modelOptionLabels = getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand);
+    const modelOptionLabels = supportsBrandFilter
+      ? getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand)
+      : (() => {
+          const flattenedLabelMap = {};
+          const rawByBrand = getGroupModelOptionLabelsByBrand(selectedGroupConfig);
+          Object.values(rawByBrand).forEach((entry) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return;
+            mergeFilterLabelMap(flattenedLabelMap, entry);
+          });
+          return flattenedLabelMap;
+        })();
     brandItems = supportsBrandFilter
       ? getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang)
       : [];
@@ -14477,11 +14540,6 @@ app.post('/admin/product-group/filter/visibility', requireAdmin, (req, res) => {
   const enableBrandFilter = req.body.enableBrandFilter === 'on';
   const enableModelFilter = req.body.enableModelFilter === 'on';
   const enableFactoryFilter = req.body.enableFactoryFilter === 'on';
-
-  if (!enableBrandFilter && enableModelFilter) {
-    setFlash(req, 'error', '모델 필터를 사용하려면 브랜드 필터를 함께 켜 주세요.');
-    return res.redirect(backPath);
-  }
 
   const nextGroups = [...configs];
   nextGroups[targetIndex] = {
