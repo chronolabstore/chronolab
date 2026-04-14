@@ -8592,6 +8592,7 @@ app.get('/shop', (req, res) => {
     const mergedBrandOptionSet = new Set();
     const mergedFactoryOptionSet = new Set();
     const mergedModelOptionMapByBrand = {};
+    const defaultFilterSeeds = getDefaultGroupFilterSeeds();
     productGroupConfigs.forEach((groupConfig) => {
       getGroupBrandOptions(groupConfig).forEach((value) => {
         const safeValue = normalizeProductFilterOption(value);
@@ -8606,6 +8607,25 @@ app.get('/shop', (req, res) => {
       mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
       mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, getGroupModelOptionsByBrand(groupConfig));
     });
+    getGroupBrandOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
+      const safeValue = normalizeProductFilterOption(value);
+      if (safeValue) mergedBrandOptionSet.add(safeValue);
+    });
+    getGroupBrandOptions(defaultFilterSeeds.simple || {}).forEach((value) => {
+      const safeValue = normalizeProductFilterOption(value);
+      if (safeValue) mergedBrandOptionSet.add(safeValue);
+    });
+    getGroupFactoryOptions(defaultFilterSeeds.factory || {}).forEach((value) => {
+      const safeValue = normalizeProductFilterOption(value);
+      if (safeValue) mergedFactoryOptionSet.add(safeValue);
+    });
+    mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.factory?.brandOptionLabels || {});
+    mergeFilterLabelMap(mergedBrandLabels, defaultFilterSeeds.simple?.brandOptionLabels || {});
+    mergeFilterLabelMap(mergedFactoryLabels, defaultFilterSeeds.factory?.factoryOptionLabels || {});
+    mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.factory?.modelOptionLabelsByBrand || {});
+    mergeModelLabelMapByBrand(mergedModelLabelsByBrand, defaultFilterSeeds.simple?.modelOptionLabelsByBrand || {});
+    mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.factory?.modelOptionsByBrand || {});
+    mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, defaultFilterSeeds.simple?.modelOptionsByBrand || {});
 
     const discoveredBrands = db
       .prepare(
