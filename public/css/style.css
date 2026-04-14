@@ -820,6 +820,28 @@ body.theme-night .hero-quick-grid a:hover {
   font-size: 0.84rem;
 }
 
+.upload-limit-warning {
+  color: #b42318;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  -webkit-text-stroke: 0.35px rgba(255, 255, 255, 0.72);
+  text-shadow:
+    -0.35px -0.35px 0 rgba(255, 255, 255, 0.66),
+    0.35px -0.35px 0 rgba(255, 255, 255, 0.66),
+    -0.35px 0.35px 0 rgba(255, 255, 255, 0.66),
+    0.35px 0.35px 0 rgba(255, 255, 255, 0.66);
+}
+
+body.theme-night .upload-limit-warning {
+  color: #fecaca;
+  -webkit-text-stroke: 0.35px rgba(15, 23, 42, 0.78);
+  text-shadow:
+    -0.35px -0.35px 0 rgba(15, 23, 42, 0.72),
+    0.35px -0.35px 0 rgba(15, 23, 42, 0.72),
+    -0.35px 0.35px 0 rgba(15, 23, 42, 0.72),
+    0.35px 0.35px 0 rgba(15, 23, 42, 0.72);
+}
+
 .danger-copy {
   color: var(--error-text);
   font-size: 0.8rem;
@@ -1304,28 +1326,10 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
 
 .detail-thumb-row {
   width: 100%;
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 9px;
-  padding: 2px 2px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
-
-.detail-thumb-row::-webkit-scrollbar {
-  height: 6px;
-}
-
-.detail-thumb-row::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.detail-thumb-row::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 999px;
+  padding: 2px 0 0;
 }
 
 .detail-thumb {
@@ -1335,9 +1339,8 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
   padding: 0;
   background: var(--chip);
   cursor: pointer;
-  flex: 0 0 92px;
-  width: 92px;
-  min-width: 92px;
+  width: 100%;
+  min-width: 0;
   aspect-ratio: 4 / 3;
 }
 
@@ -5556,14 +5559,14 @@ body.theme-night .inline-file-preview-image {
   }
 
   .detail-thumb-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
-    padding-bottom: 4px;
+    padding-top: 0;
   }
 
   .detail-thumb {
-    flex-basis: 76px;
-    width: 76px;
-    min-width: 76px;
+    width: 100%;
+    min-width: 0;
   }
 
   .admin-account-actions {
