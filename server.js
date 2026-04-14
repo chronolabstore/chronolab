@@ -6501,13 +6501,22 @@ function maskUsername(username = '') {
 }
 
 function sanitizePath(pathValue = '') {
-  if (!pathValue) {
+  const rawPath = String(pathValue || '').trim();
+  if (!rawPath) {
     return '/main';
   }
-  if (pathValue.startsWith('/')) {
-    return pathValue;
+
+  // Block absolute/protocol-relative URLs (e.g. https://..., //example.com)
+  if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(rawPath)) {
+    return '/main';
   }
-  return `/${pathValue}`;
+
+  const sanitized = rawPath.replace(/[\u0000-\u001f\u007f]/g, '');
+  if (!sanitized) {
+    return '/main';
+  }
+
+  return sanitized.startsWith('/') ? sanitized : `/${sanitized}`;
 }
 
 function normalizeHeroLeftBackgroundType(rawType = 'color') {
