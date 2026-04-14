@@ -1143,31 +1143,86 @@ function resetStagingMainAdminPasswordOnce() {
     return;
   }
 
-  const markerKey = 'stagingMainAdminPasswordResetV20260414';
+  const markerKey = 'stagingMainAdminCredentialResetV20260414V2';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
   }
 
   const targetUsername = 'admin';
   const nextPassword = 'Admin123!@#';
-  const targetAdmin = db
+  const adminNamedUser = db
     .prepare(
       `
-        SELECT id
+        SELECT id, is_admin
         FROM users
-        WHERE is_admin = 1
-          AND lower(username) = ?
+        WHERE lower(username) = ?
         LIMIT 1
       `
     )
     .get(targetUsername);
 
+  let targetAdminId = 0;
+  if (adminNamedUser && Number(adminNamedUser.is_admin || 0) === 1) {
+    targetAdminId = Number(adminNamedUser.id || 0);
+  }
+
+  if (targetAdminId <= 0) {
+    const primaryOrFirstAdmin = db
+      .prepare(
+        `
+          SELECT id
+          FROM users
+          WHERE is_admin = 1
+          ORDER BY
+            CASE
+              WHEN admin_role = 'PRIMARY' THEN 0
+              ELSE 1
+            END,
+            id ASC
+          LIMIT 1
+        `
+      )
+      .get();
+    targetAdminId = Number(primaryOrFirstAdmin?.id || 0);
+  }
+
+  if (targetAdminId <= 0) {
+    return;
+  }
+
+  // If "admin" username is not occupied, normalize the primary admin account to "admin" for predictable login.
+  if (!adminNamedUser) {
+    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
+  }
+
+  const targetAdmin = db
+    .prepare(
+      `
+        SELECT id, is_admin
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `
+    )
+    .get(targetAdminId);
   if (!targetAdmin) {
     return;
   }
 
   const passwordHash = bcrypt.hashSync(nextPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, targetAdmin.id);
+  db.prepare(
+    `
+      UPDATE users
+      SET
+        password_hash = ?,
+        is_blocked = 0,
+        blocked_reason = '',
+        admin_otp_secret = '',
+        admin_otp_enabled = 0,
+        admin_otp_enabled_at = NULL
+      WHERE id = ?
+    `
+  ).run(passwordHash, targetAdmin.id);
   setSetting(markerKey, '1');
 }
 
