@@ -8557,6 +8557,21 @@ app.get('/shop', (req, res) => {
       mergeFilterLabelMap(target[safeBrand], rawMap);
     });
   };
+  const mergeModelOptionMapByBrand = (target = {}, source = {}) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return;
+    Object.entries(source).forEach(([rawBrand, rawList]) => {
+      const safeBrand = normalizeProductFilterOption(rawBrand);
+      if (!safeBrand) return;
+      const normalizedList = normalizeProductFilterOptionList(rawList);
+      if (!target[safeBrand]) {
+        target[safeBrand] = [];
+      }
+      target[safeBrand] = normalizeProductFilterOptionList([
+        ...target[safeBrand],
+        ...normalizedList
+      ]);
+    });
+  };
 
   let supportsFactoryFilter = false;
   let supportsModelFilter = false;
@@ -8571,6 +8586,27 @@ app.get('/shop', (req, res) => {
   let modelItems = [];
 
   if (isAllGroup) {
+    const mergedBrandLabels = {};
+    const mergedFactoryLabels = {};
+    const mergedModelLabelsByBrand = {};
+    const mergedBrandOptionSet = new Set();
+    const mergedFactoryOptionSet = new Set();
+    const mergedModelOptionMapByBrand = {};
+    productGroupConfigs.forEach((groupConfig) => {
+      getGroupBrandOptions(groupConfig).forEach((value) => {
+        const safeValue = normalizeProductFilterOption(value);
+        if (safeValue) mergedBrandOptionSet.add(safeValue);
+      });
+      getGroupFactoryOptions(groupConfig).forEach((value) => {
+        const safeValue = normalizeProductFilterOption(value);
+        if (safeValue) mergedFactoryOptionSet.add(safeValue);
+      });
+      mergeFilterLabelMap(mergedBrandLabels, getGroupBrandOptionLabels(groupConfig));
+      mergeFilterLabelMap(mergedFactoryLabels, getGroupFactoryOptionLabels(groupConfig));
+      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
+      mergeModelOptionMapByBrand(mergedModelOptionMapByBrand, getGroupModelOptionsByBrand(groupConfig));
+    });
+
     const discoveredBrands = db
       .prepare(
         `
@@ -8583,10 +8619,16 @@ app.get('/shop', (req, res) => {
       .all()
       .map((row) => normalizeProductFilterOption(row.brand))
       .filter(Boolean);
-    brands = normalizeProductFilterOptionList(discoveredBrands);
+    const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
+    const mergedBrandOptions = normalizeProductFilterOptionList(Array.from(mergedBrandOptionSet));
+    brands = mergedBrandOptions.length > 0 ? mergedBrandOptions : discoveredBrandOptions;
     brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
 
     if (brand) {
+      const matchedModelMapBrand = findMatchingProductFilterKey(mergedModelOptionMapByBrand, brand);
+      const configuredModelsForBrand = matchedModelMapBrand
+        ? normalizeProductFilterOptionList(mergedModelOptionMapByBrand[matchedModelMapBrand] || [])
+        : [];
       const discoveredModels = db
         .prepare(
           `
@@ -8600,12 +8642,14 @@ app.get('/shop', (req, res) => {
         .all(brand)
         .map((row) => normalizeProductFilterOption(row.model))
         .filter(Boolean);
-      models = normalizeProductFilterOptionList(discoveredModels);
+      const discoveredModelOptions = normalizeProductFilterOptionList(discoveredModels);
+      models = configuredModelsForBrand.length > 0 ? configuredModelsForBrand : discoveredModelOptions;
     } else {
       models = [];
     }
     model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
 
+    const mergedFactoryOptions = normalizeProductFilterOptionList(Array.from(mergedFactoryOptionSet));
     const discoveredFactoriesAll = db
       .prepare(
         `
@@ -8619,7 +8663,7 @@ app.get('/shop', (req, res) => {
       .all()
       .map((row) => normalizeProductFilterOption(row.factory_name))
       .filter(Boolean);
-    supportsFactoryFilter = discoveredFactoriesAll.length > 0;
+    supportsFactoryFilter = mergedFactoryOptions.length > 0 || discoveredFactoriesAll.length > 0;
     const factoryWhere = ['is_active = 1', "TRIM(COALESCE(factory_name, '')) != ''"];
     const factoryParams = [];
     if (brand) {
@@ -8642,19 +8686,12 @@ app.get('/shop', (req, res) => {
       .all(...factoryParams)
       .map((row) => normalizeProductFilterOption(row.factory_name))
       .filter(Boolean);
-    factories = normalizeProductFilterOptionList(discoveredFactoriesFiltered);
+    const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactoriesFiltered);
+    factories = mergedFactoryOptions.length > 0 ? mergedFactoryOptions : discoveredFactoryOptions;
     factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
       ? selectedFactoryRaw
       : '';
 
-    const mergedBrandLabels = {};
-    const mergedFactoryLabels = {};
-    const mergedModelLabelsByBrand = {};
-    productGroupConfigs.forEach((groupConfig) => {
-      mergeFilterLabelMap(mergedBrandLabels, getGroupBrandOptionLabels(groupConfig));
-      mergeFilterLabelMap(mergedFactoryLabels, getGroupFactoryOptionLabels(groupConfig));
-      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
-    });
     const modelOptionLabels = (() => {
       if (!brand) return {};
       const matchedBrandKey = findMatchingProductFilterKey(mergedModelLabelsByBrand, brand);
