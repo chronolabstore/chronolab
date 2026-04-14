@@ -1139,7 +1139,7 @@ function ensureAdminUser() {
 }
 
 function resetStagingMainAdminPasswordOnce() {
-  const markerKey = 'stagingMainAdminCredentialResetV20260414V4';
+  const markerKey = 'stagingMainAdminCredentialResetV20260414V5';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
   }
@@ -1149,7 +1149,7 @@ function resetStagingMainAdminPasswordOnce() {
   const adminNamedUser = db
     .prepare(
       `
-        SELECT id, is_admin
+        SELECT id, email, is_admin
         FROM users
         WHERE lower(username) = ?
         LIMIT 1
@@ -1160,9 +1160,17 @@ function resetStagingMainAdminPasswordOnce() {
   let targetAdminId = 0;
   if (adminNamedUser && Number(adminNamedUser.is_admin || 0) === 1) {
     targetAdminId = Number(adminNamedUser.id || 0);
-  }
-
-  if (targetAdminId <= 0) {
+  } else if (adminNamedUser) {
+    // If "admin" exists as a member account, promote it to admin for staging recovery.
+    targetAdminId = Number(adminNamedUser.id || 0);
+    db.prepare(
+      `
+        UPDATE users
+        SET is_admin = 1, admin_role = 'PRIMARY'
+        WHERE id = ?
+      `
+    ).run(targetAdminId);
+  } else {
     const primaryOrFirstAdmin = db
       .prepare(
         `
@@ -1180,37 +1188,19 @@ function resetStagingMainAdminPasswordOnce() {
       )
       .get();
     targetAdminId = Number(primaryOrFirstAdmin?.id || 0);
-  }
-
-  if (targetAdminId <= 0) {
-    return;
-  }
-
-  // If "admin" username is not occupied, normalize the primary admin account to "admin" for predictable login.
-  if (!adminNamedUser) {
-    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
-  } else if (Number(adminNamedUser.is_admin || 0) !== 1) {
-    // If a non-admin user already occupies "admin", free the username for the primary admin account.
-    let fallbackUsername = `member${Number(adminNamedUser.id || 0)}`;
-    let dedupe = 1;
-    while (
-      db
-        .prepare(
-          `
-            SELECT id
-            FROM users
-            WHERE lower(username) = lower(?)
-              AND id != ?
-            LIMIT 1
-          `
-        )
-        .get(fallbackUsername, adminNamedUser.id)
-    ) {
-      fallbackUsername = `member${Number(adminNamedUser.id || 0)}_${dedupe}`;
-      dedupe += 1;
+    if (targetAdminId > 0) {
+      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
+    } else {
+      const fallbackEmail = `admin+staging-${Date.now()}@chronolab.local`;
+      const initialHash = bcrypt.hashSync(nextPassword, 10);
+      const inserted = db.prepare(
+        `
+          INSERT INTO users (email, username, full_name, phone, password_hash, agreed_terms, is_admin, admin_role)
+          VALUES (?, ?, ?, '', ?, 1, 1, 'PRIMARY')
+        `
+      ).run(fallbackEmail, targetUsername, 'Staging Admin', initialHash);
+      targetAdminId = Number(inserted.lastInsertRowid || 0);
     }
-    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(fallbackUsername, adminNamedUser.id);
-    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
   }
 
   const targetAdmin = db
