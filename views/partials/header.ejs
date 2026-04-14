@@ -56,10 +56,14 @@
             <% if (!ctx.currentUser.isAdminOtpEnabled) { %>
               <a href="/admin/otp" class="chip"><%= ctx.lang === 'en' ? 'OTP' : 'OTP 설정' %></a>
             <% } %>
-            <a href="/admin/logout" class="chip"><%= ctx.lang === 'en' ? 'Admin Logout' : '어드민 로그아웃' %></a>
+            <form method="post" action="/admin/logout" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= ctx.csrfToken || '' %>" />
+              <button type="submit" class="chip"><%= ctx.lang === 'en' ? 'Admin Logout' : '어드민 로그아웃' %></button>
+            </form>
           <% } else { %>
             <span class="chip muted"><%= ctx.currentUser.username %></span>
             <form method="post" action="/logout" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= ctx.csrfToken || '' %>" />
               <button type="submit" class="chip"><%= ctx.t('logout') %></button>
             </form>
           <% } %>
@@ -77,6 +81,7 @@
             <% } %>
           </a>
           <form method="post" action="/logout" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= ctx.csrfToken || '' %>" />
             <button type="submit" class="icon-circle-action" aria-label="<%= ctx.lang === 'en' ? 'Logout' : '로그아웃' %>" title="<%= ctx.lang === 'en' ? 'Logout' : '로그아웃' %>">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M14 17.5 19.5 12 14 6.5" />
