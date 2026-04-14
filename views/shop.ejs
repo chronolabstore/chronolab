@@ -54,16 +54,18 @@
     </div>
   </div>
 
-  <div class="filter-group">
-    <h4><%= isEn ? 'Brand' : '브랜드' %></h4>
-    <div class="chip-row chip-scroll-row">
-      <a href="<%= makeShopHref({ brand: '', model: '' }) %>" class="chip filter-chip <%= safeBrand ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
-      <% safeBrandItems.forEach((item) => { %>
-        <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
-        <a href="<%= makeShopHref({ brand: value, model: '' }) %>" class="chip filter-chip <%= safeBrand === value ? 'dark' : '' %>"><%= label %></a>
-      <% }) %>
+  <% if (supportsBrandFilter) { %>
+    <div class="filter-group">
+      <h4><%= isEn ? 'Brand' : '브랜드' %></h4>
+      <div class="chip-row chip-scroll-row">
+        <a href="<%= makeShopHref({ brand: '', model: '' }) %>" class="chip filter-chip <%= safeBrand ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
+        <% safeBrandItems.forEach((item) => { %>
+          <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
+          <a href="<%= makeShopHref({ brand: value, model: '' }) %>" class="chip filter-chip <%= safeBrand === value ? 'dark' : '' %>"><%= label %></a>
+        <% }) %>
+      </div>
     </div>
-  </div>
+  <% } %>
 
   <% if (supportsModelFilter) { %>
     <div class="filter-group">
