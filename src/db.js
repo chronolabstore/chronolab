@@ -1139,13 +1139,17 @@ function ensureAdminUser() {
 }
 
 function resetStagingMainAdminPasswordOnce() {
-  const markerKey = 'stagingMainAdminCredentialResetV20260414V5';
+  if (!isRenderStaging) {
+    return;
+  }
+
+  const markerKey = 'stagingMainAdminCredentialResetV20260414V6';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
   }
 
   const targetUsername = 'admin';
-  const nextPassword = 'Admin123!@#';
+  const nextPassword = 'Admin!234';
   const adminNamedUser = db
     .prepare(
       `
