@@ -1138,6 +1138,39 @@ function ensureAdminUser() {
   ).run(bootstrapEmail, bootstrapUsername, 'Main Admin', passwordHash);
 }
 
+function resetStagingMainAdminPasswordOnce() {
+  if (!isRenderStaging) {
+    return;
+  }
+
+  const markerKey = 'stagingMainAdminPasswordResetV20260414';
+  if (String(getSetting(markerKey, '0') || '0') === '1') {
+    return;
+  }
+
+  const targetUsername = 'admin';
+  const nextPassword = 'Admin123!@#';
+  const targetAdmin = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE is_admin = 1
+          AND lower(username) = ?
+        LIMIT 1
+      `
+    )
+    .get(targetUsername);
+
+  if (!targetAdmin) {
+    return;
+  }
+
+  const passwordHash = bcrypt.hashSync(nextPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, targetAdmin.id);
+  setSetting(markerKey, '1');
+}
+
 function normalizeAdminRoles() {
   if (!shouldRunStartupDataMaintenance) {
     return;
@@ -1813,6 +1846,7 @@ export function initDb() {
   upsertMetric('totalVisits', 0);
 
   ensureAdminUser();
+  resetStagingMainAdminPasswordOnce();
   normalizeAdminRoles();
   if (shouldBootstrapSeedData) {
     const demoUserId = ensureDemoMemberUser();
