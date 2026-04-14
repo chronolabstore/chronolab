@@ -8489,29 +8489,46 @@ app.get('/shop', (req, res) => {
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupMap = getProductGroupMap(productGroupConfigs);
   const fallbackGroups = productGroupConfigs.map((groupConfig) => groupConfig.key);
+  const SHOP_ALL_GROUP_KEY = 'all';
   if (fallbackGroups.length === 0) {
     fallbackGroups.push(...SHOP_PRODUCT_GROUPS);
   }
 
   const groupRaw = String(req.query.group || '').trim();
-  const group = fallbackGroups.includes(groupRaw) ? groupRaw : fallbackGroups[0];
-  const selectedGroupConfig = productGroupMap.get(group) || {
-    key: group,
-    labelKo: group,
-    labelEn: group,
-    mode: PRODUCT_GROUP_MODE.SIMPLE,
-    brandOptions: [],
-    factoryOptions: [],
-    modelOptions: [],
-    modelOptionsByBrand: {},
-    brandOptionLabels: {},
-    factoryOptionLabels: {},
-    modelOptionLabelsByBrand: {},
-    customFields: []
-  };
-  const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
-  const groupFactorySeedOptions = getGroupFactoryOptions(selectedGroupConfig);
-  const supportsFactoryFilter = (
+  const isAllGroup = groupRaw.toLowerCase() === SHOP_ALL_GROUP_KEY;
+  const group = isAllGroup ? SHOP_ALL_GROUP_KEY : (fallbackGroups.includes(groupRaw) ? groupRaw : fallbackGroups[0]);
+  const selectedGroupConfig = isAllGroup
+    ? {
+        key: SHOP_ALL_GROUP_KEY,
+        labelKo: '전체',
+        labelEn: 'All',
+        mode: PRODUCT_GROUP_MODE.SIMPLE,
+        brandOptions: [],
+        factoryOptions: [],
+        modelOptions: [],
+        modelOptionsByBrand: {},
+        brandOptionLabels: {},
+        factoryOptionLabels: {},
+        modelOptionLabelsByBrand: {},
+        customFields: []
+      }
+    : (productGroupMap.get(group) || {
+        key: group,
+        labelKo: group,
+        labelEn: group,
+        mode: PRODUCT_GROUP_MODE.SIMPLE,
+        brandOptions: [],
+        factoryOptions: [],
+        modelOptions: [],
+        modelOptionsByBrand: {},
+        brandOptionLabels: {},
+        factoryOptionLabels: {},
+        modelOptionLabelsByBrand: {},
+        customFields: []
+      });
+  const factoryTemplateGroup = !isAllGroup && isFactoryLikeGroup(selectedGroupConfig);
+  const groupFactorySeedOptions = !isAllGroup ? getGroupFactoryOptions(selectedGroupConfig) : [];
+  const supportsFactoryFilter = !isAllGroup && (
     factoryTemplateGroup ||
     groupFactorySeedOptions.length > 0 ||
     String(group || '').trim() === '현지중고'
@@ -8527,11 +8544,12 @@ app.get('/shop', (req, res) => {
       `
         SELECT DISTINCT brand
         FROM products
-        WHERE is_active = 1 AND category_group = ?
+        WHERE is_active = 1
+          ${isAllGroup ? '' : 'AND category_group = ?'}
         ORDER BY brand ASC
       `
     )
-    .all(group)
+    .all(...(isAllGroup ? [] : [group]))
     .map((row) => normalizeProductFilterOption(row.brand))
     .filter(Boolean);
   const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
@@ -8580,8 +8598,13 @@ app.get('/shop', (req, res) => {
   const factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
   const modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
 
-  const where = ['is_active = 1', 'category_group = ?'];
-  const params = [group];
+  const where = ['is_active = 1'];
+  const params = [];
+
+  if (!isAllGroup) {
+    where.push('category_group = ?');
+    params.push(group);
+  }
 
   if (brand) {
     where.push('brand = ?');
@@ -8631,7 +8654,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
-    supportsModelFilter: hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0,
+    supportsModelFilter: !isAllGroup && (hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0),
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,

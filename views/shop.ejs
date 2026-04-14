@@ -47,6 +47,7 @@
 
   <div class="filter-group">
     <div class="chip-row">
+      <a href="/shop?group=all" class="chip filter-chip <%= group === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
       <% productGroups.forEach((item) => { %>
         <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip filter-chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
       <% }) %>
