@@ -8495,8 +8495,15 @@ app.get('/shop', (req, res) => {
   }
 
   const groupRaw = String(req.query.group || '').trim();
-  const isAllGroup = groupRaw.toLowerCase() === SHOP_ALL_GROUP_KEY;
-  const group = isAllGroup ? SHOP_ALL_GROUP_KEY : (fallbackGroups.includes(groupRaw) ? groupRaw : fallbackGroups[0]);
+  const isAllGroupRequested = groupRaw.toLowerCase() === SHOP_ALL_GROUP_KEY;
+  const group = (
+    !groupRaw ||
+    isAllGroupRequested ||
+    !fallbackGroups.includes(groupRaw)
+  )
+    ? SHOP_ALL_GROUP_KEY
+    : groupRaw;
+  const isAllGroup = group === SHOP_ALL_GROUP_KEY;
   const selectedGroupConfig = isAllGroup
     ? {
         key: SHOP_ALL_GROUP_KEY,
@@ -8526,77 +8533,207 @@ app.get('/shop', (req, res) => {
         modelOptionLabelsByBrand: {},
         customFields: []
       });
-  const factoryTemplateGroup = !isAllGroup && isFactoryLikeGroup(selectedGroupConfig);
-  const groupFactorySeedOptions = !isAllGroup ? getGroupFactoryOptions(selectedGroupConfig) : [];
-  const supportsFactoryFilter = !isAllGroup && (
-    factoryTemplateGroup ||
-    groupFactorySeedOptions.length > 0 ||
-    String(group || '').trim() === '현지중고'
-  );
   const selectedBrandRaw = normalizeProductFilterOption(req.query.brand || '');
-  const selectedFactoryRaw = supportsFactoryFilter
-    ? normalizeProductFilterOption(req.query.factory || '')
-    : '';
+  const selectedFactoryRaw = normalizeProductFilterOption(req.query.factory || '');
   const selectedModelRaw = normalizeProductFilterOption(req.query.model || '');
 
-  const discoveredBrands = db
-    .prepare(
-      `
-        SELECT DISTINCT brand
-        FROM products
-        WHERE is_active = 1
-          ${isAllGroup ? '' : 'AND category_group = ?'}
-        ORDER BY brand ASC
-      `
-    )
-    .all(...(isAllGroup ? [] : [group]))
-    .map((row) => normalizeProductFilterOption(row.brand))
-    .filter(Boolean);
-  const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
-  const configuredBrands = getGroupBrandOptions(selectedGroupConfig);
-  const configuredBrandLabels = getGroupBrandOptionLabels(selectedGroupConfig);
-  const brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
+  const mergeFilterLabelMap = (target = {}, source = {}) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return;
+    Object.entries(source).forEach(([rawKey, value]) => {
+      const safeKey = normalizeProductFilterOption(rawKey);
+      if (!safeKey || Object.prototype.hasOwnProperty.call(target, safeKey)) return;
+      target[safeKey] = value;
+    });
+  };
 
-  const discoveredFactories = supportsFactoryFilter
-    ? db
+  const mergeModelLabelMapByBrand = (target = {}, source = {}) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return;
+    Object.entries(source).forEach(([rawBrand, rawMap]) => {
+      const safeBrand = normalizeProductFilterOption(rawBrand);
+      if (!safeBrand || !rawMap || typeof rawMap !== 'object' || Array.isArray(rawMap)) return;
+      if (!target[safeBrand]) {
+        target[safeBrand] = {};
+      }
+      mergeFilterLabelMap(target[safeBrand], rawMap);
+    });
+  };
+
+  let supportsFactoryFilter = false;
+  let supportsModelFilter = false;
+  let brands = [];
+  let factories = [];
+  let models = [];
+  let brand = '';
+  let factory = '';
+  let model = '';
+  let brandItems = [];
+  let factoryItems = [];
+  let modelItems = [];
+
+  if (isAllGroup) {
+    const discoveredBrands = db
+      .prepare(
+        `
+          SELECT DISTINCT brand
+          FROM products
+          WHERE is_active = 1
+          ORDER BY brand ASC
+        `
+      )
+      .all()
+      .map((row) => normalizeProductFilterOption(row.brand))
+      .filter(Boolean);
+    brands = normalizeProductFilterOptionList(discoveredBrands);
+    brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
+
+    if (brand) {
+      const discoveredModels = db
         .prepare(
           `
-            SELECT DISTINCT factory_name
+            SELECT DISTINCT model
             FROM products
-            WHERE is_active = 1 AND category_group = ?
-            ORDER BY factory_name ASC
+            WHERE is_active = 1
+              AND brand = ?
+            ORDER BY model ASC
           `
         )
-        .all(group)
-        .map((row) => normalizeProductFilterOption(row.factory_name))
-        .filter(Boolean)
-    : [];
-  const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
-  const configuredFactories = groupFactorySeedOptions;
-  const configuredFactoryLabels = getGroupFactoryOptionLabels(selectedGroupConfig);
-  const factories = supportsFactoryFilter
-    ? configuredFactories.length > 0
-      ? configuredFactories
-      : discoveredFactoryOptions
-    : [];
+        .all(brand)
+        .map((row) => normalizeProductFilterOption(row.model))
+        .filter(Boolean);
+      models = normalizeProductFilterOptionList(discoveredModels);
+    } else {
+      models = [];
+    }
+    model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
 
-  const brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
-  const factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
-    ? selectedFactoryRaw
-    : '';
-  const modelOptionMap = getGroupModelOptionsByBrand(selectedGroupConfig);
-  const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
-  const fallbackModelOptions = getGroupModelOptions(selectedGroupConfig);
-  const models = brand
-    ? getGroupModelOptionsForBrand(selectedGroupConfig, brand)
-    : hasModelOptionMap
-      ? []
-      : fallbackModelOptions;
-  const model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
-  const modelOptionLabels = getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand);
-  const brandItems = getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang);
-  const factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
-  const modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
+    const discoveredFactoriesAll = db
+      .prepare(
+        `
+          SELECT DISTINCT factory_name
+          FROM products
+          WHERE is_active = 1
+            AND TRIM(COALESCE(factory_name, '')) != ''
+          ORDER BY factory_name ASC
+        `
+      )
+      .all()
+      .map((row) => normalizeProductFilterOption(row.factory_name))
+      .filter(Boolean);
+    supportsFactoryFilter = discoveredFactoriesAll.length > 0;
+    const factoryWhere = ['is_active = 1', "TRIM(COALESCE(factory_name, '')) != ''"];
+    const factoryParams = [];
+    if (brand) {
+      factoryWhere.push('brand = ?');
+      factoryParams.push(brand);
+    }
+    if (model) {
+      factoryWhere.push('model = ?');
+      factoryParams.push(model);
+    }
+    const discoveredFactoriesFiltered = db
+      .prepare(
+        `
+          SELECT DISTINCT factory_name
+          FROM products
+          WHERE ${factoryWhere.join(' AND ')}
+          ORDER BY factory_name ASC
+        `
+      )
+      .all(...factoryParams)
+      .map((row) => normalizeProductFilterOption(row.factory_name))
+      .filter(Boolean);
+    factories = normalizeProductFilterOptionList(discoveredFactoriesFiltered);
+    factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
+      ? selectedFactoryRaw
+      : '';
+
+    const mergedBrandLabels = {};
+    const mergedFactoryLabels = {};
+    const mergedModelLabelsByBrand = {};
+    productGroupConfigs.forEach((groupConfig) => {
+      mergeFilterLabelMap(mergedBrandLabels, getGroupBrandOptionLabels(groupConfig));
+      mergeFilterLabelMap(mergedFactoryLabels, getGroupFactoryOptionLabels(groupConfig));
+      mergeModelLabelMapByBrand(mergedModelLabelsByBrand, getGroupModelOptionLabelsByBrand(groupConfig));
+    });
+    const modelOptionLabels = (() => {
+      if (!brand) return {};
+      const matchedBrandKey = findMatchingProductFilterKey(mergedModelLabelsByBrand, brand);
+      if (!matchedBrandKey) return {};
+      const source = mergedModelLabelsByBrand[matchedBrandKey];
+      return source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    })();
+
+    brandItems = getProductFilterOptionItems(brands, mergedBrandLabels, res.locals.ctx.lang);
+    factoryItems = getProductFilterOptionItems(factories, mergedFactoryLabels, res.locals.ctx.lang);
+    modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
+    supportsModelFilter = brands.length > 0 || models.length > 0;
+  } else {
+    const factoryTemplateGroup = isFactoryLikeGroup(selectedGroupConfig);
+    const groupFactorySeedOptions = getGroupFactoryOptions(selectedGroupConfig);
+    supportsFactoryFilter = (
+      factoryTemplateGroup ||
+      groupFactorySeedOptions.length > 0 ||
+      String(group || '').trim() === '현지중고'
+    );
+    const discoveredBrands = db
+      .prepare(
+        `
+          SELECT DISTINCT brand
+          FROM products
+          WHERE is_active = 1 AND category_group = ?
+          ORDER BY brand ASC
+        `
+      )
+      .all(group)
+      .map((row) => normalizeProductFilterOption(row.brand))
+      .filter(Boolean);
+    const discoveredBrandOptions = normalizeProductFilterOptionList(discoveredBrands);
+    const configuredBrands = getGroupBrandOptions(selectedGroupConfig);
+    const configuredBrandLabels = getGroupBrandOptionLabels(selectedGroupConfig);
+    brands = configuredBrands.length > 0 ? configuredBrands : discoveredBrandOptions;
+
+    const discoveredFactories = supportsFactoryFilter
+      ? db
+          .prepare(
+            `
+              SELECT DISTINCT factory_name
+              FROM products
+              WHERE is_active = 1 AND category_group = ?
+              ORDER BY factory_name ASC
+            `
+          )
+          .all(group)
+          .map((row) => normalizeProductFilterOption(row.factory_name))
+          .filter(Boolean)
+      : [];
+    const discoveredFactoryOptions = normalizeProductFilterOptionList(discoveredFactories);
+    const configuredFactories = groupFactorySeedOptions;
+    const configuredFactoryLabels = getGroupFactoryOptionLabels(selectedGroupConfig);
+    factories = supportsFactoryFilter
+      ? configuredFactories.length > 0
+        ? configuredFactories
+        : discoveredFactoryOptions
+      : [];
+
+    brand = brands.some((item) => item.toLowerCase() === selectedBrandRaw.toLowerCase()) ? selectedBrandRaw : '';
+    factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
+      ? selectedFactoryRaw
+      : '';
+    const modelOptionMap = getGroupModelOptionsByBrand(selectedGroupConfig);
+    const hasModelOptionMap = Object.keys(modelOptionMap).length > 0;
+    const fallbackModelOptions = getGroupModelOptions(selectedGroupConfig);
+    models = brand
+      ? getGroupModelOptionsForBrand(selectedGroupConfig, brand)
+      : hasModelOptionMap
+        ? []
+        : fallbackModelOptions;
+    model = models.some((item) => item.toLowerCase() === selectedModelRaw.toLowerCase()) ? selectedModelRaw : '';
+    const modelOptionLabels = getGroupModelOptionLabelsForBrand(selectedGroupConfig, brand);
+    brandItems = getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang);
+    factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
+    modelItems = getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang);
+    supportsModelFilter = hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0;
+  }
 
   const where = ['is_active = 1'];
   const params = [];
@@ -8654,7 +8791,7 @@ app.get('/shop', (req, res) => {
     productGroups: fallbackGroups,
     productGroupConfigs,
     selectedGroupConfig,
-    supportsModelFilter: !isAllGroup && (hasModelOptionMap || fallbackModelOptions.length > 0 || brands.length > 0),
+    supportsModelFilter,
     supportsFactoryFilter,
     groupLabelMap: getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang),
     brand,
