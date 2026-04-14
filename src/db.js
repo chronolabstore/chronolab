@@ -1139,7 +1139,7 @@ function ensureAdminUser() {
 }
 
 function resetStagingMainAdminPasswordOnce() {
-  const markerKey = 'stagingMainAdminCredentialResetV20260414V3';
+  const markerKey = 'stagingMainAdminCredentialResetV20260414V4';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
   }
@@ -1188,6 +1188,28 @@ function resetStagingMainAdminPasswordOnce() {
 
   // If "admin" username is not occupied, normalize the primary admin account to "admin" for predictable login.
   if (!adminNamedUser) {
+    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
+  } else if (Number(adminNamedUser.is_admin || 0) !== 1) {
+    // If a non-admin user already occupies "admin", free the username for the primary admin account.
+    let fallbackUsername = `member${Number(adminNamedUser.id || 0)}`;
+    let dedupe = 1;
+    while (
+      db
+        .prepare(
+          `
+            SELECT id
+            FROM users
+            WHERE lower(username) = lower(?)
+              AND id != ?
+            LIMIT 1
+          `
+        )
+        .get(fallbackUsername, adminNamedUser.id)
+    ) {
+      fallbackUsername = `member${Number(adminNamedUser.id || 0)}_${dedupe}`;
+      dedupe += 1;
+    }
+    db.prepare('UPDATE users SET username = ? WHERE id = ?').run(fallbackUsername, adminNamedUser.id);
     db.prepare('UPDATE users SET username = ? WHERE id = ?').run(targetUsername, targetAdminId);
   }
 
