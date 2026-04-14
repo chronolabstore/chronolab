@@ -7920,6 +7920,26 @@ function rejectInvalidCsrfTokenRequest(req, res) {
   return res.redirect(safeBackPath(req, '/main'));
 }
 
+function requireAuthenticatedMultipartCsrf(req, res, next) {
+  const method = String(req.method || '').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return next();
+  }
+  if (Number(req?.session?.userId || 0) <= 0) {
+    return next();
+  }
+  const contentType = String(req.get('content-type') || '').toLowerCase();
+  if (!contentType.startsWith('multipart/form-data')) {
+    return next();
+  }
+  const expectedToken = ensureSessionCsrfToken(req);
+  const providedToken = readCsrfTokenFromRequest(req);
+  if (isCsrfTokenEqual(expectedToken, providedToken)) {
+    return next();
+  }
+  return rejectInvalidCsrfTokenRequest(req, res);
+}
+
 function cleanupAuthAttemptStore(nowMs) {
   if (authAttemptStore.size <= 1000) {
     return;
@@ -9866,7 +9886,7 @@ app.post('/mypage/address-book/:id/delete', requireAuth, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/mypage/profile/avatar', requireAuth, upload.single('profileImage'), (req, res) => {
+app.post('/mypage/profile/avatar', requireAuth, upload.single('profileImage'), requireAuthenticatedMultipartCsrf, (req, res) => {
   const backPath = '/mypage?section=info';
 
   if (!req.file) {
@@ -10060,7 +10080,7 @@ app.get('/review/new', requireAuth, (req, res) => {
   res.render('review-form', { title: 'Write Review', products });
 });
 
-app.post('/review/new', requireAuth, upload.single('image'), (req, res) => {
+app.post('/review/new', requireAuth, upload.single('image'), requireAuthenticatedMultipartCsrf, (req, res) => {
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
   const productId = req.body.productId ? Number(req.body.productId) : null;
@@ -10108,7 +10128,7 @@ app.get('/inquiry/new', requireAuth, (req, res) => {
   res.render('inquiry-form', { title: 'Write Inquiry' });
 });
 
-app.post('/inquiry/new', requireAuth, upload.array('image', 20), (req, res) => {
+app.post('/inquiry/new', requireAuth, upload.array('image', 20), requireAuthenticatedMultipartCsrf, (req, res) => {
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
 
@@ -14735,6 +14755,7 @@ app.post(
     { name: 'backgroundImage', maxCount: 1 },
     { name: 'heroLeftBackgroundImage', maxCount: 1 }
   ]),
+  requireAuthenticatedMultipartCsrf,
   (req, res) => {
     const hasThemePayload = [
       req.body.dayHeaderColor,
@@ -15035,7 +15056,7 @@ app.post(
   }
 );
 
-app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyncRoute(async (req, res) => {
+app.post('/admin/product/create', requireAdmin, upload.array('images', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=upload');
   const productGroupConfigs = getProductGroupConfigs();
   const defaultFilterSeeds = getDefaultGroupFilterSeeds();
@@ -15151,7 +15172,7 @@ app.post('/admin/product/create', requireAdmin, upload.array('images', 20), asyn
   res.redirect(backPath);
 }));
 
-app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), asyncRoute(async (req, res) => {
+app.post('/admin/product/:id/update', requireAdmin, upload.array('images', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/products?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -15472,7 +15493,7 @@ app.post('/admin/product-badge/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/notice/create', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/notice/create', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, (req, res) => {
   const backPath = safeBackPath(req, '/admin/notices?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
@@ -15499,7 +15520,7 @@ app.post('/admin/notice/create', requireAdmin, upload.array('image', 20), (req, 
   res.redirect(backPath);
 });
 
-app.post('/admin/notice/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/notice/:id/update', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, (req, res) => {
   const backPath = safeBackPath(req, '/admin/notices?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -15568,7 +15589,7 @@ app.post('/admin/notice/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/news/create', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
+app.post('/admin/news/create', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=create');
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
@@ -15595,7 +15616,7 @@ app.post('/admin/news/create', requireAdmin, upload.array('image', 20), asyncRou
   res.redirect(backPath);
 }));
 
-app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
+app.post('/admin/news/:id/update', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/news?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -15665,7 +15686,7 @@ app.post('/admin/news/:id/delete', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
+app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=create');
   const orderNo = String(req.body.orderNo || '').trim();
   const note = String(req.body.note || '').trim();
@@ -15689,7 +15710,7 @@ app.post('/admin/qc/create', requireAdmin, upload.array('image', 20), asyncRoute
   res.redirect(backPath);
 }));
 
-app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), asyncRoute(async (req, res) => {
+app.post('/admin/qc/:id/update', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/qc?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -16118,7 +16139,7 @@ app.post('/admin/inquiry/:id/reply', requireAdmin, (req, res) => {
   res.redirect(backPath);
 });
 
-app.post('/admin/inquiry/:id/update', requireAdmin, upload.array('image', 20), (req, res) => {
+app.post('/admin/inquiry/:id/update', requireAdmin, upload.array('image', 20), requireAuthenticatedMultipartCsrf, (req, res) => {
   const backPath = safeBackPath(req, '/admin/inquiries?section=list');
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
