@@ -289,6 +289,8 @@
     if (!matched) return isEn ? 'Default' : '기본';
     return isEn ? (matched.labelEn || matched.labelKo || matched.key) : (matched.labelKo || matched.labelEn || matched.key);
   };
+  const memberLevelThemeClass = (themeKey) => `member-level-theme-${normalizeBadgeThemeKey(themeKey)}`;
+  const memberLevelThemeLabel = (themeKey) => badgeThemeLabel(themeKey);
   const editingBadgeIds = Array.isArray(editingItem?.product_badges)
     ? editingItem.product_badges
         .map((badge) => Number.parseInt(String(badge?.id ?? ''), 10))
@@ -1140,8 +1142,20 @@
           <h4><%= isEn ? 'Add Member Level' : '회원 레벨 추가' %></h4>
           <form method="post" action="/admin/member-level/add" class="form-grid">
             <label>
-              <%= isEn ? 'Level Name' : '등급 명칭' %>
-              <input type="text" name="levelName" maxlength="40" required />
+              <%= isEn ? 'Level Name (KR)' : '등급 명칭 (KR)' %>
+              <input type="text" name="levelNameKo" maxlength="40" required />
+            </label>
+            <label>
+              <%= isEn ? 'Level Name (EN)' : '등급 명칭 (EN)' %>
+              <input type="text" name="levelNameEn" maxlength="40" required />
+            </label>
+            <label>
+              <%= isEn ? 'Button Color Theme' : '버튼 색상 테마' %>
+              <select name="colorTheme">
+                <% productBadgeColorThemeList.forEach((theme) => { %>
+                  <option value="<%= theme.key %>"><%= isEn ? (theme.labelEn || theme.labelKo || theme.key) : (theme.labelKo || theme.labelEn || theme.key) %></option>
+                <% }) %>
+              </select>
             </label>
             <label>
               <%= isEn ? 'Condition' : '조건' %>
@@ -1169,7 +1183,8 @@
         <% if (memberLevelSummaries.length > 0) { %>
           <div class="admin-field-chip-row">
             <% memberLevelSummaries.forEach((summary) => { %>
-              <span class="chip">
+              <% const summaryThemeClass = memberLevelThemeClass(summary.colorTheme || 'slate'); %>
+              <span class="chip member-level-chip <%= summaryThemeClass %>">
                 <%= summary.name %> · <%= summary.memberCount %><%= isEn ? ' members' : '명' %>
               </span>
             <% }) %>
@@ -1180,12 +1195,35 @@
           <% if (memberLevelRules.length === 0) { %>
             <p class="muted-label"><%= isEn ? 'No member levels configured.' : '설정된 회원 레벨이 없습니다.' %></p>
           <% } %>
+          <% const levelSummaryCountMap = new Map((memberLevelSummaries || []).map((summary) => [String(summary.id || ''), Number(summary.memberCount || 0)])); %>
           <% memberLevelRules.forEach((rule) => { %>
-            <div class="admin-list-item member-level-rule-item">
+            <% const levelThemeClass = memberLevelThemeClass(rule.colorTheme || 'slate'); %>
+            <% const levelMemberCount = Number(levelSummaryCountMap.get(String(rule.id || '')) || 0); %>
+            <details class="admin-list-item member-level-rule-item">
+              <summary class="member-level-rule-summary">
+                <span class="chip member-level-chip <%= levelThemeClass %>"><%= rule.displayName || rule.name || '-' %></span>
+                <small>
+                  <%= rule.operatorLabel || '-' %> ₩<%= Number(rule.thresholdAmount || 0).toLocaleString('ko-KR') %>
+                  · <%= Number(rule.pointRate || 0).toFixed(2).replace(/\.00$/, '') %>%
+                  · <%= levelMemberCount %><%= isEn ? ' members' : '명' %>
+                </small>
+              </summary>
               <form method="post" action="/admin/member-level/<%= encodeURIComponent(rule.id) %>/update" class="form-grid compact member-level-rule-form">
                 <label>
-                  <span><%= isEn ? 'Level Name' : '등급 명칭' %></span>
-                  <input type="text" name="levelName" value="<%= rule.name %>" maxlength="40" required />
+                  <span><%= isEn ? 'Level Name (KR)' : '등급 명칭 (KR)' %></span>
+                  <input type="text" name="levelNameKo" value="<%= rule.nameKo || rule.name || '' %>" maxlength="40" required />
+                </label>
+                <label>
+                  <span><%= isEn ? 'Level Name (EN)' : '등급 명칭 (EN)' %></span>
+                  <input type="text" name="levelNameEn" value="<%= rule.nameEn || rule.name || '' %>" maxlength="40" required />
+                </label>
+                <label>
+                  <span><%= isEn ? 'Button Color Theme' : '버튼 색상 테마' %></span>
+                  <select name="colorTheme">
+                    <% productBadgeColorThemeList.forEach((theme) => { %>
+                      <option value="<%= theme.key %>" <%= normalizeBadgeThemeKey(rule.colorTheme) === normalizeBadgeThemeKey(theme.key) ? 'selected' : '' %>><%= isEn ? (theme.labelEn || theme.labelKo || theme.key) : (theme.labelKo || theme.labelEn || theme.key) %></option>
+                    <% }) %>
+                  </select>
                 </label>
                 <label>
                   <span><%= isEn ? 'Condition' : '조건' %></span>
@@ -1209,7 +1247,7 @@
                   <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
                 </form>
               <% } %>
-            </div>
+            </details>
           <% }) %>
         </div>
         <p class="muted-label member-level-help-note">
@@ -1234,7 +1272,7 @@
             <select name="memberLevelRuleId">
               <option value="all" <%= levelRuleFilter === 'all' ? 'selected' : '' %>><%= isEn ? 'All Levels' : '전체 레벨' %></option>
               <% memberLevelRules.forEach((rule) => { %>
-                <option value="<%= rule.id %>" <%= levelRuleFilter === rule.id ? 'selected' : '' %>><%= rule.name %></option>
+                <option value="<%= rule.id %>" <%= levelRuleFilter === rule.id ? 'selected' : '' %>><%= rule.displayName || rule.name %></option>
               <% }) %>
             </select>
           </label>
@@ -1293,7 +1331,8 @@
                   <td><%= memberItem.phone || '-' %></td>
                   <td class="member-level-cell">
                     <div class="member-level-inline">
-                      <span class="chip dark"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span>
+                      <% const memberLevelChipThemeClass = memberLevelThemeClass(memberItem.level_color_theme || 'slate'); %>
+                      <span class="chip member-level-chip <%= memberLevelChipThemeClass %>"><%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %></span>
                       <small><%= Number(memberItem.level_point_rate || 0).toFixed(2).replace(/\.00$/, '') %>%</small>
                     </div>
                   </td>
@@ -1341,6 +1380,7 @@
                         <small>
                           <%= isEn ? 'Level' : '회원 레벨' %>: <%= memberItem.level_name || (isEn ? 'Unassigned' : '미지정') %>
                           (<%= memberItem.level_operator_label || '-' %> ₩<%= Number(memberItem.level_threshold_amount || 0).toLocaleString('ko-KR') %>)
+                          · <%= isEn ? `Theme ${memberLevelThemeLabel(memberItem.level_color_theme || 'slate')}` : `테마 ${memberLevelThemeLabel(memberItem.level_color_theme || 'slate')}` %>
                         </small>
                         <% if (memberItem.is_blocked) { %>
                           <small><%= isEn ? 'Blocked At' : '블락일' %>: <%= memberItem.blocked_at ? memberItem.blocked_at.slice(0, 16) : '-' %></small>
@@ -1537,8 +1577,11 @@
                 </thead>
                 <tbody>
                   <% memberLevelRules.forEach((rule) => { %>
+                    <% const levelRateThemeClass = memberLevelThemeClass(rule.colorTheme || 'slate'); %>
                     <tr>
-                      <td><strong><%= rule.name %></strong></td>
+                      <td>
+                        <span class="chip member-level-chip <%= levelRateThemeClass %>"><%= rule.displayName || rule.name %></span>
+                      </td>
                       <td><%= rule.operatorLabel || '-' %></td>
                       <td>₩<%= Number(rule.thresholdAmount || 0).toLocaleString('ko-KR') %></td>
                       <td>
