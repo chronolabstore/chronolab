@@ -9298,7 +9298,7 @@ app.get('/shop/item/:id', (req, res) => {
     imageList.push(product.image_path);
   }
 
-  const SIMILAR_LIMIT = 4;
+  const SIMILAR_LIMIT = 6;
   const normalizedModel = String(product.model || '')
     .trim()
     .toLowerCase();
