@@ -9440,16 +9440,19 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     addressLabel: '',
     saveToAddressBook: '',
     setAsDefaultAddress: '',
-    quantity: 1
+    quantity: 1,
+    useRewardPoints: '0'
   };
   const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
+  const availableRewardPoints = parseNonNegativeInt(req.user.rewardPoints, 0);
   return res.render('purchase-form', {
     title: 'Purchase',
     product,
     formData,
     addressBookEntries,
     productGroupLabel,
+    availableRewardPoints,
     purchasePointRate,
     memberLevelName: memberPointProfile.levelDisplayName,
     expectedPoints: calculateEarnedPoints(product.price, purchasePointRate)
@@ -9511,11 +9514,23 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const saveToAddressBook = String(req.body.saveToAddressBook || '') === '1';
   const setAsDefaultAddress = String(req.body.setAsDefaultAddress || '') === '1';
   const quantity = parsePositiveInt(req.body.quantity, 1);
+  const useRewardPointsRequested = parseNonNegativeInt(
+    String(req.body.useRewardPoints ?? '')
+      .replace(/[^0-9]/g, ''),
+    0
+  );
   const addressBookEntries = getAddressBookEntries(req.user.id);
   const selectedAddressBookEntry =
     selectedAddressBookId > 0
       ? addressBookEntries.find((entry) => entry.id === selectedAddressBookId) || null
       : null;
+  const getCurrentRewardPoints = () => {
+    const row = db
+      .prepare('SELECT reward_points FROM users WHERE id = ? AND is_admin = 0 LIMIT 1')
+      .get(req.user.id);
+    return parseNonNegativeInt(row?.reward_points, parseNonNegativeInt(req.user.rewardPoints, 0));
+  };
+  let availableRewardPoints = getCurrentRewardPoints();
 
   if ((!buyerPostcode || !buyerAddressBase) && selectedAddressBookEntry) {
     buyerPostcode = selectedAddressBookEntry.postcode;
@@ -9543,10 +9558,15 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     addressLabel,
     saveToAddressBook: saveToAddressBook ? '1' : '',
     setAsDefaultAddress: setAsDefaultAddress ? '1' : '',
-    quantity
+    quantity,
+    useRewardPoints: String(useRewardPointsRequested)
   };
   const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
+  const orderSubtotalPreview = Math.max(0, Math.round(Number(product.price || 0) * quantity));
+  const maxUsableRewardPointsPreview = Math.max(0, Math.min(availableRewardPoints, orderSubtotalPreview));
+  const appliedRewardPointsPreview = Math.min(useRewardPointsRequested, maxUsableRewardPointsPreview);
+  const payableAmountPreview = Math.max(0, orderSubtotalPreview - appliedRewardPointsPreview);
 
   const renderWithError = (message) => {
     res.locals.ctx.popupFlash = { type: 'error', message };
@@ -9556,9 +9576,10 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
       formData,
       addressBookEntries,
       productGroupLabel,
+      availableRewardPoints,
       purchasePointRate,
       memberLevelName: memberPointProfile.levelDisplayName,
-      expectedPoints: calculateEarnedPoints(product.price * quantity, purchasePointRate)
+      expectedPoints: calculateEarnedPoints(payableAmountPreview, purchasePointRate)
     });
   };
 
@@ -9583,75 +9604,120 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     return renderWithError('통관번호 형식이 올바르지 않습니다. (영문/숫자 6~30자)');
   }
 
+  if (useRewardPointsRequested > maxUsableRewardPointsPreview) {
+    if (isEn) {
+      return renderWithError(
+        `You can use up to ${maxUsableRewardPointsPreview.toLocaleString('ko-KR')} points for this order.`
+      );
+    }
+    return renderWithError(
+      `이번 주문에 사용할 수 있는 최대 포인트는 ${maxUsableRewardPointsPreview.toLocaleString('ko-KR')}P 입니다.`
+    );
+  }
+
   let orderNo = generateOrderNo();
   while (db.prepare('SELECT id FROM orders WHERE order_no = ? LIMIT 1').get(orderNo)) {
     orderNo = generateOrderNo();
   }
 
-  const totalPrice = Number(product.price) * quantity;
+  const appliedRewardPoints = appliedRewardPointsPreview;
+  const orderSubtotal = orderSubtotalPreview;
+  const totalPrice = Math.max(0, orderSubtotal - appliedRewardPoints);
   const salesSnapshot = buildOrderSalesSnapshot({
     product,
     quantity,
     totalPrice,
     baseDate: toKstDate()
   });
-  const createdOrder = db.prepare(
-    `
-      INSERT INTO orders (
-        order_no,
-        product_id,
-        buyer_name,
-        buyer_contact,
-        buyer_address,
-        customs_clearance_no,
-        bank_depositor_name,
-        quantity,
-        total_price,
-        status,
-        point_rate_snapshot,
-        point_level_id,
-        point_level_name,
-        sales_tab_key,
-        sales_scope_id,
-        sales_scope_name,
-        sales_scope_date,
-        sales_exchange_rate_snapshot,
-        sales_shipping_fee_krw_snapshot,
-        sales_cost_rmb_snapshot,
-        sales_cost_krw_snapshot,
-        sales_margin_krw_snapshot,
-        sales_real_margin_krw_snapshot,
-        sales_synced_at,
-        created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-  ).run(
-    orderNo,
-    product.id,
-    buyerName,
-    normalizedContact,
-    buyerAddress,
-    customsClearanceNo,
-    buyerName,
-    quantity,
-    totalPrice,
-    ORDER_STATUS.PENDING_REVIEW,
-    purchasePointRate,
-    memberPointProfile.levelId || '',
-    memberPointProfile.levelName || '',
-    salesSnapshot.sales_tab_key,
-    salesSnapshot.sales_scope_id,
-    salesSnapshot.sales_scope_name,
-    salesSnapshot.sales_scope_date,
-    salesSnapshot.sales_exchange_rate_snapshot,
-    salesSnapshot.sales_shipping_fee_krw_snapshot,
-    salesSnapshot.sales_cost_rmb_snapshot,
-    salesSnapshot.sales_cost_krw_snapshot,
-    salesSnapshot.sales_margin_krw_snapshot,
-    salesSnapshot.sales_real_margin_krw_snapshot,
-    salesSnapshot.sales_synced_at,
-    req.user.id
-  );
+  const createdOrderResult = db.transaction(() => {
+    if (appliedRewardPoints > 0) {
+      const deducted = db
+        .prepare(
+          `
+            UPDATE users
+            SET reward_points = reward_points - ?
+            WHERE id = ? AND is_admin = 0 AND reward_points >= ?
+          `
+        )
+        .run(appliedRewardPoints, req.user.id, appliedRewardPoints);
+      if (deducted.changes === 0) {
+        return {
+          ok: false,
+          message: isEn
+            ? 'Your available points changed. Please check points and try again.'
+            : '보유 포인트가 변경되었습니다. 사용 포인트를 확인 후 다시 시도해 주세요.'
+        };
+      }
+    }
+
+    const createdOrder = db.prepare(
+      `
+        INSERT INTO orders (
+          order_no,
+          product_id,
+          buyer_name,
+          buyer_contact,
+          buyer_address,
+          customs_clearance_no,
+          bank_depositor_name,
+          quantity,
+          total_price,
+          used_points,
+          status,
+          point_rate_snapshot,
+          point_level_id,
+          point_level_name,
+          sales_tab_key,
+          sales_scope_id,
+          sales_scope_name,
+          sales_scope_date,
+          sales_exchange_rate_snapshot,
+          sales_shipping_fee_krw_snapshot,
+          sales_cost_rmb_snapshot,
+          sales_cost_krw_snapshot,
+          sales_margin_krw_snapshot,
+          sales_real_margin_krw_snapshot,
+          sales_synced_at,
+          created_by_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      orderNo,
+      product.id,
+      buyerName,
+      normalizedContact,
+      buyerAddress,
+      customsClearanceNo,
+      buyerName,
+      quantity,
+      totalPrice,
+      appliedRewardPoints,
+      ORDER_STATUS.PENDING_REVIEW,
+      purchasePointRate,
+      memberPointProfile.levelId || '',
+      memberPointProfile.levelName || '',
+      salesSnapshot.sales_tab_key,
+      salesSnapshot.sales_scope_id,
+      salesSnapshot.sales_scope_name,
+      salesSnapshot.sales_scope_date,
+      salesSnapshot.sales_exchange_rate_snapshot,
+      salesSnapshot.sales_shipping_fee_krw_snapshot,
+      salesSnapshot.sales_cost_rmb_snapshot,
+      salesSnapshot.sales_cost_krw_snapshot,
+      salesSnapshot.sales_margin_krw_snapshot,
+      salesSnapshot.sales_real_margin_krw_snapshot,
+      salesSnapshot.sales_synced_at,
+      req.user.id
+    );
+    return { ok: true, createdOrder };
+  })();
+
+  if (!createdOrderResult.ok) {
+    availableRewardPoints = getCurrentRewardPoints();
+    return renderWithError(createdOrderResult.message || '주문 처리에 실패했습니다. 다시 시도해 주세요.');
+  }
+
+  const createdOrder = createdOrderResult.createdOrder;
 
   appendOrderStatusLog(
     Number(createdOrder.lastInsertRowid),
@@ -9911,8 +9977,10 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
   const purchasePointRate = isMemberOrder
     ? parsePointRate(order.point_rate_snapshot, getLegacyPurchasePointRateSetting())
     : 0;
+  const usedPointsApplied = parseNonNegativeInt(order.used_points, 0);
   const expectedPoints = isMemberOrder ? calculateEarnedPoints(order.total_price, purchasePointRate) : 0;
   const awardedPoints = parseNonNegativeInt(order.awarded_points, 0);
+  const orderSubtotalAmount = parseNonNegativeInt(order.total_price, 0) + usedPointsApplied;
 
   res.render('order-complete', {
     title: 'Order Complete',
@@ -9921,6 +9989,8 @@ app.get('/shop/order-complete/:orderNo', (req, res) => {
     isMemberOrder,
     purchasePointRate,
     memberLevelName: String(order.point_level_name || '').trim(),
+    usedPointsApplied,
+    orderSubtotalAmount,
     expectedPoints,
     awardedPoints
   });
@@ -11774,7 +11844,6 @@ app.post(
   });
   resetAuthAttempt(req, 'login');
 
-  setFlash(req, 'success', '로그인되었습니다.');
   res.redirect('/main');
   })
 );

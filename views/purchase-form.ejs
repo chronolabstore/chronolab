@@ -3,6 +3,17 @@
 <% const pointRate = Number(purchasePointRate || 0); %>
 <% const pointAmount = Number(expectedPoints || 0); %>
 <% const addressBook = Array.isArray(addressBookEntries) ? addressBookEntries : []; %>
+<%
+  const availablePoints = Math.max(0, Number(availableRewardPoints || 0));
+  const quantityValue = Math.max(1, Number.parseInt(String(formData.quantity || '1'), 10) || 1);
+  const orderSubtotal = Math.max(0, Number(product.price || 0) * quantityValue);
+  const useRewardPointsRaw = String(formData.useRewardPoints || '0').replace(/[^0-9]/g, '');
+  const requestedUsePoints = Math.max(0, Number.parseInt(useRewardPointsRaw || '0', 10) || 0);
+  const maxUsablePoints = Math.max(0, Math.min(availablePoints, orderSubtotal));
+  const appliedUsePoints = Math.min(requestedUsePoints, maxUsablePoints);
+  const payableAmount = Math.max(0, orderSubtotal - appliedUsePoints);
+  const expectedPointsByPayable = pointRate > 0 ? Math.max(0, Math.floor((payableAmount * pointRate) / 100)) : 0;
+%>
 
 <section class="block-card narrow">
   <h2><%= ctx.lang === 'en' ? 'Purchase Request' : '구매 신청' %></h2>
@@ -12,15 +23,19 @@
 
   <div class="line-list-box">
     <p><%= isEn ? 'Product' : '상품' %>: <strong><%= product.brand %> <%= product.model %> <%= product.sub_model %></strong></p>
-    <p><%= isEn ? 'Price' : '가격' %>: <strong>₩<%= ctx.formatPrice(product.price) %></strong></p>
+    <p><%= isEn ? 'Price (Unit)' : '가격(개당)' %>: <strong>₩<%= ctx.formatPrice(product.price) %></strong></p>
+    <p><%= isEn ? 'Order Amount' : '주문금액' %>: <strong id="purchaseSubtotalText">₩<%= ctx.formatPrice(orderSubtotal) %></strong></p>
+    <p><%= isEn ? 'Used Points' : '사용 포인트' %>: <strong id="purchaseUsedPointsText"><%= appliedUsePoints > 0 ? '-' : '' %><%= ctx.formatPrice(appliedUsePoints) %>P</strong></p>
+    <p><%= isEn ? 'Final Payment' : '최종 결제금액' %>: <strong id="purchasePayableText">₩<%= ctx.formatPrice(payableAmount) %></strong></p>
     <p><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></p>
     <p>
       <%= isEn ? 'Reward Points' : '적립 포인트' %>:
-      <strong>
-        <%= pointRate > 0 ? `${pointRate}% (${ctx.formatPrice(pointAmount)}P)` : (isEn ? 'Not set' : '미설정') %>
+      <strong id="purchaseExpectedRewardPoints">
+        <%= pointRate > 0 ? `${pointRate}% (${ctx.formatPrice(expectedPointsByPayable || pointAmount)}P)` : (isEn ? 'Not set' : '미설정') %>
       </strong>
       <small class="muted-label"><%= isEn ? '(credited after delivery completion)' : '(배송완료 후 적립)' %></small>
     </p>
+    <p><%= isEn ? 'Available Points' : '보유 포인트' %>: <strong><%= ctx.formatPrice(availablePoints) %>P</strong></p>
   </div>
 
   <form method="post" action="/shop/item/<%= product.id %>/purchase" class="form-grid">
@@ -75,6 +90,21 @@
       <input type="number" name="quantity" min="1" value="<%= formData.quantity || 1 %>" required />
     </label>
 
+    <label><%= isEn ? 'Use Points' : '포인트 사용' %>
+      <input
+        type="number"
+        name="useRewardPoints"
+        id="purchaseUseRewardPoints"
+        min="0"
+        step="1"
+        inputmode="numeric"
+        value="<%= formData.useRewardPoints || 0 %>"
+      />
+      <small class="muted-label">
+        <%= isEn ? `Available ${ctx.formatPrice(availablePoints)}P / Max ${ctx.formatPrice(maxUsablePoints)}P` : `보유 ${ctx.formatPrice(availablePoints)}P / 최대 ${ctx.formatPrice(maxUsablePoints)}P 사용 가능` %>
+      </small>
+    </label>
+
     <div class="address-book-save-box">
       <label class="check-row">
         <input type="checkbox" name="saveToAddressBook" value="1" <%= String(formData.saveToAddressBook || '') === '1' ? 'checked' : '' %> />
@@ -108,6 +138,67 @@
     const baseInput = document.getElementById('buyerAddressBase');
     const detailInput = document.getElementById('buyerAddressDetail');
     const searchBtn = document.getElementById('buyerAddressSearchBtn');
+    const quantityInput = document.querySelector('input[name="quantity"]');
+    const useRewardPointsInput = document.getElementById('purchaseUseRewardPoints');
+    const subtotalText = document.getElementById('purchaseSubtotalText');
+    const usedPointsText = document.getElementById('purchaseUsedPointsText');
+    const payableText = document.getElementById('purchasePayableText');
+    const expectedRewardText = document.getElementById('purchaseExpectedRewardPoints');
+    const unitPrice = Number(<%= Number(product.price || 0) %>) || 0;
+    const pointRate = Number(<%= Number(pointRate || 0) %>) || 0;
+    const availablePoints = Number(<%= Math.max(0, Number(availablePoints || 0)) %>) || 0;
+    const notSetRewardLabel = <%- JSON.stringify(isEn ? 'Not set' : '미설정') %>;
+
+    const normalizePositiveInt = (rawValue, fallback = 1) => {
+      const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return fallback;
+      }
+      return parsed;
+    };
+
+    const normalizeNonNegativeInt = (rawValue, fallback = 0) => {
+      const numeric = String(rawValue ?? '').replace(/[^0-9]/g, '');
+      if (!numeric) {
+        return fallback;
+      }
+      const parsed = Number.parseInt(numeric, 10);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        return fallback;
+      }
+      return parsed;
+    };
+
+    const formatNumber = (value) => Number(value || 0).toLocaleString('ko-KR');
+
+    const refreshPaymentPreview = () => {
+      const quantity = normalizePositiveInt(quantityInput ? quantityInput.value : 1, 1);
+      if (quantityInput && String(quantityInput.value) !== String(quantity)) {
+        quantityInput.value = String(quantity);
+      }
+      const subtotal = Math.max(0, unitPrice * quantity);
+      const maxUsable = Math.max(0, Math.min(availablePoints, subtotal));
+      let usingPoints = normalizeNonNegativeInt(useRewardPointsInput ? useRewardPointsInput.value : 0, 0);
+      if (usingPoints > maxUsable) {
+        usingPoints = maxUsable;
+      }
+      if (useRewardPointsInput) {
+        useRewardPointsInput.max = String(maxUsable);
+        if (String(useRewardPointsInput.value) !== String(usingPoints)) {
+          useRewardPointsInput.value = String(usingPoints);
+        }
+      }
+      const payable = Math.max(0, subtotal - usingPoints);
+      const expectedRewardPoints = pointRate > 0 ? Math.max(0, Math.floor((payable * pointRate) / 100)) : 0;
+
+      if (subtotalText) subtotalText.textContent = `₩${formatNumber(subtotal)}`;
+      if (usedPointsText) usedPointsText.textContent = `${usingPoints > 0 ? '-' : ''}${formatNumber(usingPoints)}P`;
+      if (payableText) payableText.textContent = `₩${formatNumber(payable)}`;
+      if (expectedRewardText) {
+        expectedRewardText.textContent =
+          pointRate > 0 ? `${pointRate}% (${formatNumber(expectedRewardPoints)}P)` : notSetRewardLabel;
+      }
+    };
 
     const applyAddressFromOption = (option) => {
       if (!option) return;
@@ -150,6 +241,16 @@
         }).open();
       });
     }
+
+    if (quantityInput) {
+      quantityInput.addEventListener('input', refreshPaymentPreview);
+      quantityInput.addEventListener('change', refreshPaymentPreview);
+    }
+    if (useRewardPointsInput) {
+      useRewardPointsInput.addEventListener('input', refreshPaymentPreview);
+      useRewardPointsInput.addEventListener('change', refreshPaymentPreview);
+    }
+    refreshPaymentPreview();
   })();
 </script>
 

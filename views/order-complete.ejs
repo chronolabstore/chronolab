@@ -17,7 +17,9 @@
     <p><%= isEn ? 'Customs No.' : '통관번호' %>: <strong><%= order.customs_clearance_no || '-' %></strong></p>
     <p><%= isEn ? 'Address' : '주소' %>: <strong><%= order.buyer_address %></strong></p>
     <p><%= isEn ? 'Depositor Name' : '입금자명' %>: <strong><%= order.bank_depositor_name %></strong></p>
-    <p><%= isEn ? 'Total Amount' : '총 금액' %>: <strong>₩<%= ctx.formatPrice(order.total_price) %></strong></p>
+    <p><%= isEn ? 'Order Amount' : '주문금액' %>: <strong>₩<%= ctx.formatPrice(orderSubtotalAmount) %></strong></p>
+    <p><%= isEn ? 'Used Points' : '사용 포인트' %>: <strong><%= usedPointsApplied > 0 ? '-' : '' %><%= ctx.formatPrice(usedPointsApplied) %>P</strong></p>
+    <p><%= isEn ? 'Final Payment' : '최종 결제금액' %>: <strong>₩<%= ctx.formatPrice(order.total_price) %></strong></p>
     <p>
       <%= isEn ? 'Reward Points' : '적립 포인트' %>:
       <strong>
