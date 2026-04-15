@@ -1423,6 +1423,511 @@ function ensureDemoMemberUser() {
   return Number(inserted.lastInsertRowid);
 }
 
+function normalizeGroupMatchKey(rawValue = '') {
+  return String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[-_]/g, '')
+    .replace(/[^a-z0-9가-힣]/g, '');
+}
+
+function cloneDefaultProductGroupConfigs() {
+  return JSON.parse(JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS));
+}
+
+function buildDefaultDomesticStockGroupConfig() {
+  return {
+    key: '국내재고',
+    labelKo: '국내재고',
+    labelEn: 'Domestic Stock',
+    mode: 'factory',
+    showInMainTopBox: true,
+    enableBrandFilter: true,
+    enableModelFilter: true,
+    enableFactoryFilter: true,
+    brandOptions: [...DEFAULT_FILTER_BRAND_OPTIONS],
+    factoryOptions: [...DEFAULT_FACTORY_FILTER_OPTIONS],
+    modelOptions: [],
+    modelOptionsByBrand: JSON.parse(JSON.stringify(DEFAULT_FILTER_MODEL_OPTIONS_BY_BRAND)),
+    brandOptionLabels: JSON.parse(JSON.stringify(DEFAULT_FILTER_BRAND_OPTION_LABELS)),
+    factoryOptionLabels: JSON.parse(JSON.stringify(DEFAULT_FACTORY_FILTER_OPTION_LABELS)),
+    modelOptionLabelsByBrand: JSON.parse(JSON.stringify(DEFAULT_FILTER_MODEL_OPTION_LABELS_BY_BRAND)),
+    customFields: JSON.parse(JSON.stringify(DEFAULT_PRODUCT_GROUP_CONFIGS[0]?.customFields || []))
+  };
+}
+
+function ensureStagingDomesticStockGroupConfig() {
+  const currentRaw = String(getSetting('productGroupConfigs', '') || '').trim();
+  let currentConfigs = [];
+
+  try {
+    const parsed = JSON.parse(currentRaw || '[]');
+    if (Array.isArray(parsed)) {
+      currentConfigs = parsed;
+    }
+  } catch {
+    currentConfigs = [];
+  }
+
+  if (!Array.isArray(currentConfigs) || currentConfigs.length === 0) {
+    currentConfigs = cloneDefaultProductGroupConfigs();
+  }
+
+  const hasDomestic = currentConfigs.some((group) => {
+    const candidates = [group?.key, group?.labelKo, group?.labelEn];
+    return candidates
+      .map((value) => normalizeGroupMatchKey(value))
+      .some((value) => value === '국내재고' || value === 'domesticstock');
+  });
+
+  if (!hasDomestic) {
+    currentConfigs.push(buildDefaultDomesticStockGroupConfig());
+    setSetting('productGroupConfigs', JSON.stringify(currentConfigs));
+  }
+}
+
+function ensureStagingDemoMemberAccount() {
+  const username = 'demo';
+  const email = 'demo@chronolab.local';
+  const passwordHash = bcrypt.hashSync('Demo!234', 10);
+  const existing = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE lower(username) = ?
+        LIMIT 1
+      `
+    )
+    .get(username);
+
+  if (existing) {
+    db.prepare(
+      `
+        UPDATE users
+        SET
+          email = ?,
+          username = ?,
+          nickname = ?,
+          full_name = ?,
+          phone = ?,
+          password_hash = ?,
+          agreed_terms = 1,
+          is_admin = 0,
+          is_blocked = 0,
+          blocked_reason = '',
+          blocked_at = NULL,
+          reward_points = CASE WHEN reward_points < 0 THEN 0 ELSE reward_points END
+        WHERE id = ?
+      `
+    ).run(email, username, username, 'Demo Member', '01000000000', passwordHash, Number(existing.id));
+    return Number(existing.id);
+  }
+
+  const inserted = db.prepare(
+    `
+      INSERT INTO users (
+        email,
+        username,
+        nickname,
+        full_name,
+        phone,
+        password_hash,
+        reward_points,
+        agreed_terms,
+        is_admin
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)
+    `
+  ).run(email, username, username, 'Demo Member', '01000000000', passwordHash, 10000);
+
+  return Number(inserted.lastInsertRowid);
+}
+
+function ensureStagingDomesticStockProduct() {
+  const reference = 'CL-STAGING-DOMESTIC-001';
+  const imagePaths = [
+    '/assets/media/demo/watermark-01.svg',
+    '/assets/media/demo/watermark-02.svg',
+    '/assets/media/demo/watermark-03.svg',
+    '/assets/media/demo/watermark-04.svg',
+    '/assets/media/demo/watermark-05.svg',
+    '/assets/media/demo/watermark-06.svg'
+  ];
+  const primaryImage = imagePaths[0];
+
+  const existing = db
+    .prepare('SELECT id FROM products WHERE reference = ? LIMIT 1')
+    .get(reference);
+
+  let productId = 0;
+  if (existing) {
+    productId = Number(existing.id);
+    db.prepare(
+      `
+        UPDATE products
+        SET
+          category_group = ?,
+          brand = ?,
+          model = ?,
+          sub_model = ?,
+          reference = ?,
+          factory_name = ?,
+          version_name = ?,
+          movement = ?,
+          case_size = ?,
+          dial_color = ?,
+          case_material = ?,
+          strap_material = ?,
+          features = ?,
+          price = ?,
+          shipping_period = ?,
+          image_path = ?,
+          is_sold_out = 0,
+          is_active = 1
+        WHERE id = ?
+      `
+    ).run(
+      '국내재고',
+      'Rolex',
+      'Datejust',
+      '36 Silver Jubilee',
+      reference,
+      'VS',
+      'Staging Demo',
+      'Automatic',
+      '36mm',
+      'Silver',
+      'Stainless Steel',
+      'Jubilee',
+      '국내재고 기본 데모 상품입니다. 워터마크 적용 샘플 이미지입니다.',
+      1000000,
+      '국내 1~2일',
+      primaryImage,
+      productId
+    );
+  } else {
+    const inserted = db.prepare(
+      `
+        INSERT INTO products (
+          category_group,
+          brand,
+          model,
+          sub_model,
+          reference,
+          factory_name,
+          version_name,
+          movement,
+          case_size,
+          dial_color,
+          case_material,
+          strap_material,
+          features,
+          price,
+          shipping_period,
+          image_path,
+          is_sold_out,
+          is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+      `
+    ).run(
+      '국내재고',
+      'Rolex',
+      'Datejust',
+      '36 Silver Jubilee',
+      reference,
+      'VS',
+      'Staging Demo',
+      'Automatic',
+      '36mm',
+      'Silver',
+      'Stainless Steel',
+      'Jubilee',
+      '국내재고 기본 데모 상품입니다. 워터마크 적용 샘플 이미지입니다.',
+      1000000,
+      '국내 1~2일',
+      primaryImage
+    );
+    productId = Number(inserted.lastInsertRowid);
+  }
+
+  db.prepare('DELETE FROM product_images WHERE product_id = ?').run(productId);
+  const insertImage = db.prepare(
+    `
+      INSERT OR IGNORE INTO product_images (product_id, image_path, sort_order)
+      VALUES (?, ?, ?)
+    `
+  );
+  imagePaths.forEach((pathValue, index) => {
+    insertImage.run(productId, pathValue, index);
+  });
+
+  return productId;
+}
+
+function ensureStagingBoardFixtures(demoUserId, productId) {
+  const imagePaths = [
+    '/assets/media/demo/watermark-01.svg',
+    '/assets/media/demo/watermark-02.svg',
+    '/assets/media/demo/watermark-03.svg',
+    '/assets/media/demo/watermark-04.svg',
+    '/assets/media/demo/watermark-05.svg',
+    '/assets/media/demo/watermark-06.svg'
+  ];
+
+  const noticeRows = [
+    { title: '[DEMO 공지 01] 배송 스케줄 안내', content: '국내재고 데모 상품은 결제 확인 후 1~2일 내 발송됩니다.', imagePath: imagePaths[0], isPopup: 1 },
+    { title: '[DEMO 공지 02] 주문 확인 절차', content: '주문번호/입금자명 기준으로 확인 후 상태가 순차 업데이트됩니다.', imagePath: imagePaths[1], isPopup: 0 },
+    { title: '[DEMO 공지 03] QC 이미지 확인', content: 'QC 게시판에서 주문번호 기준으로 검수 이미지를 확인할 수 있습니다.', imagePath: imagePaths[2], isPopup: 0 },
+    { title: '[DEMO 공지 04] 후기 작성 정책', content: '배송완료 주문은 마이페이지 구매목록에서 후기 작성이 가능합니다.', imagePath: imagePaths[3], isPopup: 0 },
+    { title: '[DEMO 공지 05] 포인트 정책', content: '구매후기 포인트는 포인트관리 설정값 기준으로 지급됩니다.', imagePath: imagePaths[4], isPopup: 0 },
+    { title: '[DEMO 공지 06] 고객 문의 안내', content: '상품 문제 및 주문 문의는 1:1 문의 게시판으로 접수해 주세요.', imagePath: imagePaths[5], isPopup: 0 }
+  ];
+  const findNotice = db.prepare('SELECT id FROM notices WHERE title = ? LIMIT 1');
+  const insertNotice = db.prepare(
+    `
+      INSERT INTO notices (title, content, image_path, image_paths_json, is_popup)
+      VALUES (?, ?, ?, ?, ?)
+    `
+  );
+  const updateNotice = db.prepare(
+    `
+      UPDATE notices
+      SET
+        content = ?,
+        image_path = ?,
+        image_paths_json = ?,
+        is_popup = ?,
+        is_hidden = 0
+      WHERE id = ?
+    `
+  );
+  noticeRows.forEach((row) => {
+    const imageList = JSON.stringify([row.imagePath]);
+    const existing = findNotice.get(row.title);
+    if (existing) {
+      updateNotice.run(row.content, row.imagePath, imageList, row.isPopup ? 1 : 0, Number(existing.id));
+    } else {
+      insertNotice.run(row.title, row.content, row.imagePath, imageList, row.isPopup ? 1 : 0);
+    }
+  });
+
+  const newsRows = [
+    { title: '[DEMO 뉴스 01] 국내재고 셀렉션 업데이트', content: '국내재고 데모 라인업을 기준으로 즉시 출고 구성을 점검했습니다.', imagePath: imagePaths[0] },
+    { title: '[DEMO 뉴스 02] 주문 플로우 점검', content: '장바구니, 구매신청, 주문완료 페이지 UX를 최신 구조로 정리했습니다.', imagePath: imagePaths[1] },
+    { title: '[DEMO 뉴스 03] 분류 필터 동기화', content: '메뉴관리 분류필터와 매출관리 가격표 필터 동기화 기준을 유지합니다.', imagePath: imagePaths[2] },
+    { title: '[DEMO 뉴스 04] 회원 레벨 색상 정책', content: '입문자/수집가/애호가/전문가 색상과 영문명을 기본 정책으로 고정했습니다.', imagePath: imagePaths[3] },
+    { title: '[DEMO 뉴스 05] 구매후기 권한 정책', content: '배송완료 주문만 후기 작성 가능하도록 권한 정책이 적용되어 있습니다.', imagePath: imagePaths[4] },
+    { title: '[DEMO 뉴스 06] 스테이징 데모 데이터 안내', content: '배포/코드 변경 후에도 데모 계정과 게시판 샘플 데이터가 자동 유지됩니다.', imagePath: imagePaths[5] }
+  ];
+  const findNews = db.prepare('SELECT id FROM news_posts WHERE title = ? LIMIT 1');
+  const insertNews = db.prepare(
+    `
+      INSERT INTO news_posts (title, content, image_path, image_paths_json)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  const updateNews = db.prepare(
+    `
+      UPDATE news_posts
+      SET
+        content = ?,
+        image_path = ?,
+        image_paths_json = ?,
+        is_hidden = 0
+      WHERE id = ?
+    `
+  );
+  newsRows.forEach((row) => {
+    const imageList = JSON.stringify([row.imagePath]);
+    const existing = findNews.get(row.title);
+    if (existing) {
+      updateNews.run(row.content, row.imagePath, imageList, Number(existing.id));
+    } else {
+      insertNews.run(row.title, row.content, row.imagePath, imageList);
+    }
+  });
+
+  const qcRows = [
+    { orderNo: 'QC-DEMO-001', note: '베젤/브레이슬릿 유격 점검 완료', imagePath: imagePaths[0] },
+    { orderNo: 'QC-DEMO-002', note: '다이얼/핸즈 정렬 점검 완료', imagePath: imagePaths[1] },
+    { orderNo: 'QC-DEMO-003', note: '인덱스 야광 테스트 완료', imagePath: imagePaths[2] },
+    { orderNo: 'QC-DEMO-004', note: '케이스 측면 스크래치 점검 완료', imagePath: imagePaths[3] },
+    { orderNo: 'QC-DEMO-005', note: '클라스프 체결력 점검 완료', imagePath: imagePaths[4] },
+    { orderNo: 'QC-DEMO-006', note: '출고 전 최종 패키징 점검 완료', imagePath: imagePaths[5] }
+  ];
+  const findQc = db.prepare('SELECT id FROM qc_items WHERE order_no = ? LIMIT 1');
+  const insertQc = db.prepare(
+    `
+      INSERT INTO qc_items (order_no, image_path, image_paths_json, note)
+      VALUES (?, ?, ?, ?)
+    `
+  );
+  const updateQc = db.prepare(
+    `
+      UPDATE qc_items
+      SET
+        image_path = ?,
+        image_paths_json = ?,
+        note = ?,
+        is_hidden = 0
+      WHERE id = ?
+    `
+  );
+  qcRows.forEach((row) => {
+    const imageList = JSON.stringify([row.imagePath]);
+    const existing = findQc.get(row.orderNo);
+    if (existing) {
+      updateQc.run(row.imagePath, imageList, row.note, Number(existing.id));
+    } else {
+      insertQc.run(row.orderNo, row.imagePath, imageList, row.note);
+    }
+  });
+
+  const reviewRows = [
+    { title: '[DEMO 후기 01] 실물 만족도 높습니다', content: '실물 색감과 브레이슬릿 마감이 좋아서 데일리 착용 만족도가 높습니다.', imagePath: imagePaths[0] },
+    { title: '[DEMO 후기 02] 응대가 빠르고 정확합니다', content: '주문 진행 중 문의 응답이 빨라서 전체 프로세스가 편했습니다.', imagePath: imagePaths[1] },
+    { title: '[DEMO 후기 03] QC 확인 후 안심 구매', content: 'QC 이미지 확인 후 바로 결제했고 수령품 상태도 기대 이상이었습니다.', imagePath: imagePaths[2] },
+    { title: '[DEMO 후기 04] 포장 상태 깔끔합니다', content: '배송 박스/완충 상태가 좋아서 파손 없이 잘 도착했습니다.', imagePath: imagePaths[3] },
+    { title: '[DEMO 후기 05] 국내재고 배송 빠릅니다', content: '국내재고 라인은 발송이 빨라 급하게 받을 때 유용합니다.', imagePath: imagePaths[4] },
+    { title: '[DEMO 후기 06] 재구매 의사 있습니다', content: '가격/상태/응대 모두 만족해서 다음 주문도 진행 예정입니다.', imagePath: imagePaths[5] }
+  ];
+  const findReview = db.prepare('SELECT id FROM reviews WHERE title = ? LIMIT 1');
+  const insertReview = db.prepare(
+    `
+      INSERT INTO reviews (user_id, product_id, title, content, image_path)
+      VALUES (?, ?, ?, ?, ?)
+    `
+  );
+  const updateReview = db.prepare(
+    `
+      UPDATE reviews
+      SET
+        user_id = ?,
+        product_id = ?,
+        content = ?,
+        image_path = ?
+      WHERE id = ?
+    `
+  );
+  reviewRows.forEach((row) => {
+    const existing = findReview.get(row.title);
+    if (existing) {
+      updateReview.run(demoUserId, productId || null, row.content, row.imagePath, Number(existing.id));
+    } else {
+      insertReview.run(demoUserId, productId || null, row.title, row.content, row.imagePath);
+    }
+  });
+
+  const inquiryRows = [
+    {
+      title: '[DEMO 문의 01] 국내재고 재고 수량 문의',
+      content: '국내재고 데모 상품 현재 즉시 출고 가능 수량 확인 부탁드립니다.',
+      imagePath: imagePaths[0],
+      replyContent: '현재 데모 상품은 상시 테스트용으로 유지 중입니다.'
+    },
+    {
+      title: '[DEMO 문의 02] 포인트 사용 기준 문의',
+      content: '구매신청 페이지에서 포인트 사용 최대치가 어떤 기준으로 계산되는지 궁금합니다.',
+      imagePath: imagePaths[1],
+      replyContent: null
+    },
+    {
+      title: '[DEMO 문의 03] 후기 포인트 지급 시점',
+      content: '구매후기 포인트 지급 시점이 배송완료 기준인지 확인 부탁드립니다.',
+      imagePath: imagePaths[2],
+      replyContent: '배송완료 상태에서 후기 작성 시 지급됩니다.'
+    },
+    {
+      title: '[DEMO 문의 04] 분류 필터 노출 문의',
+      content: '국내재고 분류가 쇼핑몰 필터 상단 별도영역에 고정 노출되는지 확인 요청드립니다.',
+      imagePath: imagePaths[3],
+      replyContent: null
+    },
+    {
+      title: '[DEMO 문의 05] 주소록 기본주소 설정',
+      content: '구매신청 시 주소록 기본주소 자동 입력이 정상 동작하는지 테스트 중입니다.',
+      imagePath: imagePaths[4],
+      replyContent: null
+    },
+    {
+      title: '[DEMO 문의 06] 주문 상태 표기 문의',
+      content: '주문완료 후 마이페이지에서 상태 변경이 실시간 반영되는지 확인 부탁드립니다.',
+      imagePath: imagePaths[5],
+      replyContent: '상태 변경 즉시 마이페이지 주문목록에 반영됩니다.'
+    }
+  ];
+  const findInquiry = db.prepare('SELECT id FROM inquiries WHERE title = ? LIMIT 1');
+  const insertInquiry = db.prepare(
+    `
+      INSERT INTO inquiries (
+        user_id,
+        title,
+        content,
+        image_path,
+        image_paths_json,
+        reply_content,
+        replied_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+  const updateInquiry = db.prepare(
+    `
+      UPDATE inquiries
+      SET
+        user_id = ?,
+        content = ?,
+        image_path = ?,
+        image_paths_json = ?,
+        reply_content = ?,
+        replied_at = ?,
+        is_hidden = 0
+      WHERE id = ?
+    `
+  );
+  inquiryRows.forEach((row) => {
+    const nowIso = row.replyContent ? db.prepare("SELECT datetime('now') AS now").get().now : null;
+    const imageList = JSON.stringify([row.imagePath]);
+    const existing = findInquiry.get(row.title);
+    if (existing) {
+      updateInquiry.run(
+        demoUserId,
+        row.content,
+        row.imagePath,
+        imageList,
+        row.replyContent,
+        nowIso,
+        Number(existing.id)
+      );
+    } else {
+      insertInquiry.run(
+        demoUserId,
+        row.title,
+        row.content,
+        row.imagePath,
+        imageList,
+        row.replyContent,
+        nowIso
+      );
+    }
+  });
+}
+
+function ensureStagingPersistentDemoFixtures() {
+  if (!isRenderStaging) {
+    return;
+  }
+
+  const tx = db.transaction(() => {
+    ensureStagingDomesticStockGroupConfig();
+    const demoUserId = ensureStagingDemoMemberAccount();
+    const domesticProductId = ensureStagingDomesticStockProduct();
+    ensureStagingBoardFixtures(demoUserId, domesticProductId);
+  });
+
+  tx();
+}
+
 function seedProducts() {
   const insertProduct = db.prepare(
     `
@@ -2070,6 +2575,8 @@ export function initDb() {
     seedInquiries(demoUserId);
     backfillDailyFunnelEventsFromOrders();
   }
+
+  ensureStagingPersistentDemoFixtures();
 
   ensureOrderStatusLogTable();
   if (shouldRunStartupDataMaintenance) {
