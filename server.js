@@ -8501,7 +8501,10 @@ app.get('/toggle-theme', (req, res) => {
 app.get('/main', (req, res) => {
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupMap = getProductGroupMap(productGroupConfigs);
-  const groupedProducts = productGroupConfigs.map((groupConfig) => {
+  const domesticStockGroup = productGroupConfigs.find((groupConfig) => isDomesticStockGroup(groupConfig)) || null;
+  const groupedProducts = productGroupConfigs
+    .filter((groupConfig) => !domesticStockGroup || groupConfig.key !== domesticStockGroup.key)
+    .map((groupConfig) => {
     const rows = db
       .prepare(
         `
@@ -8533,7 +8536,39 @@ app.get('/main', (req, res) => {
         rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
       )
     };
-  });
+    });
+
+  let domesticStockProducts = [];
+  if (domesticStockGroup) {
+    const domesticRows = db
+      .prepare(
+        `
+          SELECT
+            id,
+            category_group,
+            brand,
+            model,
+            sub_model,
+            price,
+            image_path,
+            shipping_period,
+            case_material,
+            movement,
+            features,
+            extra_fields_json,
+            is_sold_out
+          FROM products
+          WHERE is_active = 1 AND category_group = ?
+          ORDER BY id DESC
+          LIMIT 6
+        `
+      )
+      .all(domesticStockGroup.key);
+
+    domesticStockProducts = attachProductBadges(
+      domesticRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+    );
+  }
 
   const latestNotices = db
     .prepare(
@@ -8562,6 +8597,8 @@ app.get('/main', (req, res) => {
   res.render('main', {
     title: 'Main',
     groupedProducts,
+    domesticStockGroup,
+    domesticStockProducts,
     latestNotices,
     latestNews,
     productGroupConfigs,
