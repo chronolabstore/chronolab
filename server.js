@@ -838,12 +838,12 @@ const CONTENT_SECURITY_POLICY = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'self'",
-  "script-src 'self' 'unsafe-inline' https://t1.daumcdn.net",
+  "script-src 'self' 'unsafe-inline' https://t1.daumcdn.net https://*.daumcdn.net https://*.daum.net https://*.kakao.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https: http:",
-  "frame-src 'self' https://*.daum.net",
-  "connect-src 'self'",
+  "frame-src 'self' https://*.daum.net https://*.kakao.com",
+  "connect-src 'self' https://*.daum.net https://*.kakao.com",
   "form-action 'self'"
 ].join('; ');
 
