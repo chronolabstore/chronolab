@@ -967,23 +967,20 @@ body.theme-night .upload-limit-warning {
   gap: 12px;
 }
 
-.main-featured-top-head {
-  justify-content: flex-end;
-  margin-bottom: 4px;
-}
-
 .main-featured-top-group {
   padding: 10px;
 }
 
-.main-featured-top-group .shop-row-head {
+.main-featured-top-group .shop-row-head,
+.shop-row-block .shop-row-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.main-featured-top-group .shop-row-head a {
+.main-featured-top-group .shop-row-head a,
+.shop-row-block .shop-row-head a {
   font-size: 0.8rem;
   color: var(--muted);
 }
