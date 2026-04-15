@@ -1,7 +1,7 @@
 # Chrono Lab Deployment Guide (Cafe24)
 
 ## 1) 배포 구조
-- GitHub: `Heptalabs/chronolab`
+- GitHub: `chronolabstore/chronolab`
 - App Server: Cafe24 OpenClaw VPS (Ubuntu)
 - Process: PM2 (`chronolab`)
 - Reverse Proxy: Nginx
@@ -26,7 +26,7 @@ ufw --force enable
 ```bash
 mkdir -p /var/www
 cd /var/www
-git clone https://github.com/Heptalabs/chronolab.git || true
+git clone https://github.com/chronolabstore/chronolab.git || true
 cd /var/www/chronolab
 git fetch origin
 git checkout main
