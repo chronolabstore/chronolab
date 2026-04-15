@@ -2,6 +2,9 @@
 <%
   const isEn = ctx.lang === 'en';
   const soldOut = Number(product?.is_sold_out || 0) === 1;
+  const detailSubtitle = String(productDisplay?.subtitle || '').trim();
+  const detailSummary = String(productDisplay?.summary || '').trim();
+  const showDetailSubtitle = detailSubtitle && (!detailSummary || detailSubtitle !== detailSummary);
 %>
 
 <section class="detail-shell">
@@ -64,8 +67,8 @@
     <h2><%= Number(product.price || 0) > 0 ? `₩${ctx.formatPrice(product.price)}` : (isEn ? 'Price on request' : '가격문의') %></h2>
     <h3>
       <%= productDisplay?.title || `${product.brand || ''} ${product.model || ''}`.trim() %>
-      <% if (productDisplay?.subtitle) { %>
-        <small class="muted-label"><%= productDisplay.subtitle %></small>
+      <% if (showDetailSubtitle) { %>
+        <small class="muted-label"><%= detailSubtitle %></small>
       <% } %>
     </h3>
     <p class="muted-label"><%= productGroupLabel || product.category_group %></p>
