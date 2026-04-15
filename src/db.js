@@ -981,6 +981,7 @@ function ensureOrdersPointColumns() {
     }
   };
 
+  addColumnIfMissing('used_points', 'used_points INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('awarded_points', 'awarded_points INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('points_awarded_at', 'points_awarded_at TEXT');
   addColumnIfMissing('point_rate_snapshot', 'point_rate_snapshot REAL NOT NULL DEFAULT 0');
@@ -1869,6 +1870,7 @@ export function initDb() {
       bank_depositor_name TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       total_price INTEGER NOT NULL,
+      used_points INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
       tracking_carrier TEXT NOT NULL DEFAULT 'kr.cjlogistics',
       tracking_number TEXT NOT NULL DEFAULT '',
