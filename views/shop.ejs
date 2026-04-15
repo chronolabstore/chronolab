@@ -59,6 +59,7 @@
         <% safeFeaturedGroupKeys.forEach((item) => { %>
           <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip filter-chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
         <% }) %>
+        <span class="shop-group-separator" aria-hidden="true">|</span>
       <% } %>
       <% safeRegularGroupKeys.forEach((item) => { %>
         <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip filter-chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
