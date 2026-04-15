@@ -265,12 +265,13 @@
             <th><%= isEn ? 'Points' : '적립포인트' %></th>
             <th><%= isEn ? 'Tracking' : '송장' %></th>
             <th><%= isEn ? 'Requested' : '신청일' %></th>
+            <th><%= isEn ? 'Review' : '후기' %></th>
           </tr>
         </thead>
         <tbody>
           <% if (orders.length === 0) { %>
             <tr>
-              <td colspan="8"><%= isEn ? 'No order history found.' : '조건에 맞는 주문 내역이 없습니다.' %></td>
+              <td colspan="9"><%= isEn ? 'No order history found.' : '조건에 맞는 주문 내역이 없습니다.' %></td>
             </tr>
           <% } %>
           <% orders.forEach((item) => { %>
@@ -294,6 +295,12 @@
               const trackingLookupUrl = item.tracking_number
                 ? `https://tracker.delivery/#/${encodeURIComponent(item.tracking_carrier || 'kr.cjlogistics')}/${encodeURIComponent(item.tracking_number)}`
                 : '';
+              const hasReview = Number(item.review_id || 0) > 0;
+              const canWriteReview = Boolean(item.can_write_review);
+              const reviewWritePath = canWriteReview ? `/review/new?orderId=${encodeURIComponent(item.id)}` : '';
+              const reviewEditPath = hasReview ? `/review/${encodeURIComponent(item.review_id)}/edit` : '';
+              const reviewDeleteFormId = hasReview ? `orderReviewDeleteForm-${Number(item.review_id)}` : '';
+              const reviewCreatedDate = item.review_created_at ? item.review_created_at.slice(0, 10) : '';
             %>
             <tr>
               <td class="order-no-cell">
@@ -342,10 +349,43 @@
                 <span class="order-requested-date"><%= requestedDate %></span>
                 <span class="order-requested-time"><%= requestedTime %></span>
               </td>
+              <td class="order-review-cell">
+                <% if (hasReview) { %>
+                  <div class="order-review-actions">
+                    <a href="<%= reviewEditPath %>" class="chip"><%= isEn ? 'Edit Review' : '후기수정' %></a>
+                    <form method="post" action="/review/<%= item.review_id %>/delete" class="inline-form" id="<%= reviewDeleteFormId %>">
+                      <button
+                        type="button"
+                        class="chip review-delete-trigger"
+                        data-review-delete-open="1"
+                        data-review-delete-form="<%= reviewDeleteFormId %>"
+                      ><%= isEn ? 'Delete Review' : '후기삭제' %></button>
+                    </form>
+                    <% if (reviewCreatedDate) { %>
+                      <small class="order-review-meta"><%= isEn ? 'Written' : '작성일' %>: <%= reviewCreatedDate %></small>
+                    <% } %>
+                  </div>
+                <% } else if (canWriteReview) { %>
+                  <a href="<%= reviewWritePath %>" class="chip dark"><%= isEn ? 'Write Review' : '구매후기작성' %></a>
+                <% } else { %>
+                  <small class="order-review-note"><%= isEn ? 'Available after delivery.' : '배송완료 후 작성 가능' %></small>
+                <% } %>
+              </td>
             </tr>
           <% }) %>
         </tbody>
       </table>
+    </div>
+
+    <div class="popup-backdrop hidden" id="mypageReviewDeletePopup" aria-hidden="true">
+      <div class="popup-card review-delete-popup-card" role="dialog" aria-modal="true" aria-labelledby="mypageReviewDeleteTitle">
+        <h3 id="mypageReviewDeleteTitle"><%= isEn ? 'Delete Review' : '후기 삭제' %></h3>
+        <p id="mypageReviewDeleteMessage"><%= isEn ? 'Delete this purchase review?' : '구매후기를 삭제하시겠습니까?' %></p>
+        <div class="review-delete-popup-actions">
+          <button type="button" class="chip" data-review-delete-cancel="1"><%= isEn ? 'Cancel' : '취소' %></button>
+          <button type="button" class="chip dark review-delete-confirm-btn" data-review-delete-confirm="1"><%= isEn ? 'Delete' : '삭제' %></button>
+        </div>
+      </div>
     </div>
   <% } %>
 </section>
@@ -364,6 +404,60 @@
           groupInput.value = targetGroup;
           form.requestSubmit();
         });
+      });
+    }
+
+    const reviewDeletePopup = document.getElementById('mypageReviewDeletePopup');
+    const reviewDeleteMessage = document.getElementById('mypageReviewDeleteMessage');
+    let pendingReviewDeleteFormId = '';
+    const closeReviewDeletePopup = () => {
+      if (!reviewDeletePopup) return;
+      reviewDeletePopup.classList.add('hidden');
+      reviewDeletePopup.setAttribute('aria-hidden', 'true');
+      pendingReviewDeleteFormId = '';
+    };
+    if (reviewDeletePopup) {
+      const openButtons = document.querySelectorAll('[data-review-delete-open][data-review-delete-form]');
+      const cancelButton = reviewDeletePopup.querySelector('[data-review-delete-cancel]');
+      const confirmButton = reviewDeletePopup.querySelector('[data-review-delete-confirm]');
+
+      openButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const formId = String(button.getAttribute('data-review-delete-form') || '').trim();
+          if (!formId) return;
+          pendingReviewDeleteFormId = formId;
+          reviewDeletePopup.classList.remove('hidden');
+          reviewDeletePopup.setAttribute('aria-hidden', 'false');
+          if (reviewDeleteMessage) {
+            reviewDeleteMessage.textContent = isEn ? 'Delete this purchase review?' : '구매후기를 삭제하시겠습니까?';
+          }
+        });
+      });
+
+      cancelButton?.addEventListener('click', closeReviewDeletePopup);
+      confirmButton?.addEventListener('click', () => {
+        if (!pendingReviewDeleteFormId) {
+          closeReviewDeletePopup();
+          return;
+        }
+        const targetForm = document.getElementById(pendingReviewDeleteFormId);
+        if (!targetForm) {
+          closeReviewDeletePopup();
+          return;
+        }
+        targetForm.submit();
+      });
+
+      reviewDeletePopup.addEventListener('click', (event) => {
+        if (event.target === reviewDeletePopup) {
+          closeReviewDeletePopup();
+        }
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !reviewDeletePopup.classList.contains('hidden')) {
+          closeReviewDeletePopup();
+        }
       });
     }
 

@@ -900,6 +900,18 @@ function ensureOrdersSalesSnapshotColumns() {
   addColumnIfMissing('sales_synced_at', 'sales_synced_at TEXT');
 }
 
+function ensureReviewsOrderColumn() {
+  const columns = db.prepare('PRAGMA table_info(reviews)').all();
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('order_id')) {
+    db.prepare('ALTER TABLE reviews ADD COLUMN order_id INTEGER').run();
+  }
+
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_reviews_order_id ON reviews (order_id)').run();
+  db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_order_unique ON reviews (order_id)').run();
+}
+
 function ensureDailyVisitSplitColumns() {
   const columns = db.prepare('PRAGMA table_info(daily_visits)').all();
   const columnNames = new Set(columns.map((column) => column.name));
@@ -1829,12 +1841,14 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS reviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
+      order_id INTEGER,
       product_id INTEGER,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       image_path TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
     );
 
@@ -1894,6 +1908,7 @@ export function initDb() {
   ensureOrdersTrackingColumns();
   ensureOrdersPointColumns();
   ensureOrdersSalesSnapshotColumns();
+  ensureReviewsOrderColumn();
   ensureDailyVisitSplitColumns();
   ensureContentVisibilityColumns();
   ensureContentImagePathsJsonColumns();

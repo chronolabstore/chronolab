@@ -4,12 +4,10 @@
 <section class="block-card">
   <div class="section-head">
     <h2><%= isEn ? 'Reviews' : '구매후기' %></h2>
-    <% if (ctx.currentUser) { %>
-      <a href="/review/new" class="chip dark"><%= isEn ? 'Write review' : '후기 작성' %></a>
-    <% } else { %>
-      <a href="/login" class="chip"><%= isEn ? 'Login to write' : '로그인 후 작성' %></a>
-    <% } %>
   </div>
+  <p class="muted-label">
+    <%= isEn ? 'Review writing is available only from My Page > Orders after delivery completion.' : '후기 작성은 배송완료 후 마이페이지 > 구매목록에서만 가능합니다.' %>
+  </p>
 
   <div class="review-grid">
     <% if (reviews.length === 0) { %>
