@@ -390,10 +390,6 @@ function ensureSignupBonusBaseline() {
 }
 
 function applyMemberLevelThemeBaselineV20260415() {
-  if (!shouldRunStartupDataMaintenance) {
-    return;
-  }
-
   const markerKey = 'memberLevelThemeBaselineSeedV20260415';
   if (String(getSetting(markerKey, '0') || '0') === '1') {
     return;
