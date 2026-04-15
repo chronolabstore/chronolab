@@ -4447,6 +4447,133 @@ body.theme-night .sales-computed-cell.is-negative {
   overscroll-behavior-x: contain;
 }
 
+.purchase-page-card {
+  max-width: 1120px;
+  margin: 0 auto;
+  gap: 14px;
+}
+
+.purchase-page-head {
+  display: grid;
+  gap: 4px;
+}
+
+.purchase-page-head h2 {
+  margin: 0;
+}
+
+.purchase-page-layout {
+  display: grid;
+  gap: 14px;
+}
+
+.purchase-page-content,
+.purchase-page-summary {
+  min-width: 0;
+}
+
+.purchase-summary-box {
+  margin: 0;
+  background: var(--chip);
+  border-radius: 14px;
+  padding: 14px;
+  gap: 8px;
+}
+
+.purchase-summary-box p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 0.9rem;
+}
+
+.purchase-summary-box p span {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.purchase-summary-box p strong {
+  text-align: right;
+  font-weight: 700;
+}
+
+.purchase-summary-box .purchase-summary-note {
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+
+.purchase-summary-box .purchase-summary-note small {
+  text-align: right;
+}
+
+.purchase-request-form {
+  gap: 12px;
+}
+
+.purchase-request-form label {
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.purchase-field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.purchase-transfer-notice {
+  margin: 0;
+}
+
+@media (max-width: 979px) {
+  .purchase-page-card {
+    max-width: 760px;
+  }
+
+  .purchase-summary-box p {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .purchase-summary-box .purchase-summary-note {
+    align-items: flex-start;
+  }
+
+  .purchase-summary-box .purchase-summary-note small {
+    text-align: left;
+  }
+}
+
+@media (min-width: 980px) {
+  .purchase-page-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+    align-items: start;
+    gap: 18px;
+  }
+
+  .purchase-page-content {
+    order: 1;
+  }
+
+  .purchase-page-summary {
+    order: 2;
+    position: sticky;
+    top: 18px;
+  }
+
+  .purchase-request-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+  }
+
+  .purchase-request-form > .address-book-save-box,
+  .purchase-request-form > button,
+  .purchase-request-form > .purchase-field-span-2 {
+    grid-column: 1 / -1;
+  }
+}
+
 .address-book-save-box {
   border: 1px dashed var(--line);
   border-radius: 12px;
