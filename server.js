@@ -521,7 +521,7 @@ const SALES_CNY_NAVER_SEARCH_URL =
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
 const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels']);
-const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'level-rates']);
+const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'review', 'level-rates']);
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
 const DEFAULT_IP_GEO_CACHE_TTL_HOURS = 24 * 30;
@@ -553,6 +553,7 @@ const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
 const PRODUCT_BADGE_DEFAULT_COLOR_THEME = 'slate';
+const REVIEW_POINT_DEDUCTION_BLOCK_REASON = '구매후기 삭제로인한 포인트 회수 잔고 부족';
 const PRODUCT_BADGE_COLOR_THEMES = Object.freeze([
   { key: 'slate', labelKo: '기본', labelEn: 'Default' },
   { key: 'red', labelKo: '레드', labelEn: 'Red' },
@@ -7149,6 +7150,10 @@ function getSignupBonusPointsSetting() {
   return parseNonNegativeInt(getSetting('signupBonusPoints', '10000'), 10000);
 }
 
+function getReviewRewardPointsSetting() {
+  return parseNonNegativeInt(getSetting('reviewRewardPoints', '5000'), 5000);
+}
+
 function getLegacyPurchasePointRateSetting() {
   return parsePointRate(getSetting('purchasePointRate', '0'), 0);
 }
@@ -8342,6 +8347,7 @@ app.use((req, res, next) => {
       watermarkLogoPath: getBrandingWatermarkUrl(),
       bankAccountInfo: getSetting('bankAccountInfo', ''),
       signupBonusPoints: getSignupBonusPointsSetting(),
+      reviewRewardPoints: getReviewRewardPointsSetting(),
       purchasePointRate: getLegacyPurchasePointRateSetting(),
       contactInfo: getSetting('contactInfo', ''),
       businessInfo: getSetting('businessInfo', ''),
@@ -10545,6 +10551,7 @@ function getOwnedReviewWithOrder(reviewId, userId) {
           r.title,
           r.content,
           r.image_path,
+          r.reward_points_awarded,
           r.created_at,
           o.id AS order_row_id,
           o.order_no,
@@ -10611,6 +10618,7 @@ app.get('/review/new', requireAuth, (req, res) => {
     mode: 'create',
     formAction: '/review/new',
     reviewOrder,
+    reviewRewardPoints: getReviewRewardPointsSetting(),
     reviewForm: {
       title: '',
       content: '',
@@ -10662,21 +10670,55 @@ app.post('/review/new', requireAuth, upload.single('image'), requireAuthenticate
     return res.redirect(redirectToWrite);
   }
 
-  db.prepare(
-    `
-      INSERT INTO reviews (user_id, order_id, product_id, title, content, image_path)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `
-  ).run(
-    req.user.id,
-    reviewOrder.id,
-    Number(reviewOrder.product_id || 0) > 0 ? Number(reviewOrder.product_id) : null,
-    title,
-    content,
-    fileUrl(req.file)
-  );
+  const reviewRewardPoints = getReviewRewardPointsSetting();
+  const insertReviewWithPointTx = db.transaction((resolvedUserId, resolvedOrder, resolvedTitle, resolvedContent, resolvedImagePath, resolvedRewardPoints) => {
+    db.prepare(
+      `
+        INSERT INTO reviews (user_id, order_id, product_id, title, content, image_path, reward_points_awarded)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      resolvedUserId,
+      resolvedOrder.id,
+      Number(resolvedOrder.product_id || 0) > 0 ? Number(resolvedOrder.product_id) : null,
+      resolvedTitle,
+      resolvedContent,
+      resolvedImagePath,
+      resolvedRewardPoints
+    );
 
-  setFlash(req, 'success', '구매후기가 등록되었습니다.');
+    if (resolvedRewardPoints > 0) {
+      const pointCredit = db
+        .prepare('UPDATE users SET reward_points = reward_points + ? WHERE id = ? AND is_admin = 0')
+        .run(resolvedRewardPoints, resolvedUserId);
+      if (pointCredit.changes === 0) {
+        throw new Error('review_reward_point_credit_failed');
+      }
+    }
+  });
+
+  try {
+    insertReviewWithPointTx(req.user.id, reviewOrder, title, content, fileUrl(req.file), reviewRewardPoints);
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (message.includes('UNIQUE constraint failed: reviews.order_id')) {
+      const existingConflictReview = getExistingReviewByOrder(reviewOrder.id, req.user.id);
+      if (existingConflictReview) {
+        setFlash(req, 'error', '이미 작성한 후기입니다. 수정 화면으로 이동합니다.');
+        return res.redirect(`/review/${existingConflictReview.id}/edit`);
+      }
+      setFlash(req, 'error', '이미 작성한 후기입니다.');
+      return res.redirect(myPageOrdersPath);
+    }
+    console.error('[review.new] failed to save review with reward points:', error);
+    setFlash(req, 'error', '구매후기 저장 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    return res.redirect(redirectToWrite);
+  }
+
+  const successMessage = reviewRewardPoints > 0
+    ? `구매후기가 등록되었습니다. ${formatPrice(reviewRewardPoints)}P가 지급되었습니다.`
+    : '구매후기가 등록되었습니다.';
+  setFlash(req, 'success', successMessage);
   res.redirect(myPageOrdersPath);
 });
 
@@ -10714,6 +10756,7 @@ app.get('/review/:id/edit', requireAuth, (req, res) => {
     mode: 'edit',
     formAction: `/review/${reviewForm.id}/edit`,
     reviewOrder,
+    reviewRewardPoints: getReviewRewardPointsSetting(),
     reviewForm,
     backPath: myPageOrdersPath
   });
@@ -10801,8 +10844,93 @@ app.post('/review/:id/delete', requireAuth, (req, res) => {
     return res.redirect(myPageOrdersPath);
   }
 
-  db.prepare('DELETE FROM reviews WHERE id = ? AND user_id = ?').run(reviewId, req.user.id);
-  setFlash(req, 'success', '구매후기가 삭제되었습니다.');
+  const awardedReviewPoints = parseNonNegativeInt(reviewForm.reward_points_awarded, 0);
+  let deleteResult = {
+    blockedByPointShortage: false,
+    deductedPoints: 0
+  };
+
+  const deleteReviewWithPointRollbackTx = db.transaction((resolvedReviewId, resolvedUserId, resolvedAwardedPoints) => {
+    const member = db
+      .prepare(
+        `
+          SELECT id, is_admin, reward_points
+          FROM users
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .get(resolvedUserId);
+    if (!member || Number(member.is_admin) === 1) {
+      throw new Error('review_delete_member_not_found');
+    }
+
+    const availablePoints = parseNonNegativeInt(member.reward_points, 0);
+    let blockedByPointShortage = false;
+    let deductedPoints = 0;
+
+    if (resolvedAwardedPoints > 0) {
+      if (availablePoints >= resolvedAwardedPoints) {
+        deductedPoints = resolvedAwardedPoints;
+        const deductResult = db
+          .prepare('UPDATE users SET reward_points = reward_points - ? WHERE id = ? AND is_admin = 0')
+          .run(resolvedAwardedPoints, resolvedUserId);
+        if (deductResult.changes === 0) {
+          throw new Error('review_delete_point_deduction_failed');
+        }
+      } else {
+        blockedByPointShortage = true;
+        deductedPoints = availablePoints;
+        const blockResult = db
+          .prepare(
+            `
+              UPDATE users
+              SET
+                reward_points = 0,
+                is_blocked = 1,
+                blocked_reason = ?,
+                blocked_at = datetime('now')
+              WHERE id = ? AND is_admin = 0
+            `
+          )
+          .run(REVIEW_POINT_DEDUCTION_BLOCK_REASON, resolvedUserId);
+        if (blockResult.changes === 0) {
+          throw new Error('review_delete_member_block_failed');
+        }
+      }
+    }
+
+    const deleted = db.prepare('DELETE FROM reviews WHERE id = ? AND user_id = ?').run(resolvedReviewId, resolvedUserId);
+    if (deleted.changes === 0) {
+      throw new Error('review_delete_target_missing');
+    }
+
+    return {
+      blockedByPointShortage,
+      deductedPoints
+    };
+  });
+
+  try {
+    deleteResult = deleteReviewWithPointRollbackTx(reviewId, req.user.id, awardedReviewPoints);
+  } catch (error) {
+    console.error('[review.delete] failed to rollback review reward points:', error);
+    setFlash(req, 'error', '구매후기 삭제 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  if (deleteResult.blockedByPointShortage) {
+    setFlash(
+      req,
+      'success',
+      `구매후기가 삭제되었습니다. 지급 포인트 ${formatPrice(awardedReviewPoints)}P 회수 잔고가 부족해 계정이 블락 처리되었습니다.`
+    );
+  } else if (awardedReviewPoints > 0) {
+    setFlash(req, 'success', `구매후기가 삭제되었습니다. 지급된 ${formatPrice(awardedReviewPoints)}P가 회수되었습니다.`);
+  } else {
+    setFlash(req, 'success', '구매후기가 삭제되었습니다.');
+  }
+
   res.redirect(myPageOrdersPath);
 });
 
@@ -13056,6 +13184,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     watermarkLogoPath: getBrandingWatermarkUrl(),
     bankAccountInfo: getSetting('bankAccountInfo', ''),
     signupBonusPoints: getSignupBonusPointsSetting(),
+    reviewRewardPoints: getReviewRewardPointsSetting(),
     purchasePointRate: getLegacyPurchasePointRateSetting(),
     contactInfo: getSetting('contactInfo', ''),
     businessInfo: getSetting('businessInfo', ''),
@@ -14360,6 +14489,19 @@ app.post('/admin/points/signup', requireAdmin, (req, res) => {
   setSetting('signupBonusPoints', String(signupBonusPoints));
   logAdminActivity(req, 'POINTS_SIGNUP_UPDATE', `signup_bonus:${signupBonusPoints}`);
   setFlash(req, 'success', '회원가입 포인트가 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/points/review', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/points?section=review');
+  const reviewRewardPoints = parseNonNegativeInt(
+    String(req.body.reviewRewardPoints ?? '0').replace(/[^0-9]/g, ''),
+    0
+  );
+
+  setSetting('reviewRewardPoints', String(reviewRewardPoints));
+  logAdminActivity(req, 'POINTS_REVIEW_UPDATE', `review_reward:${reviewRewardPoints}`);
+  setFlash(req, 'success', '구매후기 포인트가 저장되었습니다.');
   return res.redirect(backPath);
 });
 

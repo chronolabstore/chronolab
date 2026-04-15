@@ -146,7 +146,7 @@
   const menusTab = ['public', 'groups', 'group-filters', 'fields'].includes(String(menuSection || ''))
     ? String(menuSection)
     : 'public';
-  const pointsTab = ['signup', 'level-rates'].includes(String(pointSection || ''))
+  const pointsTab = ['signup', 'review', 'level-rates'].includes(String(pointSection || ''))
     ? String(pointSection)
     : 'signup';
   const siteTab = String(siteSection || '') === 'theme' ? 'theme' : 'basic';
@@ -1462,6 +1462,7 @@
     <h3><%= isEn ? 'Point Management' : '포인트 관리' %></h3>
     <div class="security-subnav">
       <a href="/admin/points?section=signup" class="menu-pill <%= pointsTab === 'signup' ? 'active' : '' %>"><%= isEn ? 'Signup Points' : '회원가입 포인트' %></a>
+      <a href="/admin/points?section=review" class="menu-pill <%= pointsTab === 'review' ? 'active' : '' %>"><%= isEn ? 'Review Points' : '구매후기 포인트' %></a>
       <a href="/admin/points?section=level-rates" class="menu-pill <%= pointsTab === 'level-rates' ? 'active' : '' %>"><%= isEn ? 'Level Point Rates' : '등급별 적용 포인트' %></a>
     </div>
 
@@ -1475,6 +1476,21 @@
             <input type="number" name="signupBonusPoints" min="0" step="1" value="<%= Number(settings.signupBonusPoints || 0) %>" required />
           </label>
           <button type="submit" class="chip dark"><%= isEn ? 'Save Signup Points' : '회원가입 포인트 저장' %></button>
+        </form>
+      </section>
+    <% } %>
+
+    <% if (pointsTab === 'review') { %>
+      <section class="kpi-card">
+        <h4><%= isEn ? 'Purchase Review Reward Points' : '구매후기 포인트 설정' %></h4>
+        <p class="muted-label"><%= isEn ? 'Set the points credited when a member writes a purchase review. The same amount is reclaimed on review deletion.' : '회원이 구매후기를 작성할 때 지급할 포인트를 설정합니다. 후기 삭제 시 동일 포인트가 회수됩니다.' %></p>
+        <p class="muted-label"><%= isEn ? 'If the member balance is insufficient during rollback, the account is automatically blocked.' : '회수 시 잔고가 부족하면 계정이 자동 블락 처리됩니다.' %></p>
+        <form method="post" action="/admin/points/review" class="form-grid">
+          <label>
+            <%= isEn ? 'Review Reward Points' : '구매후기 포인트' %>
+            <input type="number" name="reviewRewardPoints" min="0" step="1" value="<%= Number(settings.reviewRewardPoints || 0) %>" required />
+          </label>
+          <button type="submit" class="chip dark"><%= isEn ? 'Save Review Points' : '구매후기 포인트 저장' %></button>
         </form>
       </section>
     <% } %>

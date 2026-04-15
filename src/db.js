@@ -312,6 +312,7 @@ const defaultSettings = {
   menus: JSON.stringify(defaultMenus),
   bankAccountInfo: '입금계좌: 은행명 000-0000-0000 (예금주: Chrono Lab)',
   signupBonusPoints: '10000',
+  reviewRewardPoints: '5000',
   purchasePointRate: '0',
   memberLevelIncludedGroups: JSON.stringify(SHOP_PRODUCT_GROUPS),
   memberLevelRules: JSON.stringify(DEFAULT_MEMBER_LEVEL_RULES),
@@ -906,6 +907,9 @@ function ensureReviewsOrderColumn() {
 
   if (!columnNames.has('order_id')) {
     db.prepare('ALTER TABLE reviews ADD COLUMN order_id INTEGER').run();
+  }
+  if (!columnNames.has('reward_points_awarded')) {
+    db.prepare('ALTER TABLE reviews ADD COLUMN reward_points_awarded INTEGER NOT NULL DEFAULT 0').run();
   }
 
   db.prepare('CREATE INDEX IF NOT EXISTS idx_reviews_order_id ON reviews (order_id)').run();
@@ -1746,6 +1750,7 @@ export function initDb() {
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       image_path TEXT,
+      reward_points_awarded INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL,

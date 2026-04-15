@@ -1690,6 +1690,27 @@ textarea {
   min-width: 68px;
 }
 
+.review-policy-box {
+  margin-bottom: 12px;
+  border: 1px solid rgba(185, 28, 28, 0.32);
+  border-radius: 12px;
+  background: rgba(254, 226, 226, 0.55);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.review-policy-box p {
+  margin: 0;
+  color: #7f1d1d;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.review-policy-box p strong {
+  font-weight: 800;
+}
+
 .review-edit-image-preview {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -4788,6 +4809,15 @@ body.theme-night .review-delete-trigger:hover {
   border-color: rgba(252, 165, 165, 0.8);
   background: rgba(153, 27, 27, 0.48);
   color: #fee2e2;
+}
+
+body.theme-night .review-policy-box {
+  border-color: rgba(252, 165, 165, 0.45);
+  background: rgba(127, 29, 29, 0.35);
+}
+
+body.theme-night .review-policy-box p {
+  color: #fecaca;
 }
 
 .cart-table th:nth-child(1),
