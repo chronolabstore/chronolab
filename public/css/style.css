@@ -560,6 +560,11 @@ img {
   border-color: var(--btn-primary-bg-hover);
 }
 
+.chip:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .chip.ghost {
   background: transparent;
   color: inherit;
@@ -908,6 +913,14 @@ body.theme-night .upload-limit-warning {
 
 .filter-group .chip-row {
   gap: 6px;
+  align-items: center;
+}
+
+.shop-group-separator {
+  color: var(--muted);
+  font-weight: 700;
+  margin: 0 2px 0 6px;
+  line-height: 1;
 }
 
 .chip.filter-chip {
@@ -941,6 +954,30 @@ body.theme-night .upload-limit-warning {
   padding: 12px;
   display: grid;
   gap: 10px;
+}
+
+.main-featured-top-card {
+  margin-top: 2px;
+}
+
+.main-featured-top-list {
+  gap: 12px;
+}
+
+.main-featured-top-group {
+  padding: 10px;
+}
+
+.main-featured-top-group .shop-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.main-featured-top-group .shop-row-head a {
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 .shop-row-head h3 {
@@ -2462,6 +2499,35 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   white-space: nowrap;
 }
 
+.menu-manage-subnav-wrap {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.menu-manage-subnav-group {
+  display: grid;
+  gap: 6px;
+}
+
+.menu-manage-subnav-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.menu-manage-subnav {
+  margin-top: 0;
+}
+
+.menu-manage-subnav-divider {
+  height: 1px;
+  background: var(--line);
+  border-radius: 999px;
+}
+
 .menu-manage-stack {
   margin-top: 12px;
   display: grid;
@@ -2522,6 +2588,10 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
   color: #c9d6ee;
 }
 
+body.theme-night .menu-manage-subnav-divider {
+  background: #6e87af;
+}
+
 .menu-manage-submit {
   justify-self: flex-start;
   margin-top: 4px;
@@ -2533,6 +2603,26 @@ body.theme-night .menu-manage-card .admin-list-item > summary small {
 
 .menu-manage-list .admin-grid {
   margin-top: 8px;
+}
+
+.menu-group-actions {
+  align-items: center;
+  gap: 6px;
+}
+
+.menu-group-layout-form {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.menu-group-layout-form .check-row {
+  margin: 0;
+}
+
+.menu-group-topbox-check {
+  align-self: end;
+  margin: 0;
 }
 
 .menu-group-filter-grid {

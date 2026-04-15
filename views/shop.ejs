@@ -14,6 +14,12 @@
   const safeBrand = String(brand || '').trim();
   const safeFactory = String(factory || '').trim();
   const safeModel = String(model || '').trim();
+  const safeRegularGroupKeys = Array.isArray(shopFilterRegularGroups)
+    ? shopFilterRegularGroups
+    : (Array.isArray(productGroups) ? productGroups : []);
+  const safeFeaturedGroupKeys = Array.isArray(shopFilterFeaturedGroups)
+    ? shopFilterFeaturedGroups
+    : [];
   const safeBrandItems = Array.isArray(brandItems) ? brandItems : (Array.isArray(brands) ? brands.map((value) => ({ value, label: value })) : []);
   const safeFactoryItems = Array.isArray(factoryItems) ? factoryItems : (Array.isArray(factories) ? factories.map((value) => ({ value, label: value })) : []);
   const safeModelItems = Array.isArray(modelItems) ? modelItems : (Array.isArray(models) ? models.map((value) => ({ value, label: value })) : []);
@@ -48,7 +54,13 @@
   <div class="filter-group">
     <div class="chip-row">
       <a href="/shop?group=all" class="chip filter-chip <%= group === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
-      <% productGroups.forEach((item) => { %>
+      <% if (safeFeaturedGroupKeys.length > 0) { %>
+        <span class="shop-group-separator" aria-hidden="true">|</span>
+        <% safeFeaturedGroupKeys.forEach((item) => { %>
+          <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip filter-chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
+        <% }) %>
+      <% } %>
+      <% safeRegularGroupKeys.forEach((item) => { %>
         <a href="/shop?group=<%= encodeURIComponent(item) %>" class="chip filter-chip <%= group === item ? 'dark' : '' %>"><%= resolvedGroupLabelMap[item] || item %></a>
       <% }) %>
     </div>

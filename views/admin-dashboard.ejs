@@ -1866,15 +1866,29 @@
   <% if (tab === 'menus') { %>
   <article class="block-card menu-manage-card">
     <h3><%= isEn ? 'Menu Manager' : '메뉴 관리' %></h3>
-    <div class="security-subnav">
-      <a href="/admin/menus?section=public" class="menu-pill <%= menusTab === 'public' ? 'active' : '' %>"><%= isEn ? 'Public Menus' : '공개 메뉴' %></a>
-      <a href="/admin/menus?section=groups" class="menu-pill <%= menusTab === 'groups' ? 'active' : '' %>"><%= isEn ? 'Category Manager' : '분류 관리' %></a>
-      <a href="/admin/menus?section=group-filters" class="menu-pill <%= menusTab === 'group-filters' ? 'active' : '' %>"><%= isEn ? 'Category Filters' : '분류 필터' %></a>
-      <a href="/admin/menus?section=fields" class="menu-pill <%= menusTab === 'fields' ? 'active' : '' %>"><%= isEn ? 'Upload Fields' : '업로드 항목' %></a>
+    <div class="menu-manage-subnav-wrap">
+      <div class="menu-manage-subnav-group">
+        <p class="menu-manage-subnav-title"><%= isEn ? 'Header Menu Management' : '헤더 메뉴 관리' %></p>
+        <div class="security-subnav menu-manage-subnav">
+          <a href="/admin/menus?section=public" class="menu-pill <%= menusTab === 'public' ? 'active' : '' %>"><%= isEn ? 'Header Menu Settings' : '헤더 메뉴 설정' %></a>
+        </div>
+      </div>
+      <div class="menu-manage-subnav-divider" role="presentation"></div>
+      <div class="menu-manage-subnav-group">
+        <p class="menu-manage-subnav-title"><%= isEn ? 'Shop Menu Management' : '쇼핑몰 메뉴 관리' %></p>
+        <div class="security-subnav menu-manage-subnav">
+          <a href="/admin/menus?section=groups" class="menu-pill <%= menusTab === 'groups' ? 'active' : '' %>"><%= isEn ? 'Category Manager' : '분류 관리' %></a>
+          <a href="/admin/menus?section=group-filters" class="menu-pill <%= menusTab === 'group-filters' ? 'active' : '' %>"><%= isEn ? 'Category Filters' : '분류 필터' %></a>
+          <a href="/admin/menus?section=fields" class="menu-pill <%= menusTab === 'fields' ? 'active' : '' %>"><%= isEn ? 'Upload Fields' : '업로드 항목' %></a>
+        </div>
+      </div>
     </div>
 
     <% if (menusTab === 'public') { %>
       <div class="menu-manage-stack">
+        <p class="muted-label menu-manage-note">
+          <%= isEn ? 'Manage top header navigation menus shown across the site.' : '사이트 헤더에 노출되는 상단 메뉴를 추가/수정/삭제합니다.' %>
+        </p>
         <form method="post" action="/admin/menu/add" class="form-grid menu-manage-form">
           <label><%= isEn ? 'Menu Label (KR)' : '메뉴명 (KR)' %>
             <input type="text" name="labelKo" required />
@@ -1930,7 +1944,7 @@
     <% if (menusTab === 'groups') { %>
       <div class="menu-manage-stack">
         <p class="muted-label menu-manage-note">
-          <%= isEn ? 'Add or remove shop top categories. Category filter settings are managed in the Category Filters tab.' : '쇼핑몰 상위 분류를 추가/삭제할 수 있습니다. 브랜드/공장/모델 필터는 분류 필터 탭에서 관리합니다.' %>
+          <%= isEn ? 'Add/remove shop categories, choose whether each category appears in the top featured box on the main page, and reorder category display order.' : '쇼핑몰 상위 분류를 추가/삭제하고, 메인 상단 별도박스 노출 여부 및 쇼핑몰 분류 노출 순서를 함께 관리합니다.' %>
         </p>
         <form method="post" action="/admin/product-group/add" class="form-grid menu-manage-form">
           <label><%= isEn ? 'Category Key (optional)' : '분류 키 (선택)' %>
@@ -1948,19 +1962,35 @@
               <option value="factory"><%= isEn ? 'Factory Spec Fields' : '공장제형 필드' %></option>
             </select>
           </label>
+          <label class="check-row menu-group-topbox-check">
+            <input type="checkbox" name="showInMainTopBox" />
+            <span><%= isEn ? 'Place in main top featured box' : '메인 상단 별도박스에 배치' %></span>
+          </label>
           <button type="submit" class="chip dark menu-manage-submit"><%= isEn ? 'Add Category' : '분류 추가' %></button>
         </form>
 
         <div class="admin-list menu-manage-list">
-          <% productGroupConfigList.forEach((group) => { %>
+          <% productGroupConfigList.forEach((group, groupIndex) => { %>
             <div class="admin-list-item">
               <div class="menu-manage-item-row">
                 <div class="menu-manage-item-copy">
                   <strong><%= group.labelKo || group.key %> / <%= group.labelEn || group.key %></strong>
                   <span><%= isEn ? 'Key' : '키' %>: <code><%= group.key %></code></span>
+                  <span class="muted-label"><%= isEn ? `Display order #${groupIndex + 1}` : `노출 순서 #${groupIndex + 1}` %></span>
+                  <span class="muted-label"><%= resolveMenuGroupFilterToggle(group.showInMainTopBox, false) ? (isEn ? 'Main top box: enabled' : '상단 별도박스: 사용') : (isEn ? 'Main top box: disabled' : '상단 별도박스: 미사용') %></span>
                   <span class="muted-label"><%= isEn ? `${(group.customFields || []).length} fields configured` : `설정된 업로드 항목 ${(group.customFields || []).length}개` %></span>
                 </div>
-                <div class="admin-account-actions">
+                <div class="admin-account-actions menu-group-actions">
+                  <form method="post" action="/admin/product-group/reorder" class="inline-form">
+                    <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                    <input type="hidden" name="direction" value="up" />
+                    <button type="submit" class="chip" <%= groupIndex === 0 ? 'disabled' : '' %>><%= isEn ? 'Move Up' : '위로' %></button>
+                  </form>
+                  <form method="post" action="/admin/product-group/reorder" class="inline-form">
+                    <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                    <input type="hidden" name="direction" value="down" />
+                    <button type="submit" class="chip" <%= groupIndex === productGroupConfigList.length - 1 ? 'disabled' : '' %>><%= isEn ? 'Move Down' : '아래로' %></button>
+                  </form>
                   <% if (productGroupConfigList.length > 1) { %>
                     <form method="post" action="/admin/product-group/remove/<%= encodeURIComponent(group.key) %>" class="inline-form">
                       <button type="submit" class="chip"><%= isEn ? 'Delete Category' : '분류 삭제' %></button>
@@ -1968,6 +1998,14 @@
                   <% } %>
                 </div>
               </div>
+              <form method="post" action="/admin/product-group/layout/update" class="form-grid compact menu-group-layout-form">
+                <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                <label class="check-row">
+                  <input type="checkbox" name="showInMainTopBox" <%= resolveMenuGroupFilterToggle(group.showInMainTopBox, false) ? 'checked' : '' %> />
+                  <span><%= isEn ? 'Show this category in the separate top box on main page and prioritize it in shop category chips.' : '메인 상단 별도박스에 표시하고 쇼핑몰 분류 필터에서도 우선 노출' %></span>
+                </label>
+                <button type="submit" class="chip dark"><%= isEn ? 'Save Layout' : '레이아웃 저장' %></button>
+              </form>
             </div>
           <% }) %>
         </div>
