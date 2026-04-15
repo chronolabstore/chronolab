@@ -9896,9 +9896,11 @@ app.get('/mypage', requireAuth, (req, res) => {
   };
 
   const ordersQuery = [
-    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
+    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model,',
+    '       r.id AS review_id, r.title AS review_title, r.created_at AS review_created_at',
     'FROM orders o',
     'JOIN products p ON p.id = o.product_id',
+    'LEFT JOIN reviews r ON r.order_id = o.id AND r.user_id = o.created_by_user_id',
     'WHERE o.created_by_user_id = ?'
   ];
   const orderParams = [req.user.id];
@@ -9951,6 +9953,9 @@ app.get('/mypage', requireAuth, (req, res) => {
   const orders = baseOrders.map((order) => {
     const statusMeta = getOrderStatusMeta(order.status, res.locals.ctx.lang, 'member');
     const latestLog = latestLogMap.get(Number(order.id)) || { event_note: '', created_at: '' };
+    const hasReview = Number(order.review_id || 0) > 0;
+    const canWriteReview =
+      normalizeOrderStatus(order.status) === ORDER_STATUS.DELIVERED && !hasReview;
     return {
       ...order,
       status_code: statusMeta.code,
@@ -9959,7 +9964,12 @@ app.get('/mypage', requireAuth, (req, res) => {
       category_group_label: groupLabelMap[order.category_group] || order.category_group,
       tracking_carrier_label: getTrackingCarrierLabel(order.tracking_carrier),
       latest_event_note: latestLog.event_note,
-      latest_event_at: latestLog.created_at
+      latest_event_at: latestLog.created_at,
+      review_id: hasReview ? Number(order.review_id) : 0,
+      review_title: String(order.review_title || ''),
+      review_created_at: String(order.review_created_at || ''),
+      has_review: hasReview,
+      can_write_review: canWriteReview
     };
   });
 
@@ -10468,6 +10478,93 @@ app.get('/qc', (req, res) => {
   res.render('qc', { title: 'QC', orderNo, items });
 });
 
+function getReviewOrderForUser(orderId, userId) {
+  const safeOrderId = Number(orderId || 0);
+  const safeUserId = Number(userId || 0);
+  if (!Number.isInteger(safeOrderId) || safeOrderId <= 0 || !Number.isInteger(safeUserId) || safeUserId <= 0) {
+    return null;
+  }
+
+  return db
+    .prepare(
+      `
+        SELECT
+          o.id,
+          o.order_no,
+          o.product_id,
+          o.status,
+          o.created_by_user_id,
+          p.brand,
+          p.model,
+          p.sub_model
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        WHERE o.id = ?
+          AND o.created_by_user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(safeOrderId, safeUserId);
+}
+
+function getExistingReviewByOrder(orderId, userId) {
+  const safeOrderId = Number(orderId || 0);
+  const safeUserId = Number(userId || 0);
+  if (!Number.isInteger(safeOrderId) || safeOrderId <= 0 || !Number.isInteger(safeUserId) || safeUserId <= 0) {
+    return null;
+  }
+
+  return db
+    .prepare(
+      `
+        SELECT id
+        FROM reviews
+        WHERE order_id = ?
+          AND user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(safeOrderId, safeUserId);
+}
+
+function getOwnedReviewWithOrder(reviewId, userId) {
+  const safeReviewId = Number(reviewId || 0);
+  const safeUserId = Number(userId || 0);
+  if (!Number.isInteger(safeReviewId) || safeReviewId <= 0 || !Number.isInteger(safeUserId) || safeUserId <= 0) {
+    return null;
+  }
+
+  return db
+    .prepare(
+      `
+        SELECT
+          r.id,
+          r.user_id,
+          r.order_id AS linked_order_id,
+          r.product_id,
+          r.title,
+          r.content,
+          r.image_path,
+          r.created_at,
+          o.id AS order_row_id,
+          o.order_no,
+          o.status AS order_status,
+          o.created_by_user_id AS order_owner_user_id,
+          o.product_id AS order_product_id,
+          p.brand,
+          p.model,
+          p.sub_model
+        FROM reviews r
+        LEFT JOIN orders o ON o.id = r.order_id
+        LEFT JOIN products p ON p.id = COALESCE(o.product_id, r.product_id)
+        WHERE r.id = ?
+          AND r.user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(safeReviewId, safeUserId);
+}
+
 app.get('/review', (req, res) => {
   const reviews = db
     .prepare(
@@ -10485,31 +10582,228 @@ app.get('/review', (req, res) => {
 });
 
 app.get('/review/new', requireAuth, (req, res) => {
-  const products = db
-    .prepare('SELECT id, brand, model, sub_model FROM products WHERE is_active = 1 ORDER BY id DESC')
-    .all();
-  res.render('review-form', { title: 'Write Review', products });
+  const myPageOrdersPath = '/mypage?section=orders';
+  const orderId = normalizeOptionalId(req.query.orderId || '');
+  if (orderId <= 0) {
+    setFlash(req, 'error', '구매후기는 마이페이지 구매목록에서만 작성할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const reviewOrder = getReviewOrderForUser(orderId, req.user.id);
+  if (!reviewOrder) {
+    setFlash(req, 'error', '구매 내역을 확인할 수 없습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  if (normalizeOrderStatus(reviewOrder.status) !== ORDER_STATUS.DELIVERED) {
+    setFlash(req, 'error', '배송완료 이후에만 구매후기를 작성할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const existingReview = getExistingReviewByOrder(reviewOrder.id, req.user.id);
+  if (existingReview) {
+    setFlash(req, 'error', '이미 작성한 후기입니다. 수정 화면으로 이동합니다.');
+    return res.redirect(`/review/${existingReview.id}/edit`);
+  }
+
+  res.render('review-form', {
+    title: 'Write Review',
+    mode: 'create',
+    formAction: '/review/new',
+    reviewOrder,
+    reviewForm: {
+      title: '',
+      content: '',
+      image_path: ''
+    },
+    backPath: myPageOrdersPath
+  });
 });
 
 app.post('/review/new', requireAuth, upload.single('image'), requireAuthenticatedMultipartCsrf, (req, res) => {
+  const myPageOrdersPath = '/mypage?section=orders';
+  const orderId = normalizeOptionalId(req.body.orderId || req.query.orderId || '');
+  const redirectToWrite = orderId > 0 ? `/review/new?orderId=${orderId}` : myPageOrdersPath;
   const title = String(req.body.title || '').trim();
   const content = String(req.body.content || '').trim();
-  const productId = req.body.productId ? Number(req.body.productId) : null;
+
+  if (orderId <= 0) {
+    setFlash(req, 'error', '구매후기 작성 대상 주문을 찾을 수 없습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const reviewOrder = getReviewOrderForUser(orderId, req.user.id);
+  if (!reviewOrder) {
+    setFlash(req, 'error', '구매 내역을 확인할 수 없습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  if (normalizeOrderStatus(reviewOrder.status) !== ORDER_STATUS.DELIVERED) {
+    setFlash(req, 'error', '배송완료 이후에만 구매후기를 작성할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const existingReview = getExistingReviewByOrder(reviewOrder.id, req.user.id);
+  if (existingReview) {
+    setFlash(req, 'error', '이미 작성한 후기입니다. 수정 화면으로 이동합니다.');
+    return res.redirect(`/review/${existingReview.id}/edit`);
+  }
 
   if (!title || !content) {
     setFlash(req, 'error', '제목과 내용을 입력해 주세요.');
-    return res.redirect('/review/new');
+    return res.redirect(redirectToWrite);
+  }
+  if (title.length > 120) {
+    setFlash(req, 'error', '제목은 120자 이하로 입력해 주세요.');
+    return res.redirect(redirectToWrite);
+  }
+  if (content.length > 5000) {
+    setFlash(req, 'error', '내용은 5000자 이하로 입력해 주세요.');
+    return res.redirect(redirectToWrite);
   }
 
   db.prepare(
     `
-      INSERT INTO reviews (user_id, product_id, title, content, image_path)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO reviews (user_id, order_id, product_id, title, content, image_path)
+      VALUES (?, ?, ?, ?, ?, ?)
     `
-  ).run(req.user.id, productId || null, title, content, fileUrl(req.file));
+  ).run(
+    req.user.id,
+    reviewOrder.id,
+    Number(reviewOrder.product_id || 0) > 0 ? Number(reviewOrder.product_id) : null,
+    title,
+    content,
+    fileUrl(req.file)
+  );
 
-  setFlash(req, 'success', '후기가 등록되었습니다.');
-  res.redirect('/review');
+  setFlash(req, 'success', '구매후기가 등록되었습니다.');
+  res.redirect(myPageOrdersPath);
+});
+
+app.get('/review/:id/edit', requireAuth, (req, res) => {
+  const myPageOrdersPath = '/mypage?section=orders';
+  const reviewId = normalizeOptionalId(req.params.id || '');
+  if (reviewId <= 0) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const reviewForm = getOwnedReviewWithOrder(reviewId, req.user.id);
+  if (!reviewForm) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const linkedOrderId = Number(reviewForm.linked_order_id || 0);
+  const orderOwnerUserId = Number(reviewForm.order_owner_user_id || 0);
+  if (linkedOrderId <= 0 || orderOwnerUserId !== Number(req.user.id)) {
+    setFlash(req, 'error', '구매내역에 연결된 후기만 수정할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const reviewOrder = {
+    id: Number(reviewForm.order_row_id || linkedOrderId),
+    order_no: reviewForm.order_no || '',
+    status: reviewForm.order_status || '',
+    product_id: Number(reviewForm.order_product_id || reviewForm.product_id || 0),
+    brand: reviewForm.brand || '',
+    model: reviewForm.model || '',
+    sub_model: reviewForm.sub_model || ''
+  };
+
+  res.render('review-form', {
+    title: 'Edit Review',
+    mode: 'edit',
+    formAction: `/review/${reviewForm.id}/edit`,
+    reviewOrder,
+    reviewForm,
+    backPath: myPageOrdersPath
+  });
+});
+
+app.post('/review/:id/edit', requireAuth, upload.single('image'), requireAuthenticatedMultipartCsrf, (req, res) => {
+  const myPageOrdersPath = '/mypage?section=orders';
+  const reviewId = normalizeOptionalId(req.params.id || '');
+  if (reviewId <= 0) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const reviewForm = getOwnedReviewWithOrder(reviewId, req.user.id);
+  if (!reviewForm) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const linkedOrderId = Number(reviewForm.linked_order_id || 0);
+  const orderOwnerUserId = Number(reviewForm.order_owner_user_id || 0);
+  if (linkedOrderId <= 0 || orderOwnerUserId !== Number(req.user.id)) {
+    setFlash(req, 'error', '구매내역에 연결된 후기만 수정할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  const title = String(req.body.title || '').trim();
+  const content = String(req.body.content || '').trim();
+  if (!title || !content) {
+    setFlash(req, 'error', '제목과 내용을 입력해 주세요.');
+    return res.redirect(`/review/${reviewId}/edit`);
+  }
+  if (title.length > 120) {
+    setFlash(req, 'error', '제목은 120자 이하로 입력해 주세요.');
+    return res.redirect(`/review/${reviewId}/edit`);
+  }
+  if (content.length > 5000) {
+    setFlash(req, 'error', '내용은 5000자 이하로 입력해 주세요.');
+    return res.redirect(`/review/${reviewId}/edit`);
+  }
+
+  const shouldRemoveImage = String(req.body.removeImage || '').trim() === '1';
+  const nextImagePath = req.file ? fileUrl(req.file) : shouldRemoveImage ? '' : String(reviewForm.image_path || '');
+  const nextProductId = Number(reviewForm.order_product_id || reviewForm.product_id || 0);
+
+  db.prepare(
+    `
+      UPDATE reviews
+      SET order_id = ?,
+          product_id = ?,
+          title = ?,
+          content = ?,
+          image_path = ?
+      WHERE id = ?
+        AND user_id = ?
+    `
+  ).run(
+    linkedOrderId,
+    nextProductId > 0 ? nextProductId : null,
+    title,
+    content,
+    nextImagePath,
+    reviewId,
+    req.user.id
+  );
+
+  setFlash(req, 'success', '구매후기가 수정되었습니다.');
+  res.redirect(myPageOrdersPath);
+});
+
+app.post('/review/:id/delete', requireAuth, (req, res) => {
+  const myPageOrdersPath = '/mypage?section=orders';
+  const reviewId = normalizeOptionalId(req.params.id || '');
+  if (reviewId <= 0) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const reviewForm = getOwnedReviewWithOrder(reviewId, req.user.id);
+  if (!reviewForm) {
+    return res.status(404).render('simple-error', { title: 'Not Found', message: '후기를 찾을 수 없습니다.' });
+  }
+
+  const linkedOrderId = Number(reviewForm.linked_order_id || 0);
+  const orderOwnerUserId = Number(reviewForm.order_owner_user_id || 0);
+  if (linkedOrderId <= 0 || orderOwnerUserId !== Number(req.user.id)) {
+    setFlash(req, 'error', '구매내역에 연결된 후기만 삭제할 수 있습니다.');
+    return res.redirect(myPageOrdersPath);
+  }
+
+  db.prepare('DELETE FROM reviews WHERE id = ? AND user_id = ?').run(reviewId, req.user.id);
+  setFlash(req, 'success', '구매후기가 삭제되었습니다.');
+  res.redirect(myPageOrdersPath);
 });
 
 app.get('/inquiry', (req, res) => {

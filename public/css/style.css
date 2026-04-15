@@ -1668,6 +1668,48 @@ textarea {
   color: var(--muted);
 }
 
+.review-order-meta {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chip);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.review-order-meta p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  line-height: 1.4;
+}
+
+.review-order-meta strong {
+  min-width: 68px;
+}
+
+.review-edit-image-preview {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.review-edit-image-preview strong {
+  font-size: 0.85rem;
+}
+
+.review-edit-image-preview img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
 .line-list {
   margin: 0;
   padding: 0;
@@ -4156,7 +4198,7 @@ table {
 
 .mypage-order-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 980px;
   table-layout: fixed;
 }
 
@@ -4387,14 +4429,16 @@ th {
 .mypage-order-table th:nth-child(2),
 .mypage-order-table th:nth-child(6),
 .mypage-order-table th:nth-child(8),
+.mypage-order-table th:nth-child(9),
 .mypage-order-table td:nth-child(1),
 .mypage-order-table td:nth-child(2),
 .mypage-order-table td:nth-child(6),
-.mypage-order-table td:nth-child(8) {
+.mypage-order-table td:nth-child(8),
+.mypage-order-table td:nth-child(9) {
   text-align: center;
 }
 
-.mypage-order-table td[colspan='8'] {
+.mypage-order-table td[colspan='9'] {
   padding: 18px 10px;
   text-align: center;
   color: var(--muted);
@@ -4402,7 +4446,7 @@ th {
 
 .mypage-order-table th:nth-child(1),
 .mypage-order-table td:nth-child(1) {
-  width: 12%;
+  width: 11%;
 }
 
 .mypage-order-table th:nth-child(2),
@@ -4412,22 +4456,22 @@ th {
 
 .mypage-order-table th:nth-child(3),
 .mypage-order-table td:nth-child(3) {
-  width: 18%;
+  width: 16%;
 }
 
 .mypage-order-table th:nth-child(4),
 .mypage-order-table td:nth-child(4) {
-  width: 22%;
+  width: 20%;
 }
 
 .mypage-order-table th:nth-child(5),
 .mypage-order-table td:nth-child(5) {
-  width: 13%;
+  width: 12%;
 }
 
 .mypage-order-table th:nth-child(6),
 .mypage-order-table td:nth-child(6) {
-  width: 8%;
+  width: 7%;
 }
 
 .mypage-order-table th:nth-child(7),
@@ -4437,6 +4481,11 @@ th {
 
 .mypage-order-table th:nth-child(8),
 .mypage-order-table td:nth-child(8) {
+  width: 7%;
+}
+
+.mypage-order-table th:nth-child(9),
+.mypage-order-table td:nth-child(9) {
   width: 8%;
 }
 
@@ -4614,6 +4663,71 @@ th {
   line-height: 1.35;
 }
 
+.order-review-cell {
+  line-height: 1.35;
+}
+
+.order-review-actions {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.order-review-actions .inline-form {
+  margin: 0;
+}
+
+.order-review-note,
+.order-review-meta {
+  color: var(--muted);
+}
+
+.review-delete-trigger {
+  border-color: rgba(185, 28, 28, 0.36);
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.review-delete-trigger:hover {
+  border-color: rgba(153, 27, 27, 0.5);
+  background: rgba(220, 38, 38, 0.14);
+  color: #991b1b;
+}
+
+.review-delete-popup-card {
+  width: min(100%, 360px);
+}
+
+.review-delete-popup-card h3 {
+  margin: 0 0 8px;
+}
+
+.review-delete-popup-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.review-delete-popup-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-delete-popup-actions .review-delete-confirm-btn {
+  min-width: 86px;
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.review-delete-popup-actions .review-delete-confirm-btn:hover {
+  border-color: #991b1b;
+  background: #991b1b;
+  color: #fff;
+}
+
 body.theme-night .mypage-order-table thead th {
   background: #1a2a45;
 }
@@ -4662,6 +4776,18 @@ body.theme-night .order-status-badge-delivered {
   background: rgba(16, 185, 129, 0.24);
   border-color: rgba(52, 211, 153, 0.62);
   color: #a7f3d0;
+}
+
+body.theme-night .review-delete-trigger {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+}
+
+body.theme-night .review-delete-trigger:hover {
+  border-color: rgba(252, 165, 165, 0.8);
+  background: rgba(153, 27, 27, 0.48);
+  color: #fee2e2;
 }
 
 .cart-table th:nth-child(1),

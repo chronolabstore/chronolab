@@ -1,31 +1,67 @@
 <%- include('partials/layout-start') %>
 <% const isEn = ctx.lang === 'en'; %>
+<%
+  const resolvedMode = String(mode || 'create') === 'edit' ? 'edit' : 'create';
+  const order = reviewOrder || {};
+  const form = reviewForm || {};
+  const heading = resolvedMode === 'edit'
+    ? (isEn ? 'Edit Review' : '구매후기 수정')
+    : (isEn ? 'Write a Review' : '구매후기 작성');
+  const submitLabel = resolvedMode === 'edit'
+    ? (isEn ? 'Save Changes' : '후기 수정')
+    : (isEn ? 'Submit Review' : '후기 등록');
+  const actionPath = formAction || (resolvedMode === 'edit' ? '/review' : '/review/new');
+  const safeOrderNo = order.order_no || '-';
+  const productTitle = [order.brand, order.model].filter(Boolean).join(' ').trim() || '-';
+  const productSubtitle = order.sub_model || '';
+  const safeBackPath = backPath || '/mypage?section=orders';
+%>
 
 <section class="block-card narrow">
-  <h2><%= isEn ? 'Write a Review' : '구매후기 작성' %></h2>
-  <form method="post" action="/review/new" enctype="multipart/form-data" class="form-grid">
-    <label><%= isEn ? 'Related product (optional)' : '관련 상품 (선택)' %>
-      <select name="productId">
-        <option value=""><%= isEn ? 'None' : '선택 안함' %></option>
-        <% products.forEach((item) => { %>
-          <option value="<%= item.id %>"><%= item.brand %> <%= item.model %> <%= item.sub_model %></option>
-        <% }) %>
-      </select>
-    </label>
+  <div class="section-head">
+    <h2><%= heading %></h2>
+    <a href="<%= safeBackPath %>" class="chip"><%= isEn ? 'Back to Orders' : '구매목록으로' %></a>
+  </div>
+
+  <div class="review-order-meta">
+    <p>
+      <strong><%= isEn ? 'Order No.' : '구매번호' %></strong>
+      <span><%= safeOrderNo %></span>
+    </p>
+    <p>
+      <strong><%= isEn ? 'Product' : '상품' %></strong>
+      <span><%= productTitle %><%= productSubtitle ? ` (${productSubtitle})` : '' %></span>
+    </p>
+  </div>
+
+  <form method="post" action="<%= actionPath %>" enctype="multipart/form-data" class="form-grid">
+    <input type="hidden" name="orderId" value="<%= Number(order.id || 0) %>" />
 
     <label><%= isEn ? 'Title' : '제목' %>
-      <input type="text" name="title" required />
+      <input type="text" name="title" maxlength="120" required value="<%= form.title || '' %>" />
     </label>
 
     <label><%= isEn ? 'Content' : '내용' %>
-      <textarea name="content" rows="5" required></textarea>
+      <textarea name="content" rows="6" maxlength="5000" required><%= form.content || '' %></textarea>
     </label>
 
     <label><%= isEn ? 'Image (optional)' : '이미지 (선택)' %>
       <input type="file" name="image" accept="image/*" />
     </label>
+    <% if (form.image_path) { %>
+      <div class="review-edit-image-preview">
+        <strong><%= isEn ? 'Current image' : '현재 이미지' %></strong>
+        <img src="<%= form.image_path %>" alt="review" />
+        <% if (resolvedMode === 'edit') { %>
+          <label class="check-row">
+            <input type="checkbox" name="removeImage" value="1" />
+            <span><%= isEn ? 'Remove current image' : '현재 이미지 삭제' %></span>
+          </label>
+        <% } %>
+      </div>
+    <% } %>
 
-    <button type="submit" class="cta-main"><%= isEn ? 'Submit' : '등록' %></button>
+    <button type="submit" class="cta-main"><%= submitLabel %></button>
   </form>
 </section>
 
