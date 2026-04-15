@@ -9514,10 +9514,12 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const saveToAddressBook = String(req.body.saveToAddressBook || '') === '1';
   const setAsDefaultAddress = String(req.body.setAsDefaultAddress || '') === '1';
   const quantity = parsePositiveInt(req.body.quantity, 1);
-  const useRewardPointsRequested = parseNonNegativeInt(
+  const pointUseUnit = 1000;
+  const normalizePointUseUnit = (value) =>
+    Math.max(0, Math.floor(parseNonNegativeInt(value, 0) / pointUseUnit) * pointUseUnit);
+  const useRewardPointsRequested = normalizePointUseUnit(
     String(req.body.useRewardPoints ?? '')
-      .replace(/[^0-9]/g, ''),
-    0
+      .replace(/[^0-9]/g, '')
   );
   const addressBookEntries = getAddressBookEntries(req.user.id);
   const selectedAddressBookEntry =
@@ -9564,7 +9566,9 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
   const orderSubtotalPreview = Math.max(0, Math.round(Number(product.price || 0) * quantity));
-  const maxUsableRewardPointsPreview = Math.max(0, Math.min(availableRewardPoints, orderSubtotalPreview));
+  const maxUsableRewardPointsPreview = normalizePointUseUnit(
+    Math.max(0, Math.min(availableRewardPoints, orderSubtotalPreview))
+  );
   const appliedRewardPointsPreview = Math.min(useRewardPointsRequested, maxUsableRewardPointsPreview);
   const payableAmountPreview = Math.max(0, orderSubtotalPreview - appliedRewardPointsPreview);
 

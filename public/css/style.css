@@ -272,9 +272,9 @@ body.theme-night .detail-action-row .detail-cart-btn {
 }
 
 body.theme-night .detail-action-row .detail-cart-btn:hover {
-  background: #1b2941;
-  border-color: #8ca2c7;
-  color: #ffffff;
+  background: #ffffff;
+  border-color: #d2def2;
+  color: #0b1220;
 }
 
 body.theme-night th {
@@ -1547,6 +1547,7 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .detail-action-row .detail-buy-btn {
@@ -1568,7 +1569,9 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
 }
 
 .detail-action-row .detail-cart-btn:hover {
-  background: var(--detail-secondary-bg-hover);
+  background: var(--card-dark-text);
+  border-color: var(--card-dark-text);
+  color: var(--card-dark);
 }
 
 .detail-action-row .detail-cart-form {
@@ -4515,6 +4518,24 @@ body.theme-night .sales-computed-cell.is-negative {
 .purchase-request-form label {
   gap: 6px;
   font-size: 0.9rem;
+  align-content: start;
+}
+
+.purchase-request-form input:not([type='checkbox']):not([type='radio']),
+.purchase-request-form select,
+.purchase-request-form textarea,
+.purchase-request-form .field-inline .field-inline-btn {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.purchase-request-form .field-inline {
+  align-items: stretch;
+}
+
+.purchase-form-help-text {
+  margin: -2px 0 0;
+  line-height: 1.35;
 }
 
 .purchase-field-span-2 {
