@@ -1566,6 +1566,7 @@ body.theme-night .product-badge-chip.product-badge-theme-purple {
   background: transparent;
   border: 1px solid var(--card-dark-text);
   color: var(--card-dark-text);
+  cursor: pointer;
 }
 
 .detail-action-row .detail-cart-btn:hover {
