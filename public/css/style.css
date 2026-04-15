@@ -945,6 +945,16 @@ body.theme-night .upload-limit-warning {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.product-grid.detail-similar-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.product-grid.detail-similar-grid .mini-product img {
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
 .shop-row-list {
   display: grid;
   gap: 14px;
@@ -6309,6 +6319,10 @@ body.theme-night .inline-file-preview-image {
 
   .product-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .product-grid.detail-similar-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .domestic-stock-grid {
