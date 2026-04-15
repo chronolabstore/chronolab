@@ -842,6 +842,7 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https: http:",
+  "child-src 'self' https://*.daum.net https://*.kakao.com",
   "frame-src 'self' https://*.daum.net https://*.kakao.com",
   "connect-src 'self' https://*.daum.net https://*.kakao.com",
   "form-action 'self'"

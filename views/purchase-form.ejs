@@ -148,6 +148,16 @@
   </div>
 </section>
 
+<div class="popup-backdrop hidden" id="purchaseAddressPopup" aria-hidden="true">
+  <div class="popup-card purchase-address-popup-card" role="dialog" aria-modal="true" aria-labelledby="purchaseAddressPopupTitle">
+    <div class="purchase-address-popup-head">
+      <h3 id="purchaseAddressPopupTitle"><%= isEn ? 'Search Address' : '주소 검색' %></h3>
+      <button type="button" class="chip" id="purchaseAddressPopupClose"><%= isEn ? 'Close' : '닫기' %></button>
+    </div>
+    <div id="purchaseAddressEmbedHost" class="purchase-address-embed"></div>
+  </div>
+</div>
+
 <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" data-daum-postcode="1"></script>
 <script>
   (() => {
@@ -163,6 +173,9 @@
     const usedPointsText = document.getElementById('purchaseUsedPointsText');
     const payableText = document.getElementById('purchasePayableText');
     const expectedRewardText = document.getElementById('purchaseExpectedRewardPoints');
+    const addressPopup = document.getElementById('purchaseAddressPopup');
+    const addressPopupCloseBtn = document.getElementById('purchaseAddressPopupClose');
+    const addressEmbedHost = document.getElementById('purchaseAddressEmbedHost');
     const unitPrice = Number(<%= Number(product.price || 0) %>) || 0;
     const pointRate = Number(<%= Number(pointRate || 0) %>) || 0;
     const availablePoints = Number(<%= Math.max(0, Number(availablePoints || 0)) %>) || 0;
@@ -192,6 +205,14 @@
 
     const formatNumber = (value) => Number(value || 0).toLocaleString('ko-KR');
     const normalizePointsUnit = (value) => Math.max(0, Math.floor(Number(value || 0) / pointUnit) * pointUnit);
+    const closeAddressPopup = () => {
+      if (!addressPopup) return;
+      addressPopup.classList.add('hidden');
+      addressPopup.setAttribute('aria-hidden', 'true');
+      if (addressEmbedHost) {
+        addressEmbedHost.innerHTML = '';
+      }
+    };
     const ensureDaumPostcodeLoaded = (onReady, onError) => {
       if (window.daum && window.daum.Postcode) {
         onReady();
@@ -241,7 +262,22 @@
       document.head.appendChild(script);
     };
     const openAddressSearch = () => {
-      new window.daum.Postcode({
+      if (!addressPopup || !addressEmbedHost) {
+        window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+        return;
+      }
+      addressPopup.classList.remove('hidden');
+      addressPopup.setAttribute('aria-hidden', 'false');
+      addressEmbedHost.innerHTML = '';
+      addressEmbedHost.style.height = '460px';
+
+      const postcodeService = new window.daum.Postcode({
+        width: '100%',
+        height: '100%',
+        onresize(size) {
+          const nextHeight = Math.max(360, Number(size?.height || 460));
+          addressEmbedHost.style.height = `${nextHeight}px`;
+        },
         oncomplete(data) {
           const roadAddress = data.roadAddress || data.jibunAddress || '';
           postcodeInput.value = data.zonecode || '';
@@ -249,8 +285,10 @@
           if (detailInput) {
             detailInput.focus();
           }
+          closeAddressPopup();
         }
-      }).open();
+      });
+      postcodeService.embed(addressEmbedHost, { autoClose: false });
     };
 
     const refreshPaymentPreview = () => {
@@ -322,6 +360,22 @@
         );
       });
     }
+
+    if (addressPopupCloseBtn) {
+      addressPopupCloseBtn.addEventListener('click', closeAddressPopup);
+    }
+    if (addressPopup) {
+      addressPopup.addEventListener('click', (event) => {
+        if (event.target === addressPopup) {
+          closeAddressPopup();
+        }
+      });
+    }
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && addressPopup && !addressPopup.classList.contains('hidden')) {
+        closeAddressPopup();
+      }
+    });
 
     if (quantityInput) {
       quantityInput.addEventListener('input', refreshPaymentPreview);
