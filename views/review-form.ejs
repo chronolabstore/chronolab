@@ -15,6 +15,11 @@
   const productTitle = [order.brand, order.model].filter(Boolean).join(' ').trim() || '-';
   const productSubtitle = order.sub_model || '';
   const safeBackPath = backPath || '/mypage?section=orders';
+  const reviewPoints = Number(
+    typeof reviewRewardPoints !== 'undefined'
+      ? reviewRewardPoints
+      : (ctx?.settings?.reviewRewardPoints || 5000)
+  );
 %>
 
 <section class="block-card narrow">
@@ -32,6 +37,13 @@
       <strong><%= isEn ? 'Product' : '상품' %></strong>
       <span><%= productTitle %><%= productSubtitle ? ` (${productSubtitle})` : '' %></span>
     </p>
+  </div>
+
+  <div class="review-policy-box" role="note">
+    <p><strong><%= isEn ? 'Purchase review reward points' : '구매후기 포인트' %></strong>: <%= Number(reviewPoints || 0).toLocaleString('ko-KR') %>P</p>
+    <p><%= isEn ? 'Review reward points can be reclaimed when the review is deleted. If your point balance is insufficient because points were used, your account is blocked automatically.' : '구매후기 삭제 시 지급 포인트는 회수될 수 있으며, 포인트 사용으로 잔고가 부족하면 계정이 자동 블락됩니다.' %></p>
+    <p><%= isEn ? 'If the review contains malicious content or feedback outside normal purchase-review scope, admins may remove it at their discretion.' : '구매후기에 악의적인 내용이 있거나 단순 구매후기 외 문제 피드백이 포함된 경우 관리자가 임의 삭제할 수 있습니다.' %></p>
+    <p><%= isEn ? 'For post-delivery issues, please contact 1:1 inquiry or admin directly instead of using purchase reviews.' : '수령 후 발생한 문제에 대한 피드백 및 처리는 구매후기가 아닌 1:1 문의 또는 관리자 직접 연락으로 진행해 주세요.' %></p>
   </div>
 
   <form method="post" action="<%= actionPath %>" enctype="multipart/form-data" class="form-grid">
