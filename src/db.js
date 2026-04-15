@@ -235,25 +235,37 @@ export const SHOP_PRODUCT_GROUPS = DEFAULT_PRODUCT_GROUP_CONFIGS.map((group) => 
 export const DEFAULT_MEMBER_LEVEL_RULES = [
   {
     id: 'starter',
+    nameKo: '입문자',
+    nameEn: 'Beginner',
     name: '입문자',
+    colorTheme: 'red',
     operator: 'lt',
     thresholdAmount: 2000000
   },
   {
     id: 'collector',
+    nameKo: '수집가',
+    nameEn: 'Collector',
     name: '수집가',
+    colorTheme: 'blue',
     operator: 'gte',
     thresholdAmount: 2000000
   },
   {
     id: 'enthusiast',
+    nameKo: '애호가',
+    nameEn: 'Enthusiast',
     name: '애호가',
+    colorTheme: 'green',
     operator: 'gte',
     thresholdAmount: 10000000
   },
   {
     id: 'expert',
+    nameKo: '전문가',
+    nameEn: 'Expert',
     name: '전문가',
+    colorTheme: 'amber',
     operator: 'gte',
     thresholdAmount: 30000000
   }
@@ -375,6 +387,106 @@ function ensureSignupBonusBaseline() {
   if (!Number.isInteger(parsed) || parsed <= 0) {
     setSetting('signupBonusPoints', '10000');
   }
+}
+
+function applyMemberLevelThemeBaselineV20260415() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
+
+  const markerKey = 'memberLevelThemeBaselineSeedV20260415';
+  if (String(getSetting(markerKey, '0') || '0') === '1') {
+    return;
+  }
+
+  const baselineRules = [
+    { id: 'starter', nameKo: '입문자', nameEn: 'Beginner', colorTheme: 'red' },
+    { id: 'collector', nameKo: '수집가', nameEn: 'Collector', colorTheme: 'blue' },
+    { id: 'enthusiast', nameKo: '애호가', nameEn: 'Enthusiast', colorTheme: 'green' },
+    { id: 'expert', nameKo: '전문가', nameEn: 'Expert', colorTheme: 'amber' }
+  ];
+
+  const baselineById = new Map(
+    baselineRules.map((rule) => [String(rule.id || '').trim().toLowerCase(), rule])
+  );
+
+  const baselineAliases = new Map([
+    ['입문자', 'starter'],
+    ['beginner', 'starter'],
+    ['수집가', 'collector'],
+    ['collector', 'collector'],
+    ['애호가', 'enthusiast'],
+    ['enthusiast', 'enthusiast'],
+    ['전문가', 'expert'],
+    ['expert', 'expert']
+  ]);
+
+  const rawValue = String(getSetting('memberLevelRules', JSON.stringify(DEFAULT_MEMBER_LEVEL_RULES)) || '[]');
+  let parsed = [];
+  try {
+    const maybeParsed = JSON.parse(rawValue);
+    if (Array.isArray(maybeParsed)) {
+      parsed = maybeParsed;
+    }
+  } catch {
+    parsed = [];
+  }
+
+  const sourceRules = parsed.length > 0 ? parsed : DEFAULT_MEMBER_LEVEL_RULES;
+  let changed = false;
+  const nextRules = sourceRules.map((rawRule = {}, index) => {
+    const safeRule = rawRule && typeof rawRule === 'object' ? rawRule : {};
+    const normalizedId = String(safeRule.id || '').trim().toLowerCase();
+    let baseline = baselineById.get(normalizedId);
+
+    if (!baseline) {
+      const nameCandidates = [
+        String(safeRule.nameKo || '').trim().toLowerCase(),
+        String(safeRule.nameEn || '').trim().toLowerCase(),
+        String(safeRule.name || '').trim().toLowerCase(),
+        String(safeRule.label || '').trim().toLowerCase()
+      ].filter(Boolean);
+
+      for (const candidate of nameCandidates) {
+        const matchedBaselineId = baselineAliases.get(candidate);
+        if (matchedBaselineId) {
+          baseline = baselineById.get(matchedBaselineId);
+          break;
+        }
+      }
+    }
+
+    if (!baseline && sourceRules.length === baselineRules.length && index < baselineRules.length) {
+      baseline = baselineRules[index];
+    }
+
+    if (!baseline) {
+      return safeRule;
+    }
+
+    const normalizedTheme = String(safeRule.colorTheme || safeRule.color_theme || '').trim().toLowerCase();
+    const nextRule = {
+      ...safeRule,
+      nameKo: baseline.nameKo,
+      nameEn: baseline.nameEn,
+      name: baseline.nameKo,
+      colorTheme: baseline.colorTheme
+    };
+
+    if (
+      String(safeRule.nameKo || safeRule.name || '').trim() !== baseline.nameKo ||
+      String(safeRule.nameEn || safeRule.name || '').trim() !== baseline.nameEn ||
+      normalizedTheme !== baseline.colorTheme
+    ) {
+      changed = true;
+    }
+    return nextRule;
+  });
+
+  if (changed) {
+    setSetting('memberLevelRules', JSON.stringify(nextRules));
+  }
+  setSetting(markerKey, '1');
 }
 
 function migrateLegacyThemeAssetSettings() {
@@ -1928,6 +2040,7 @@ export function initDb() {
     upsertDefaultSetting(key, value);
   }
   ensureSignupBonusBaseline();
+  applyMemberLevelThemeBaselineV20260415();
   if (shouldRunStartupDataMaintenance) {
     seedDefaultProductBadgesOnce();
   }
