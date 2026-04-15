@@ -1481,6 +1481,25 @@
 
     <% if (pointsTab === 'level-rates') { %>
       <section class="kpi-card">
+        <h4><%= isEn ? 'Accumulated Amount Group Scope' : '누적금액 적용 쇼핑몰 선택' %></h4>
+        <p class="muted-label">
+          <%= isEn ? 'Only selected shop groups are included when calculating accumulated purchase amount for member levels and level-based point rates.' : '선택한 쇼핑몰 분류만 회원등급 누적 구매금액 및 등급별 포인트 적립률 적용 기준에 포함됩니다.' %>
+        </p>
+        <form method="post" action="/admin/member-level/groups" class="form-grid">
+          <div class="admin-field-chip-row member-level-group-grid">
+            <% const pointsIncludedGroupSet = new Set((memberLevelConfig.includedGroups || []).map((group) => String(group))); %>
+            <% (memberLevelConfig.availableGroups || []).forEach((group) => { %>
+              <label class="check-chip">
+                <input type="checkbox" name="includedGroups" value="<%= group.key %>" <%= pointsIncludedGroupSet.has(group.key) ? 'checked' : '' %> />
+                <span><%= group.label %></span>
+              </label>
+            <% }) %>
+          </div>
+          <button type="submit" class="chip dark"><%= isEn ? 'Apply Group Scope' : '적용' %></button>
+        </form>
+      </section>
+
+      <section class="kpi-card">
         <h4><%= isEn ? 'Level Point Rate Settings' : '등급별 포인트 적립률 설정' %></h4>
         <p class="muted-label">
           <%= isEn ? 'Manage point percentage per member level. Updated rates apply only to new purchases after update.' : '회원등급별 포인트 적립 퍼센테이지를 설정합니다. 변경된 적립률은 변경 이후 신규 구매건부터 적용됩니다.' %>
