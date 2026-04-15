@@ -1418,6 +1418,12 @@ function isDomesticStockGroup(group = null) {
   return normalizedKeys.some((value) => value === '국내재고' || value === 'domesticstock');
 }
 
+function resolveGroupMainTopBoxState(groupConfig = null) {
+  const safeGroup = groupConfig && typeof groupConfig === 'object' ? groupConfig : {};
+  const fallback = isDomesticStockGroup(safeGroup);
+  return normalizeBooleanLike(safeGroup.showInMainTopBox, fallback);
+}
+
 function getGroupFilterToggleState(groupConfig = null) {
   const safeGroup = groupConfig && typeof groupConfig === 'object' ? groupConfig : {};
   const factoryEnabledFallback = (
@@ -1695,6 +1701,7 @@ function normalizeProductGroupConfigs(rawValue) {
     const hasExplicitBrandFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableBrandFilter');
     const hasExplicitModelFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableModelFilter');
     const hasExplicitFactoryFilterToggle = Object.prototype.hasOwnProperty.call(group, 'enableFactoryFilter');
+    const hasExplicitMainTopBoxToggle = Object.prototype.hasOwnProperty.call(group, 'showInMainTopBox');
     const fallbackBrandOptions = normalizeProductFilterOptionList(fallbackGroup.brandOptions);
     const fallbackFactoryOptions = normalizeProductFilterOptionList(fallbackGroup.factoryOptions);
     const fallbackModelOptions = normalizeProductFilterOptionList(fallbackGroup.modelOptions);
@@ -1815,12 +1822,22 @@ function normalizeProductGroupConfigs(rawValue) {
     const factoryFilterEnabled = hasExplicitFactoryFilterToggle
       ? normalizeBooleanLike(group.enableFactoryFilter, factoryFilterEnabledDefault)
       : factoryFilterEnabledDefault;
+    const mainTopBoxEnabledDefault = resolveGroupMainTopBoxState({
+      key,
+      labelKo,
+      labelEn,
+      showInMainTopBox: fallbackGroup.showInMainTopBox
+    });
+    const showInMainTopBox = hasExplicitMainTopBoxToggle
+      ? normalizeBooleanLike(group.showInMainTopBox, mainTopBoxEnabledDefault)
+      : mainTopBoxEnabledDefault;
 
     normalizedGroups.push({
       key,
       labelKo: labelKo || key,
       labelEn: labelEn || key,
       mode,
+      showInMainTopBox,
       enableBrandFilter: brandFilterEnabled,
       enableModelFilter: modelFilterEnabled,
       enableFactoryFilter: factoryFilterEnabled,
@@ -2044,6 +2061,32 @@ function getProductGroupLabels(groupConfigs = getProductGroupConfigs(), lang = '
     labels[group.key] = lang === 'en' ? group.labelEn || group.key : group.labelKo || group.key;
   });
   return labels;
+}
+
+function splitProductGroupsForDisplay(groupConfigs = getProductGroupConfigs()) {
+  const safeGroups = Array.isArray(groupConfigs) ? groupConfigs : [];
+  const featured = [];
+  const regular = [];
+
+  safeGroups.forEach((groupConfig) => {
+    const safeGroup =
+      groupConfig && typeof groupConfig === 'object' && !Array.isArray(groupConfig)
+        ? groupConfig
+        : null;
+    if (!safeGroup) {
+      return;
+    }
+    if (resolveGroupMainTopBoxState(safeGroup)) {
+      featured.push(safeGroup);
+      return;
+    }
+    regular.push(safeGroup);
+  });
+
+  return {
+    featured,
+    regular
+  };
 }
 
 function parseProductExtraFields(rawExtraFieldsJson) {
@@ -8501,10 +8544,9 @@ app.get('/toggle-theme', (req, res) => {
 app.get('/main', (req, res) => {
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupMap = getProductGroupMap(productGroupConfigs);
-  const domesticStockGroup = productGroupConfigs.find((groupConfig) => isDomesticStockGroup(groupConfig)) || null;
-  const groupedProducts = productGroupConfigs
-    .filter((groupConfig) => !domesticStockGroup || groupConfig.key !== domesticStockGroup.key)
-    .map((groupConfig) => {
+  const { featured: featuredTopGroups, regular: regularGroups } = splitProductGroupsForDisplay(productGroupConfigs);
+  const loadGroupPreviewProducts = (groupKey, limit = 4) => {
+    const safeLimit = Math.max(1, Math.min(12, parseNonNegativeInt(limit, 4)));
     const rows = db
       .prepare(
         `
@@ -8525,50 +8567,24 @@ app.get('/main', (req, res) => {
           FROM products
           WHERE is_active = 1 AND category_group = ?
           ORDER BY id DESC
-          LIMIT 4
+          LIMIT ?
         `
       )
-      .all(groupConfig.key);
+      .all(groupKey, safeLimit);
 
-    return {
-      groupName: groupConfig.key,
-      products: attachProductBadges(
-        rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
-      )
-    };
-    });
-
-  let domesticStockProducts = [];
-  if (domesticStockGroup) {
-    const domesticRows = db
-      .prepare(
-        `
-          SELECT
-            id,
-            category_group,
-            brand,
-            model,
-            sub_model,
-            price,
-            image_path,
-            shipping_period,
-            case_material,
-            movement,
-            features,
-            extra_fields_json,
-            is_sold_out
-          FROM products
-          WHERE is_active = 1 AND category_group = ?
-          ORDER BY id DESC
-          LIMIT 6
-        `
-      )
-      .all(domesticStockGroup.key);
-
-    domesticStockProducts = attachProductBadges(
-      domesticRows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
+    return attachProductBadges(
+      rows.map((row) => decorateProductForView(row, productGroupMap.get(row.category_group)))
     );
-  }
+  };
+
+  const groupedProducts = regularGroups.map((groupConfig) => ({
+    groupName: groupConfig.key,
+    products: loadGroupPreviewProducts(groupConfig.key, 4)
+  }));
+  const featuredTopProducts = featuredTopGroups.map((groupConfig) => ({
+    groupName: groupConfig.key,
+    products: loadGroupPreviewProducts(groupConfig.key, 6)
+  }));
 
   const latestNotices = db
     .prepare(
@@ -8597,8 +8613,7 @@ app.get('/main', (req, res) => {
   res.render('main', {
     title: 'Main',
     groupedProducts,
-    domesticStockGroup,
-    domesticStockProducts,
+    featuredTopProducts,
     latestNotices,
     latestNews,
     productGroupConfigs,
@@ -8614,6 +8629,13 @@ app.get('/shop', (req, res) => {
   if (fallbackGroups.length === 0) {
     fallbackGroups.push(...SHOP_PRODUCT_GROUPS);
   }
+  const { featured: featuredShopGroups } = splitProductGroupsForDisplay(productGroupConfigs);
+  const featuredGroupKeys = featuredShopGroups
+    .map((groupConfig) => String(groupConfig.key || '').trim())
+    .filter(Boolean);
+  const featuredGroupKeySet = new Set(featuredGroupKeys);
+  const shopFilterFeaturedGroups = fallbackGroups.filter((groupKey) => featuredGroupKeySet.has(groupKey));
+  const shopFilterRegularGroups = fallbackGroups.filter((groupKey) => !featuredGroupKeySet.has(groupKey));
 
   const groupRaw = String(req.query.group || '').trim();
   const isAllGroupRequested = groupRaw.toLowerCase() === SHOP_ALL_GROUP_KEY;
@@ -9079,6 +9101,8 @@ app.get('/shop', (req, res) => {
     title: 'Shop',
     group,
     productGroups: fallbackGroups,
+    shopFilterRegularGroups,
+    shopFilterFeaturedGroups,
     productGroupConfigs,
     selectedGroupConfig,
     supportsBrandFilter,
@@ -14892,6 +14916,7 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
   const labelKo = String(req.body.labelKo || '').trim().slice(0, 60);
   const labelEn = String(req.body.labelEn || '').trim().slice(0, 60);
   const templateType = String(req.body.templateType || '').trim().toLowerCase();
+  const showInMainTopBox = req.body.showInMainTopBox === 'on';
 
   if (!labelKo || !labelEn) {
     setFlash(req, 'error', '분류명(KR/EN)을 모두 입력해 주세요.');
@@ -14923,6 +14948,7 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
     labelKo,
     labelEn,
     mode: useFactoryTemplate ? PRODUCT_GROUP_MODE.FACTORY : PRODUCT_GROUP_MODE.SIMPLE,
+    showInMainTopBox,
     enableBrandFilter: true,
     enableModelFilter: true,
     enableFactoryFilter: enableFactoryFilterByDefault,
@@ -14951,6 +14977,62 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
   });
 
   setFlash(req, 'success', '쇼핑몰 분류가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/layout/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=groups');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+
+  if (!groupKey) {
+    setFlash(req, 'error', '분류 키를 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextGroups = [...configs];
+  nextGroups[targetIndex] = {
+    ...nextGroups[targetIndex],
+    showInMainTopBox: req.body.showInMainTopBox === 'on'
+  };
+  setProductGroupConfigs(nextGroups);
+
+  setFlash(req, 'success', '분류 레이아웃 설정이 저장되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/reorder', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=groups');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const direction = String(req.body.direction || '').trim().toLowerCase();
+
+  if (!groupKey || !['up', 'down'].includes(direction)) {
+    setFlash(req, 'error', '분류 순서 변경 요청이 올바르지 않습니다.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  if ((direction === 'up' && targetIndex === 0) || (direction === 'down' && targetIndex === configs.length - 1)) {
+    return res.redirect(backPath);
+  }
+
+  const swapIndex = direction === 'up' ? targetIndex - 1 : targetIndex + 1;
+  const nextGroups = [...configs];
+  [nextGroups[targetIndex], nextGroups[swapIndex]] = [nextGroups[swapIndex], nextGroups[targetIndex]];
+  setProductGroupConfigs(nextGroups);
+  setFlash(req, 'success', '분류 순서가 변경되었습니다.');
   return res.redirect(backPath);
 });
 

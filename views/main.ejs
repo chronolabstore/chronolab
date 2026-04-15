@@ -18,6 +18,7 @@
   const heroLeftCtaLabel = String(ctx.settings?.heroLeftCtaLabel || '').trim() || ctx.t('goToShop');
   const heroRightTitle = String(ctx.settings?.heroRightTitle || '').trim() || ctx.t('welcome');
   const heroRightSubtitle = String(ctx.settings?.heroRightSubtitle || '').trim() || ctx.t('orderBankOnly');
+  const safeFeaturedTopProducts = Array.isArray(featuredTopProducts) ? featuredTopProducts : [];
 %>
 
 <section class="hero-wrap">
@@ -38,6 +39,59 @@
     </div>
   </div>
 </section>
+
+<% if (safeFeaturedTopProducts.length > 0) { %>
+  <section class="block-card main-featured-top-card">
+    <div class="section-head">
+      <h2><%= isEn ? 'Featured Shop Categories' : '상단 별도박스 분류' %></h2>
+      <a href="/shop"><%= isEn ? 'View more' : '더보기' %></a>
+    </div>
+    <div class="shop-row-list main-featured-top-list">
+      <% safeFeaturedTopProducts.forEach((group) => { %>
+        <div class="shop-row-block main-featured-top-group">
+          <div class="shop-row-head">
+            <h3><%= resolvedGroupLabelMap[group.groupName] || group.groupName %></h3>
+            <a href="/shop?group=<%= encodeURIComponent(group.groupName) %>"><%= isEn ? 'View group' : '분류 보기' %></a>
+          </div>
+          <div class="product-grid domestic-stock-grid">
+            <% if (!group.products || group.products.length === 0) { %>
+              <p class="muted-label"><%= isEn ? 'No products found.' : '등록된 상품이 없습니다.' %></p>
+            <% } %>
+            <% (group.products || []).forEach((item) => { %>
+              <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
+              <a href="/shop/item/<%= item.id %>" class="product-card">
+                <div class="product-image-box <%= soldOut ? 'is-sold-out' : '' %>">
+                  <% if (item.image_path) { %>
+                    <img src="<%= item.image_path %>" alt="<%= item.brand %>" />
+                  <% } else { %>
+                    <div class="image-fallback">WATCH</div>
+                  <% } %>
+                  <% if (soldOut) { %>
+                    <span class="soldout-overlay-label"><%= isEn ? 'Sold out' : '판매완료' %></span>
+                  <% } %>
+                </div>
+                <div class="product-meta">
+                  <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
+                  <% if ((item.product_badges || []).length > 0) { %>
+                    <div class="product-badge-row">
+                      <% (item.product_badges || []).forEach((badge) => { %>
+                        <% const badgeThemeClass = `product-badge-theme-${String(badge.color_theme || 'slate').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'slate'}`; %>
+                        <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
+                      <% }) %>
+                    </div>
+                  <% } %>
+                  <span><%= item.display_subtitle || '' %></span>
+                  <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>
+                  <small><%= isEn ? 'Shipping' : '배송기간' %>: <%= item.shipping_period || '-' %></small>
+                </div>
+              </a>
+            <% }) %>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </section>
+<% } %>
 
 <section class="block-card">
   <div class="section-head">
@@ -88,49 +142,6 @@
     <% }) %>
   </div>
 </section>
-
-<% if (domesticStockGroup) { %>
-  <section class="block-card">
-    <div class="section-head">
-      <h2><%= resolvedGroupLabelMap[domesticStockGroup.key] || domesticStockGroup.labelKo || domesticStockGroup.key %></h2>
-      <a href="/shop?group=<%= encodeURIComponent(domesticStockGroup.key) %>"><%= isEn ? 'View more' : '더보기' %></a>
-    </div>
-    <div class="product-grid domestic-stock-grid">
-      <% if (!domesticStockProducts || domesticStockProducts.length === 0) { %>
-        <p class="muted-label"><%= isEn ? 'No products found.' : '등록된 상품이 없습니다.' %></p>
-      <% } %>
-      <% (domesticStockProducts || []).forEach((item) => { %>
-        <% const soldOut = Number(item.is_sold_out || 0) === 1; %>
-        <a href="/shop/item/<%= item.id %>" class="product-card">
-          <div class="product-image-box <%= soldOut ? 'is-sold-out' : '' %>">
-            <% if (item.image_path) { %>
-              <img src="<%= item.image_path %>" alt="<%= item.brand %>" />
-            <% } else { %>
-              <div class="image-fallback">WATCH</div>
-            <% } %>
-            <% if (soldOut) { %>
-              <span class="soldout-overlay-label"><%= isEn ? 'Sold out' : '판매완료' %></span>
-            <% } %>
-          </div>
-          <div class="product-meta">
-            <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
-            <% if ((item.product_badges || []).length > 0) { %>
-              <div class="product-badge-row">
-                <% (item.product_badges || []).forEach((badge) => { %>
-                  <% const badgeThemeClass = `product-badge-theme-${String(badge.color_theme || 'slate').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'slate'}`; %>
-                  <span class="product-badge-chip <%= badgeThemeClass %>"><%= isEn ? (badge.label_en || badge.label_ko) : (badge.label_ko || badge.label_en) %></span>
-                <% }) %>
-              </div>
-            <% } %>
-            <span><%= item.display_subtitle || '' %></span>
-            <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>
-            <small><%= isEn ? 'Shipping' : '배송기간' %>: <%= item.shipping_period || '-' %></small>
-          </div>
-        </a>
-      <% }) %>
-    </div>
-  </section>
-<% } %>
 
 <section class="block-card">
   <div class="section-head">
