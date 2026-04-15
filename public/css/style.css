@@ -6091,6 +6091,10 @@ body.theme-night .inline-file-preview-image {
 }
 
 @media (max-width: 767px) {
+  .product-grid.detail-similar-grid .mini-product:nth-child(n + 4) {
+    display: none;
+  }
+
   .app-shell {
     padding: 10px 10px 24px;
   }
