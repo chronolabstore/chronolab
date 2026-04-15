@@ -1457,6 +1457,78 @@ function buildDefaultDomesticStockGroupConfig() {
   };
 }
 
+const STAGING_DEMO_PRODUCT_COUNT_PER_GROUP = 6;
+const STAGING_DEMO_IMAGE_PATHS = Object.freeze([
+  '/assets/media/demo/watermark-01.svg',
+  '/assets/media/demo/watermark-02.svg',
+  '/assets/media/demo/watermark-03.svg',
+  '/assets/media/demo/watermark-04.svg',
+  '/assets/media/demo/watermark-05.svg',
+  '/assets/media/demo/watermark-06.svg'
+]);
+const STAGING_DEMO_PRODUCT_PRESETS = Object.freeze([
+  Object.freeze({
+    brand: 'Rolex',
+    model: 'Datejust',
+    subModel: '36',
+    movement: 'Automatic',
+    caseSize: '36mm',
+    dialColor: 'Silver',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Jubilee'
+  }),
+  Object.freeze({
+    brand: 'Rolex',
+    model: 'Submariner',
+    subModel: '41',
+    movement: 'Automatic',
+    caseSize: '41mm',
+    dialColor: 'Black',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Oyster'
+  }),
+  Object.freeze({
+    brand: 'Patek Philippe',
+    model: 'Nautilus',
+    subModel: '5711',
+    movement: 'Automatic',
+    caseSize: '40mm',
+    dialColor: 'Blue',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Integrated Bracelet'
+  }),
+  Object.freeze({
+    brand: 'Audemars Piguet',
+    model: 'Royal Oak',
+    subModel: '15500',
+    movement: 'Automatic',
+    caseSize: '41mm',
+    dialColor: 'Black',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Integrated Bracelet'
+  }),
+  Object.freeze({
+    brand: 'Cartier',
+    model: 'Santos',
+    subModel: 'Medium',
+    movement: 'Automatic',
+    caseSize: '39mm',
+    dialColor: 'White',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Steel Bracelet'
+  }),
+  Object.freeze({
+    brand: 'Patek Philippe',
+    model: 'Aquanaut',
+    subModel: '5167',
+    movement: 'Automatic',
+    caseSize: '40mm',
+    dialColor: 'Black',
+    caseMaterial: 'Stainless Steel',
+    strapMaterial: 'Rubber Strap'
+  })
+]);
+
 function ensureStagingDomesticStockGroupConfig() {
   const currentRaw = String(getSetting('productGroupConfigs', '') || '').trim();
   let currentConfigs = [];
@@ -1485,6 +1557,86 @@ function ensureStagingDomesticStockGroupConfig() {
     currentConfigs.push(buildDefaultDomesticStockGroupConfig());
     setSetting('productGroupConfigs', JSON.stringify(currentConfigs));
   }
+}
+
+function getStagingProductGroupConfigsForFixtures() {
+  const currentRaw = String(getSetting('productGroupConfigs', '') || '').trim();
+  let currentConfigs = [];
+
+  try {
+    const parsed = JSON.parse(currentRaw || '[]');
+    if (Array.isArray(parsed)) {
+      currentConfigs = parsed;
+    }
+  } catch {
+    currentConfigs = [];
+  }
+
+  if (!Array.isArray(currentConfigs) || currentConfigs.length === 0) {
+    currentConfigs = cloneDefaultProductGroupConfigs();
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  currentConfigs.forEach((group) => {
+    const key = String(group?.key || '').trim();
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    normalized.push({
+      ...group,
+      key,
+      enableFactoryFilter: Boolean(group?.enableFactoryFilter)
+    });
+  });
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return cloneDefaultProductGroupConfigs();
+}
+
+function toStagingReferenceToken(groupKey = '', fallbackIndex = 0) {
+  const normalized = normalizeGroupMatchKey(groupKey);
+  const ascii = normalized.replace(/[^a-z0-9]/g, '');
+  if (ascii) {
+    return ascii.slice(0, 16);
+  }
+  const fallback = normalized || `group${fallbackIndex + 1}`;
+  return `g${Buffer.from(fallback, 'utf8').toString('hex').slice(0, 15)}`;
+}
+
+function buildStagingDemoProductSeed(groupConfig, index, groupIndex) {
+  const groupKey = String(groupConfig?.key || '').trim();
+  const preset = STAGING_DEMO_PRODUCT_PRESETS[index % STAGING_DEMO_PRODUCT_PRESETS.length];
+  const referenceToken = toStagingReferenceToken(groupKey, groupIndex);
+  const sequence = String(index + 1).padStart(2, '0');
+  const isDomestic =
+    normalizeGroupMatchKey(groupKey) === '국내재고' ||
+    normalizeGroupMatchKey(groupKey) === 'domesticstock';
+  const factoryName = groupConfig?.enableFactoryFilter
+    ? DEFAULT_FACTORY_FILTER_OPTIONS[index % DEFAULT_FACTORY_FILTER_OPTIONS.length]
+    : '';
+
+  return {
+    categoryGroup: groupKey,
+    brand: preset.brand,
+    model: preset.model,
+    subModel: `${preset.subModel} Demo ${sequence}`,
+    reference: `CL-STG-${referenceToken}-${sequence}`,
+    factoryName,
+    versionName: 'Staging Demo',
+    movement: preset.movement,
+    caseSize: preset.caseSize,
+    dialColor: preset.dialColor,
+    caseMaterial: preset.caseMaterial,
+    strapMaterial: preset.strapMaterial,
+    features: `[STAGING DEMO] ${groupKey} 기본 데모 상품 ${sequence}`,
+    price: 1000000,
+    shippingPeriod: isDomestic ? '국내 1~2일' : '7~14일',
+    imagePath: STAGING_DEMO_IMAGE_PATHS[index % STAGING_DEMO_IMAGE_PATHS.length]
+  };
 }
 
 function ensureStagingDemoMemberAccount() {
@@ -1544,125 +1696,137 @@ function ensureStagingDemoMemberAccount() {
   return Number(inserted.lastInsertRowid);
 }
 
-function ensureStagingDomesticStockProduct() {
-  const reference = 'CL-STAGING-DOMESTIC-001';
-  const imagePaths = [
-    '/assets/media/demo/watermark-01.svg',
-    '/assets/media/demo/watermark-02.svg',
-    '/assets/media/demo/watermark-03.svg',
-    '/assets/media/demo/watermark-04.svg',
-    '/assets/media/demo/watermark-05.svg',
-    '/assets/media/demo/watermark-06.svg'
-  ];
-  const primaryImage = imagePaths[0];
-
-  const existing = db
-    .prepare('SELECT id FROM products WHERE reference = ? LIMIT 1')
-    .get(reference);
-
-  let productId = 0;
-  if (existing) {
-    productId = Number(existing.id);
-    db.prepare(
-      `
-        UPDATE products
-        SET
-          category_group = ?,
-          brand = ?,
-          model = ?,
-          sub_model = ?,
-          reference = ?,
-          factory_name = ?,
-          version_name = ?,
-          movement = ?,
-          case_size = ?,
-          dial_color = ?,
-          case_material = ?,
-          strap_material = ?,
-          features = ?,
-          price = ?,
-          shipping_period = ?,
-          image_path = ?,
-          is_sold_out = 0,
-          is_active = 1
-        WHERE id = ?
-      `
-    ).run(
-      '국내재고',
-      'Rolex',
-      'Datejust',
-      '36 Silver Jubilee',
-      reference,
-      'VS',
-      'Staging Demo',
-      'Automatic',
-      '36mm',
-      'Silver',
-      'Stainless Steel',
-      'Jubilee',
-      '국내재고 기본 데모 상품입니다. 워터마크 적용 샘플 이미지입니다.',
-      1000000,
-      '국내 1~2일',
-      primaryImage,
-      productId
-    );
-  } else {
-    const inserted = db.prepare(
-      `
-        INSERT INTO products (
-          category_group,
-          brand,
-          model,
-          sub_model,
-          reference,
-          factory_name,
-          version_name,
-          movement,
-          case_size,
-          dial_color,
-          case_material,
-          strap_material,
-          features,
-          price,
-          shipping_period,
-          image_path,
-          is_sold_out,
-          is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
-      `
-    ).run(
-      '국내재고',
-      'Rolex',
-      'Datejust',
-      '36 Silver Jubilee',
-      reference,
-      'VS',
-      'Staging Demo',
-      'Automatic',
-      '36mm',
-      'Silver',
-      'Stainless Steel',
-      'Jubilee',
-      '국내재고 기본 데모 상품입니다. 워터마크 적용 샘플 이미지입니다.',
-      1000000,
-      '국내 1~2일',
-      primaryImage
-    );
-    productId = Number(inserted.lastInsertRowid);
-  }
-
-  db.prepare('DELETE FROM product_images WHERE product_id = ?').run(productId);
+function ensureStagingDemoProductsByGroup() {
+  const groupConfigs = getStagingProductGroupConfigsForFixtures();
+  const findByReference = db.prepare('SELECT id FROM products WHERE reference = ? LIMIT 1');
+  const clearProductImages = db.prepare('DELETE FROM product_images WHERE product_id = ?');
+  const updateProductById = db.prepare(
+    `
+      UPDATE products
+      SET
+        category_group = ?,
+        brand = ?,
+        model = ?,
+        sub_model = ?,
+        reference = ?,
+        factory_name = ?,
+        version_name = ?,
+        movement = ?,
+        case_size = ?,
+        dial_color = ?,
+        case_material = ?,
+        strap_material = ?,
+        features = ?,
+        price = ?,
+        shipping_period = ?,
+        image_path = ?,
+        is_sold_out = 0,
+        is_active = 1
+      WHERE id = ?
+    `
+  );
+  const insertProduct = db.prepare(
+    `
+      INSERT INTO products (
+        category_group,
+        brand,
+        model,
+        sub_model,
+        reference,
+        factory_name,
+        version_name,
+        movement,
+        case_size,
+        dial_color,
+        case_material,
+        strap_material,
+        features,
+        price,
+        shipping_period,
+        image_path,
+        is_sold_out,
+        is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+    `
+  );
   const insertImage = db.prepare(
     `
       INSERT OR IGNORE INTO product_images (product_id, image_path, sort_order)
       VALUES (?, ?, ?)
     `
   );
-  imagePaths.forEach((pathValue, index) => {
-    insertImage.run(productId, pathValue, index);
+
+  const firstProductByGroup = new Map();
+  groupConfigs.forEach((groupConfig, groupIndex) => {
+    const groupKey = String(groupConfig?.key || '').trim();
+    if (!groupKey) {
+      return;
+    }
+
+    for (let idx = 0; idx < STAGING_DEMO_PRODUCT_COUNT_PER_GROUP; idx += 1) {
+      const seed = buildStagingDemoProductSeed(groupConfig, idx, groupIndex);
+      const existing = findByReference.get(seed.reference);
+
+      let productId = 0;
+      if (existing) {
+        productId = Number(existing.id);
+        updateProductById.run(
+          seed.categoryGroup,
+          seed.brand,
+          seed.model,
+          seed.subModel,
+          seed.reference,
+          seed.factoryName,
+          seed.versionName,
+          seed.movement,
+          seed.caseSize,
+          seed.dialColor,
+          seed.caseMaterial,
+          seed.strapMaterial,
+          seed.features,
+          seed.price,
+          seed.shippingPeriod,
+          seed.imagePath,
+          productId
+        );
+      } else {
+        const inserted = insertProduct.run(
+          seed.categoryGroup,
+          seed.brand,
+          seed.model,
+          seed.subModel,
+          seed.reference,
+          seed.factoryName,
+          seed.versionName,
+          seed.movement,
+          seed.caseSize,
+          seed.dialColor,
+          seed.caseMaterial,
+          seed.strapMaterial,
+          seed.features,
+          seed.price,
+          seed.shippingPeriod,
+          seed.imagePath
+        );
+        productId = Number(inserted.lastInsertRowid || 0);
+      }
+
+      if (productId <= 0) {
+        continue;
+      }
+
+      clearProductImages.run(productId);
+      STAGING_DEMO_IMAGE_PATHS.forEach((pathValue, imageIndex) => {
+        insertImage.run(productId, pathValue, imageIndex);
+      });
+
+      if (!firstProductByGroup.has(groupKey)) {
+        firstProductByGroup.set(groupKey, productId);
+      }
+    }
   });
 
-  return productId;
+  return firstProductByGroup;
 }
 
 function ensureStagingBoardFixtures(demoUserId, productId) {
@@ -1921,7 +2085,18 @@ function ensureStagingPersistentDemoFixtures() {
   const tx = db.transaction(() => {
     ensureStagingDomesticStockGroupConfig();
     const demoUserId = ensureStagingDemoMemberAccount();
-    const domesticProductId = ensureStagingDomesticStockProduct();
+    const demoProductByGroup = ensureStagingDemoProductsByGroup();
+    let domesticProductId = 0;
+    for (const [groupKey, productId] of demoProductByGroup.entries()) {
+      const normalizedGroupKey = normalizeGroupMatchKey(groupKey);
+      if (normalizedGroupKey === '국내재고' || normalizedGroupKey === 'domesticstock') {
+        domesticProductId = Number(productId || 0);
+        break;
+      }
+      if (domesticProductId <= 0) {
+        domesticProductId = Number(productId || 0);
+      }
+    }
     ensureStagingBoardFixtures(demoUserId, domesticProductId);
   });
 
