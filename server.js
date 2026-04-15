@@ -7329,7 +7329,10 @@ function getMemberLevelOperatorPriority(rawOperator = '') {
 function buildDefaultMemberLevelRules() {
   return DEFAULT_MEMBER_LEVEL_RULES.map((rule, index) => ({
     id: String(rule.id || `level-${index + 1}`),
-    name: String(rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    nameKo: String(rule.nameKo || rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    nameEn: String(rule.nameEn || rule.name || `Level ${index + 1}`).trim().slice(0, 40) || `Level ${index + 1}`,
+    name: String(rule.nameKo || rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    colorTheme: normalizeProductBadgeColorTheme(rule.colorTheme || rule.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME),
     operator: normalizeMemberLevelOperator(rule.operator || MEMBER_LEVEL_OPERATORS.GTE),
     thresholdAmount: parseNonNegativeInt(rule.thresholdAmount, 0)
   }));
@@ -7341,6 +7344,20 @@ function normalizeMemberLevelName(rawName = '', fallbackName = '') {
     return name;
   }
   return String(fallbackName || '').trim().slice(0, 40);
+}
+
+function normalizeMemberLevelColorTheme(rawValue = '', fallback = PRODUCT_BADGE_DEFAULT_COLOR_THEME) {
+  return normalizeProductBadgeColorTheme(rawValue, fallback);
+}
+
+function getMemberLevelDisplayName(rule = null, lang = 'ko') {
+  const safeRule = rule && typeof rule === 'object' ? rule : {};
+  const nameKo = normalizeMemberLevelName(safeRule.nameKo || safeRule.name || '', '');
+  const nameEn = normalizeMemberLevelName(safeRule.nameEn || safeRule.name || '', '');
+  if (lang === 'en') {
+    return nameEn || nameKo || 'Unassigned';
+  }
+  return nameKo || nameEn || '미지정';
 }
 
 function parseMemberLevelThresholdAmount(rawAmount = '', fallback = 0) {
@@ -7393,15 +7410,19 @@ function parseMemberLevelRules(rawValue = '', fallbackRules = []) {
         levelId = `${levelId}-${index + 1}`;
       }
       usedIds.add(levelId);
-      const name = String(item.name || item.label || '').trim().slice(0, 40) || `등급${index + 1}`;
+      const nameKo = normalizeMemberLevelName(item.nameKo || item.name || item.label || '', `등급${index + 1}`);
+      const nameEn = normalizeMemberLevelName(item.nameEn || item.name || item.label || '', `Level ${index + 1}`);
       return {
         id: levelId,
-        name,
+        nameKo,
+        nameEn,
+        name: nameKo,
+        colorTheme: normalizeMemberLevelColorTheme(item.colorTheme || item.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME),
         operator: normalizeMemberLevelOperator(item.operator || item.condition || item.direction),
         thresholdAmount: parseNonNegativeInt(item.thresholdAmount ?? item.amount ?? item.threshold, 0)
       };
     })
-    .filter((item) => item.name);
+    .filter((item) => item.nameKo || item.nameEn);
 
   if (normalized.length > 0) {
     return normalized;
@@ -7409,7 +7430,10 @@ function parseMemberLevelRules(rawValue = '', fallbackRules = []) {
 
   return fallbackRules.map((rule, index) => ({
     id: String(rule.id || `level-${index + 1}`),
-    name: String(rule.name || `등급${index + 1}`).trim().slice(0, 40) || `등급${index + 1}`,
+    nameKo: normalizeMemberLevelName(rule.nameKo || rule.name || '', `등급${index + 1}`),
+    nameEn: normalizeMemberLevelName(rule.nameEn || rule.name || '', `Level ${index + 1}`),
+    name: normalizeMemberLevelName(rule.nameKo || rule.name || '', `등급${index + 1}`),
+    colorTheme: normalizeMemberLevelColorTheme(rule.colorTheme || rule.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME),
     operator: normalizeMemberLevelOperator(rule.operator || MEMBER_LEVEL_OPERATORS.GTE),
     thresholdAmount: parseNonNegativeInt(rule.thresholdAmount, 0)
   }));
@@ -7597,7 +7621,7 @@ function getMemberAccumulatedTotalsMap(userIds = [], includedGroups = []) {
   return resultMap;
 }
 
-function getMemberPointProfile(userId) {
+function getMemberPointProfile(userId, lang = 'ko') {
   const groupConfigs = getProductGroupConfigs();
   const availableGroups = groupConfigs.map((group) => group.key);
   const includedGroups = getMemberLevelIncludedGroupsSetting(availableGroups);
@@ -7606,7 +7630,10 @@ function getMemberPointProfile(userId) {
   const totalAmount = getMemberAccumulatedPurchaseAmount(userId, includedGroups);
   const levelRule = resolveMemberLevelByAmount(totalAmount, levelRules);
   const levelId = levelRule?.id || '';
-  const levelName = levelRule?.name || '';
+  const levelNameKo = normalizeMemberLevelName(levelRule?.nameKo || levelRule?.name || '', '');
+  const levelNameEn = normalizeMemberLevelName(levelRule?.nameEn || levelRule?.name || '', '');
+  const levelDisplayName = getMemberLevelDisplayName(levelRule, lang);
+  const levelColorTheme = normalizeMemberLevelColorTheme(levelRule?.colorTheme || levelRule?.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME);
   const pointRate = levelId
     ? parsePointRate(pointRateMap[levelId], 0)
     : getLegacyPurchasePointRateSetting();
@@ -7615,7 +7642,11 @@ function getMemberPointProfile(userId) {
     totalAmount,
     levelRule,
     levelId,
-    levelName,
+    levelName: levelNameKo,
+    levelNameKo,
+    levelNameEn,
+    levelDisplayName,
+    levelColorTheme,
     pointRate,
     includedGroups,
     availableGroups,
@@ -9411,7 +9442,7 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     setAsDefaultAddress: '',
     quantity: 1
   };
-  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
   return res.render('purchase-form', {
     title: 'Purchase',
@@ -9420,7 +9451,7 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
     addressBookEntries,
     productGroupLabel,
     purchasePointRate,
-    memberLevelName: memberPointProfile.levelName,
+    memberLevelName: memberPointProfile.levelDisplayName,
     expectedPoints: calculateEarnedPoints(product.price, purchasePointRate)
   });
 });
@@ -9514,7 +9545,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
     setAsDefaultAddress: setAsDefaultAddress ? '1' : '',
     quantity
   };
-  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
 
   const renderWithError = (message) => {
@@ -9526,7 +9557,7 @@ app.post('/shop/item/:id/purchase', requireAuth, (req, res) => {
       addressBookEntries,
       productGroupLabel,
       purchasePointRate,
-      memberLevelName: memberPointProfile.levelName,
+      memberLevelName: memberPointProfile.levelDisplayName,
       expectedPoints: calculateEarnedPoints(product.price * quantity, purchasePointRate)
     });
   };
@@ -9770,10 +9801,10 @@ app.post('/order/create', requireAuth, (req, res) => {
     totalPrice,
     baseDate: toKstDate()
   });
-  const memberPointProfile = req.user ? getMemberPointProfile(req.user.id) : null;
+  const memberPointProfile = req.user ? getMemberPointProfile(req.user.id, res.locals.ctx.lang) : null;
   const pointRateSnapshot = memberPointProfile ? memberPointProfile.pointRate : 0;
   const pointLevelIdSnapshot = memberPointProfile?.levelId || '';
-  const pointLevelNameSnapshot = memberPointProfile?.levelName || '';
+  const pointLevelNameSnapshot = memberPointProfile?.levelNameKo || memberPointProfile?.levelName || '';
 
   const createdOrder = db.prepare(
     `
@@ -9956,9 +9987,10 @@ app.get('/mypage', requireAuth, (req, res) => {
     availablePoints,
     cartCount: getMemberCartCount(req.user.id)
   };
-  const memberPointProfile = getMemberPointProfile(req.user.id);
+  const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const memberLevelInfo = {
-    name: memberPointProfile.levelName || (res.locals.ctx.lang === 'en' ? 'Unassigned' : '미지정'),
+    name: memberPointProfile.levelDisplayName || (res.locals.ctx.lang === 'en' ? 'Unassigned' : '미지정'),
+    colorTheme: memberPointProfile.levelColorTheme || PRODUCT_BADGE_DEFAULT_COLOR_THEME,
     pointRate: parsePointRate(memberPointProfile.pointRate, 0)
   };
 
@@ -12855,7 +12887,12 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
       const totalAmount = Number(totalMap.get(Number(row.id)) || 0);
       const levelRule = resolveMemberLevelByAmount(totalAmount, levelRules);
       const levelId = levelRule?.id || '';
-      const levelName = levelRule?.name || (lang === 'en' ? 'Unassigned' : '미지정');
+      const levelNameKo = normalizeMemberLevelName(levelRule?.nameKo || levelRule?.name || '', '');
+      const levelNameEn = normalizeMemberLevelName(levelRule?.nameEn || levelRule?.name || '', '');
+      const levelName = levelRule
+        ? getMemberLevelDisplayName(levelRule, lang)
+        : (lang === 'en' ? 'Unassigned' : '미지정');
+      const levelColorTheme = normalizeMemberLevelColorTheme(levelRule?.colorTheme || levelRule?.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME);
       const levelPointRate = levelId
         ? parsePointRate(pointRateMap[levelId], 0)
         : getLegacyPurchasePointRateSetting();
@@ -12872,6 +12909,9 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
         order_count: Number(row.order_count || 0),
         level_id: levelId,
         level_name: levelName,
+        level_name_ko: levelNameKo,
+        level_name_en: levelNameEn,
+        level_color_theme: levelColorTheme,
         level_point_rate: levelPointRate,
         level_threshold_amount: Number(levelRule?.thresholdAmount || 0),
         level_operator: levelRule?.operator || MEMBER_LEVEL_OPERATORS.GTE,
@@ -12893,7 +12933,10 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
     });
     const summaries = levelRules.map((rule) => ({
       id: rule.id,
-      name: rule.name,
+      name: getMemberLevelDisplayName(rule, lang),
+      nameKo: normalizeMemberLevelName(rule.nameKo || rule.name || '', ''),
+      nameEn: normalizeMemberLevelName(rule.nameEn || rule.name || '', ''),
+      colorTheme: normalizeMemberLevelColorTheme(rule.colorTheme || rule.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME),
       operator: rule.operator,
       operatorLabel: getMemberLevelOperatorLabel(rule.operator, lang),
       thresholdAmount: Number(rule.thresholdAmount || 0),
@@ -12903,6 +12946,9 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
     summaries.push({
       id: '__unassigned__',
       name: lang === 'en' ? 'Unassigned' : '미지정',
+      nameKo: '미지정',
+      nameEn: 'Unassigned',
+      colorTheme: PRODUCT_BADGE_DEFAULT_COLOR_THEME,
       operator: '',
       operatorLabel: '',
       thresholdAmount: 0,
@@ -13020,6 +13066,10 @@ function buildMemberManagePanelData(lang = 'ko', options = {}) {
   const levelSummaries = buildLevelSummary(allMembersForSummary);
   const levelRulesWithRates = levelRules.map((rule) => ({
     ...rule,
+    nameKo: normalizeMemberLevelName(rule.nameKo || rule.name || '', ''),
+    nameEn: normalizeMemberLevelName(rule.nameEn || rule.name || '', ''),
+    displayName: getMemberLevelDisplayName(rule, lang),
+    colorTheme: normalizeMemberLevelColorTheme(rule.colorTheme || rule.color_theme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME),
     pointRate: parsePointRate(pointRateMap[rule.id], 0),
     operatorLabel: getMemberLevelOperatorLabel(rule.operator, lang)
   }));
@@ -14433,22 +14483,30 @@ app.post('/admin/member-level/groups', requireAdmin, (req, res) => {
 
 app.post('/admin/member-level/add', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
-  const levelName = normalizeMemberLevelName(req.body.levelName || '');
+  const levelNameKo = normalizeMemberLevelName(req.body.levelNameKo || req.body.levelName || '');
+  const levelNameEn = normalizeMemberLevelName(
+    req.body.levelNameEn || req.body.levelNameKo || req.body.levelName || '',
+    levelNameKo
+  );
+  const colorTheme = normalizeMemberLevelColorTheme(req.body.colorTheme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME);
   const thresholdAmount = parseMemberLevelThresholdAmount(req.body.thresholdAmount || '0', 0);
   const operator = normalizeMemberLevelOperator(req.body.operator || MEMBER_LEVEL_OPERATORS.GTE);
 
-  if (!levelName) {
-    setFlash(req, 'error', '등급 명칭을 입력해 주세요.');
+  if (!levelNameKo || !levelNameEn) {
+    setFlash(req, 'error', '등급 명칭(KR/EN)을 모두 입력해 주세요.');
     return res.redirect(backPath);
   }
 
   const currentRules = getMemberLevelRulesSetting();
-  const nextLevelId = buildUniqueMemberLevelId(levelName, currentRules.map((rule) => rule.id));
+  const nextLevelId = buildUniqueMemberLevelId(levelNameEn || levelNameKo, currentRules.map((rule) => rule.id));
   const nextRules = [
     ...currentRules,
     {
       id: nextLevelId,
-      name: levelName,
+      nameKo: levelNameKo,
+      nameEn: levelNameEn,
+      name: levelNameKo,
+      colorTheme,
       operator,
       thresholdAmount
     }
@@ -14467,7 +14525,12 @@ app.post('/admin/member-level/add', requireAdmin, (req, res) => {
 app.post('/admin/member-level/:id/update', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/members?memberSection=levels');
   const levelId = String(req.params.id || '').trim();
-  const levelName = normalizeMemberLevelName(req.body.levelName || '');
+  const levelNameKo = normalizeMemberLevelName(req.body.levelNameKo || req.body.levelName || '');
+  const levelNameEn = normalizeMemberLevelName(
+    req.body.levelNameEn || req.body.levelNameKo || req.body.levelName || '',
+    levelNameKo
+  );
+  const colorTheme = normalizeMemberLevelColorTheme(req.body.colorTheme || '', PRODUCT_BADGE_DEFAULT_COLOR_THEME);
   const thresholdAmount = parseMemberLevelThresholdAmount(req.body.thresholdAmount || '0', 0);
   const operator = normalizeMemberLevelOperator(req.body.operator || MEMBER_LEVEL_OPERATORS.GTE);
 
@@ -14476,8 +14539,8 @@ app.post('/admin/member-level/:id/update', requireAdmin, (req, res) => {
     return res.redirect(backPath);
   }
 
-  if (!levelName) {
-    setFlash(req, 'error', '등급 명칭을 입력해 주세요.');
+  if (!levelNameKo || !levelNameEn) {
+    setFlash(req, 'error', '등급 명칭(KR/EN)을 모두 입력해 주세요.');
     return res.redirect(backPath);
   }
 
@@ -14491,7 +14554,10 @@ app.post('/admin/member-level/:id/update', requireAdmin, (req, res) => {
   const nextRules = [...currentRules];
   nextRules[targetIndex] = {
     ...nextRules[targetIndex],
-    name: levelName,
+    nameKo: levelNameKo,
+    nameEn: levelNameEn,
+    name: levelNameKo,
+    colorTheme,
     operator,
     thresholdAmount
   };

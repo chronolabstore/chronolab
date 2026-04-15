@@ -13,6 +13,8 @@
 <% const email = profile.email || (ctx.currentUser && ctx.currentUser.email) || '-'; %>
 <% const levelInfo = memberLevelInfo || {}; %>
 <% const levelName = levelInfo.name || (isEn ? 'Unassigned' : '미지정'); %>
+<% const memberLevelThemeKey = String(levelInfo.colorTheme || 'slate').trim().toLowerCase(); %>
+<% const memberLevelThemeClass = ['slate', 'red', 'blue', 'green', 'amber', 'purple'].includes(memberLevelThemeKey) ? `member-level-theme-${memberLevelThemeKey}` : 'member-level-theme-slate'; %>
 
 <section class="block-card">
   <div class="section-head">
@@ -56,7 +58,7 @@
         <div class="mypage-identity">
           <div class="mypage-identity-main">
             <h3><%= nickname %></h3>
-            <span class="chip dark mypage-level-chip">
+            <span class="chip member-level-chip mypage-level-chip <%= memberLevelThemeClass %>">
               <%= levelName %>
             </span>
           </div>
