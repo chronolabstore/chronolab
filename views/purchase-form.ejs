@@ -148,7 +148,7 @@
   </div>
 </section>
 
-<script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" data-daum-postcode="1"></script>
 <script>
   (() => {
     const isEn = <%= isEn ? 'true' : 'false' %>;
@@ -167,6 +167,7 @@
     const pointRate = Number(<%= Number(pointRate || 0) %>) || 0;
     const availablePoints = Number(<%= Math.max(0, Number(availablePoints || 0)) %>) || 0;
     const pointUnit = 1000;
+    const daumPostcodeScriptSrc = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
     const notSetRewardLabel = <%- JSON.stringify(isEn ? 'Not set' : '미설정') %>;
 
     const normalizePositiveInt = (rawValue, fallback = 1) => {
@@ -191,6 +192,66 @@
 
     const formatNumber = (value) => Number(value || 0).toLocaleString('ko-KR');
     const normalizePointsUnit = (value) => Math.max(0, Math.floor(Number(value || 0) / pointUnit) * pointUnit);
+    const ensureDaumPostcodeLoaded = (onReady, onError) => {
+      if (window.daum && window.daum.Postcode) {
+        onReady();
+        return;
+      }
+
+      const handleError = () => {
+        if (typeof onError === 'function') {
+          onError();
+        }
+      };
+
+      const existingScript = document.querySelector('script[data-daum-postcode="1"]');
+      if (existingScript) {
+        existingScript.addEventListener(
+          'load',
+          () => {
+            if (window.daum && window.daum.Postcode) {
+              onReady();
+              return;
+            }
+            handleError();
+          },
+          { once: true }
+        );
+        existingScript.addEventListener('error', handleError, { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = daumPostcodeScriptSrc;
+      script.async = true;
+      script.defer = true;
+      script.setAttribute('data-daum-postcode', '1');
+      script.addEventListener(
+        'load',
+        () => {
+          if (window.daum && window.daum.Postcode) {
+            onReady();
+            return;
+          }
+          handleError();
+        },
+        { once: true }
+      );
+      script.addEventListener('error', handleError, { once: true });
+      document.head.appendChild(script);
+    };
+    const openAddressSearch = () => {
+      new window.daum.Postcode({
+        oncomplete(data) {
+          const roadAddress = data.roadAddress || data.jibunAddress || '';
+          postcodeInput.value = data.zonecode || '';
+          baseInput.value = roadAddress;
+          if (detailInput) {
+            detailInput.focus();
+          }
+        }
+      }).open();
+    };
 
     const refreshPaymentPreview = () => {
       const quantity = normalizePositiveInt(quantityInput ? quantityInput.value : 1, 1);
@@ -247,21 +308,18 @@
 
     if (searchBtn) {
       searchBtn.addEventListener('click', () => {
-        if (!window.daum || !window.daum.Postcode) {
-          window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
-          return;
-        }
-
-        new window.daum.Postcode({
-          oncomplete(data) {
-            const roadAddress = data.roadAddress || data.jibunAddress || '';
-            postcodeInput.value = data.zonecode || '';
-            baseInput.value = roadAddress;
-            if (detailInput) {
-              detailInput.focus();
+        ensureDaumPostcodeLoaded(
+          () => {
+            if (!window.daum || !window.daum.Postcode) {
+              window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+              return;
             }
+            openAddressSearch();
+          },
+          () => {
+            window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
           }
-        }).open();
+        );
       });
     }
 
