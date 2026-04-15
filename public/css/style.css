@@ -5981,6 +5981,18 @@ body.theme-night .inline-file-preview-image {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Main page mobile product visibility rules
+     - Featured top box: show up to 4 items (2 x 2)
+     - Shop groups below: show up to 2 items (single row)
+  */
+  .main-featured-top-group .domestic-stock-grid > a.product-card:nth-of-type(n + 5) {
+    display: none;
+  }
+
+  .shop-row-grid > a.product-card:nth-of-type(n + 3) {
+    display: none;
+  }
+
   .section-head {
     align-items: flex-start;
     flex-direction: column;
