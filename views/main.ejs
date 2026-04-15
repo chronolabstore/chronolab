@@ -42,15 +42,12 @@
 
 <% if (safeFeaturedTopProducts.length > 0) { %>
   <section class="block-card main-featured-top-card">
-    <div class="section-head main-featured-top-head">
-      <a href="/shop"><%= isEn ? 'View more' : '더보기' %></a>
-    </div>
     <div class="shop-row-list main-featured-top-list">
       <% safeFeaturedTopProducts.forEach((group) => { %>
         <div class="shop-row-block main-featured-top-group">
           <div class="shop-row-head">
             <h3><%= resolvedGroupLabelMap[group.groupName] || group.groupName %></h3>
-            <a href="/shop?group=<%= encodeURIComponent(group.groupName) %>"><%= isEn ? 'View group' : '분류 보기' %></a>
+            <a href="/shop?group=<%= encodeURIComponent(group.groupName) %>"><%= isEn ? 'View more' : '더보기' %></a>
           </div>
           <div class="product-grid domestic-stock-grid">
             <% if (!group.products || group.products.length === 0) { %>
@@ -102,6 +99,7 @@
       <div class="shop-row-block">
         <div class="shop-row-head">
           <h3><%= resolvedGroupLabelMap[group.groupName] || group.groupName %></h3>
+          <a href="/shop?group=<%= encodeURIComponent(group.groupName) %>"><%= isEn ? 'View more' : '더보기' %></a>
         </div>
         <div class="product-grid shop-row-grid">
           <% if (group.products.length === 0) { %>
