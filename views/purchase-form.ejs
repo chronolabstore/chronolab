@@ -15,117 +15,127 @@
   const expectedPointsByPayable = pointRate > 0 ? Math.max(0, Math.floor((payableAmount * pointRate) / 100)) : 0;
 %>
 
-<section class="block-card narrow">
-  <h2><%= ctx.lang === 'en' ? 'Purchase Request' : '구매 신청' %></h2>
-  <% if (productGroupLabel) { %>
-    <p class="muted-label"><%= productGroupLabel %></p>
-  <% } %>
-
-  <div class="line-list-box">
-    <p><%= isEn ? 'Product' : '상품' %>: <strong><%= product.brand %> <%= product.model %> <%= product.sub_model %></strong></p>
-    <p><%= isEn ? 'Price (Unit)' : '가격(개당)' %>: <strong>₩<%= ctx.formatPrice(product.price) %></strong></p>
-    <p><%= isEn ? 'Order Amount' : '주문금액' %>: <strong id="purchaseSubtotalText">₩<%= ctx.formatPrice(orderSubtotal) %></strong></p>
-    <p><%= isEn ? 'Used Points' : '사용 포인트' %>: <strong id="purchaseUsedPointsText"><%= appliedUsePoints > 0 ? '-' : '' %><%= ctx.formatPrice(appliedUsePoints) %>P</strong></p>
-    <p><%= isEn ? 'Final Payment' : '최종 결제금액' %>: <strong id="purchasePayableText">₩<%= ctx.formatPrice(payableAmount) %></strong></p>
-    <p><%= isEn ? 'Shipping' : '배송기간' %>: <strong><%= product.shipping_period || '-' %></strong></p>
-    <p>
-      <%= isEn ? 'Reward Points' : '적립 포인트' %>:
-      <strong id="purchaseExpectedRewardPoints">
-        <%= pointRate > 0 ? `${pointRate}% (${ctx.formatPrice(expectedPointsByPayable || pointAmount)}P)` : (isEn ? 'Not set' : '미설정') %>
-      </strong>
-      <small class="muted-label"><%= isEn ? '(credited after delivery completion)' : '(배송완료 후 적립)' %></small>
-    </p>
-    <p><%= isEn ? 'Available Points' : '보유 포인트' %>: <strong><%= ctx.formatPrice(availablePoints) %>P</strong></p>
+<section class="block-card purchase-page-card">
+  <div class="purchase-page-head">
+    <h2><%= ctx.lang === 'en' ? 'Purchase Request' : '구매 신청' %></h2>
+    <% if (productGroupLabel) { %>
+      <p class="muted-label"><%= productGroupLabel %></p>
+    <% } %>
   </div>
 
-  <form method="post" action="/shop/item/<%= product.id %>/purchase" class="form-grid">
-    <label><%= isEn ? 'Name' : '이름' %>
-      <input type="text" name="buyerName" value="<%= formData.buyerName || '' %>" required />
-      <small class="strong-warning">
-        <%= isEn ? 'Transfer must be made with this exact name.' : '반드시 이 이름으로 입금해 주세요.' %>
-      </small>
-    </label>
-
-    <label><%= isEn ? 'Contact' : '연락처' %>
-      <input type="text" name="buyerContact" value="<%= formData.buyerContact || '' %>" required />
-    </label>
-
-    <label><%= isEn ? 'Customs Clearance No.' : '통관번호' %>
-      <input type="text" name="customsClearanceNo" value="<%= formData.customsClearanceNo || '' %>" required />
-    </label>
-
-    <label><%= isEn ? 'Address Book' : '주소록' %>
-      <select name="addressBookId" id="purchaseAddressBookSelect">
-        <option value=""><%= isEn ? 'Use current input' : '직접 입력 사용' %></option>
-        <% addressBook.forEach((item) => { %>
-          <option
-            value="<%= item.id %>"
-            data-postcode="<%= item.postcode %>"
-            data-address-base="<%= item.addressBase %>"
-            data-address-detail="<%= item.addressDetail %>"
-            <%= String(formData.addressBookId || '') === String(item.id) ? 'selected' : '' %>
-          >
-            <%= item.label %> - <%= item.fullAddress %>
-          </option>
-        <% }) %>
-      </select>
-    </label>
-
-    <label><%= isEn ? 'Postcode' : '우편번호' %>
-      <div class="field-inline">
-        <input type="text" name="buyerPostcode" id="buyerPostcode" value="<%= formData.buyerPostcode || '' %>" maxlength="5" required readonly />
-        <button type="button" class="chip field-inline-btn" id="buyerAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+  <div class="purchase-page-layout">
+    <aside class="purchase-page-summary">
+      <div class="line-list-box purchase-summary-box">
+        <p><span><%= isEn ? 'Product' : '상품' %></span><strong><%= product.brand %> <%= product.model %> <%= product.sub_model %></strong></p>
+        <p><span><%= isEn ? 'Price (Unit)' : '가격(개당)' %></span><strong>₩<%= ctx.formatPrice(product.price) %></strong></p>
+        <p><span><%= isEn ? 'Order Amount' : '주문금액' %></span><strong id="purchaseSubtotalText">₩<%= ctx.formatPrice(orderSubtotal) %></strong></p>
+        <p><span><%= isEn ? 'Used Points' : '사용 포인트' %></span><strong id="purchaseUsedPointsText"><%= appliedUsePoints > 0 ? '-' : '' %><%= ctx.formatPrice(appliedUsePoints) %>P</strong></p>
+        <p><span><%= isEn ? 'Final Payment' : '최종 결제금액' %></span><strong id="purchasePayableText">₩<%= ctx.formatPrice(payableAmount) %></strong></p>
+        <p><span><%= isEn ? 'Shipping' : '배송기간' %></span><strong><%= product.shipping_period || '-' %></strong></p>
+        <p>
+          <span><%= isEn ? 'Reward Points' : '적립 포인트' %></span>
+          <strong id="purchaseExpectedRewardPoints">
+            <%= pointRate > 0 ? `${pointRate}% (${ctx.formatPrice(expectedPointsByPayable || pointAmount)}P)` : (isEn ? 'Not set' : '미설정') %>
+          </strong>
+        </p>
+        <p class="purchase-summary-note">
+          <small class="muted-label"><%= isEn ? '(credited after delivery completion)' : '(배송완료 후 적립)' %></small>
+        </p>
+        <p><span><%= isEn ? 'Available Points' : '보유 포인트' %></span><strong><%= ctx.formatPrice(availablePoints) %>P</strong></p>
       </div>
-    </label>
+    </aside>
 
-    <label><%= isEn ? 'Main Address' : '기본주소' %>
-      <input type="text" name="buyerAddressBase" id="buyerAddressBase" value="<%= formData.buyerAddressBase || '' %>" maxlength="160" required readonly />
-    </label>
+    <div class="purchase-page-content">
+      <form method="post" action="/shop/item/<%= product.id %>/purchase" class="form-grid purchase-request-form">
+        <label><%= isEn ? 'Name' : '이름' %>
+          <input type="text" name="buyerName" value="<%= formData.buyerName || '' %>" required />
+          <small class="strong-warning">
+            <%= isEn ? 'Transfer must be made with this exact name.' : '반드시 이 이름으로 입금해 주세요.' %>
+          </small>
+        </label>
 
-    <label><%= isEn ? 'Detailed Address' : '상세주소' %>
-      <input type="text" name="buyerAddressDetail" id="buyerAddressDetail" value="<%= formData.buyerAddressDetail || '' %>" maxlength="120" />
-    </label>
+        <label><%= isEn ? 'Contact' : '연락처' %>
+          <input type="text" name="buyerContact" value="<%= formData.buyerContact || '' %>" required />
+        </label>
 
-    <label><%= isEn ? 'Quantity' : '수량' %>
-      <input type="number" name="quantity" min="1" value="<%= formData.quantity || 1 %>" required />
-    </label>
+        <label><%= isEn ? 'Customs Clearance No.' : '통관번호' %>
+          <input type="text" name="customsClearanceNo" value="<%= formData.customsClearanceNo || '' %>" required />
+        </label>
 
-    <label><%= isEn ? 'Use Points' : '포인트 사용' %>
-      <input
-        type="number"
-        name="useRewardPoints"
-        id="purchaseUseRewardPoints"
-        min="0"
-        step="1"
-        inputmode="numeric"
-        value="<%= formData.useRewardPoints || 0 %>"
-      />
-      <small class="muted-label">
-        <%= isEn ? `Available ${ctx.formatPrice(availablePoints)}P / Max ${ctx.formatPrice(maxUsablePoints)}P` : `보유 ${ctx.formatPrice(availablePoints)}P / 최대 ${ctx.formatPrice(maxUsablePoints)}P 사용 가능` %>
-      </small>
-    </label>
+        <label class="purchase-field-span-2"><%= isEn ? 'Address Book' : '주소록' %>
+          <select name="addressBookId" id="purchaseAddressBookSelect">
+            <option value=""><%= isEn ? 'Use current input' : '직접 입력 사용' %></option>
+            <% addressBook.forEach((item) => { %>
+              <option
+                value="<%= item.id %>"
+                data-postcode="<%= item.postcode %>"
+                data-address-base="<%= item.addressBase %>"
+                data-address-detail="<%= item.addressDetail %>"
+                <%= String(formData.addressBookId || '') === String(item.id) ? 'selected' : '' %>
+              >
+                <%= item.label %> - <%= item.fullAddress %>
+              </option>
+            <% }) %>
+          </select>
+        </label>
 
-    <div class="address-book-save-box">
-      <label class="check-row">
-        <input type="checkbox" name="saveToAddressBook" value="1" <%= String(formData.saveToAddressBook || '') === '1' ? 'checked' : '' %> />
-        <span><%= isEn ? 'Save this address to address book' : '이번 주소를 주소록에 저장' %></span>
-      </label>
-      <label>
-        <span><%= isEn ? 'Address Label' : '주소록 이름' %></span>
-        <input type="text" name="addressLabel" value="<%= formData.addressLabel || '' %>" maxlength="40" placeholder="<%= isEn ? 'e.g. Home / Office' : '예: 집 / 회사' %>" />
-      </label>
-      <label class="check-row">
-        <input type="checkbox" name="setAsDefaultAddress" value="1" <%= String(formData.setAsDefaultAddress || '') === '1' ? 'checked' : '' %> />
-        <span><%= isEn ? 'Set as default address' : '기본주소로 설정' %></span>
-      </label>
+        <label class="purchase-field-span-2"><%= isEn ? 'Postcode' : '우편번호' %>
+          <div class="field-inline">
+            <input type="text" name="buyerPostcode" id="buyerPostcode" value="<%= formData.buyerPostcode || '' %>" maxlength="5" required readonly />
+            <button type="button" class="chip field-inline-btn" id="buyerAddressSearchBtn"><%= isEn ? 'Search Address' : '주소찾기' %></button>
+          </div>
+        </label>
+
+        <label class="purchase-field-span-2"><%= isEn ? 'Main Address' : '기본주소' %>
+          <input type="text" name="buyerAddressBase" id="buyerAddressBase" value="<%= formData.buyerAddressBase || '' %>" maxlength="160" required readonly />
+        </label>
+
+        <label class="purchase-field-span-2"><%= isEn ? 'Detailed Address' : '상세주소' %>
+          <input type="text" name="buyerAddressDetail" id="buyerAddressDetail" value="<%= formData.buyerAddressDetail || '' %>" maxlength="120" />
+        </label>
+
+        <label><%= isEn ? 'Quantity' : '수량' %>
+          <input type="number" name="quantity" min="1" value="<%= formData.quantity || 1 %>" required />
+        </label>
+
+        <label><%= isEn ? 'Use Points' : '포인트 사용' %>
+          <input
+            type="number"
+            name="useRewardPoints"
+            id="purchaseUseRewardPoints"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            value="<%= formData.useRewardPoints || 0 %>"
+          />
+          <small class="muted-label">
+            <%= isEn ? `Available ${ctx.formatPrice(availablePoints)}P / Max ${ctx.formatPrice(maxUsablePoints)}P` : `보유 ${ctx.formatPrice(availablePoints)}P / 최대 ${ctx.formatPrice(maxUsablePoints)}P 사용 가능` %>
+          </small>
+        </label>
+
+        <div class="address-book-save-box purchase-field-span-2">
+          <label class="check-row">
+            <input type="checkbox" name="saveToAddressBook" value="1" <%= String(formData.saveToAddressBook || '') === '1' ? 'checked' : '' %> />
+            <span><%= isEn ? 'Save this address to address book' : '이번 주소를 주소록에 저장' %></span>
+          </label>
+          <label>
+            <span><%= isEn ? 'Address Label' : '주소록 이름' %></span>
+            <input type="text" name="addressLabel" value="<%= formData.addressLabel || '' %>" maxlength="40" placeholder="<%= isEn ? 'e.g. Home / Office' : '예: 집 / 회사' %>" />
+          </label>
+          <label class="check-row">
+            <input type="checkbox" name="setAsDefaultAddress" value="1" <%= String(formData.setAsDefaultAddress || '') === '1' ? 'checked' : '' %> />
+            <span><%= isEn ? 'Set as default address' : '기본주소로 설정' %></span>
+          </label>
+        </div>
+
+        <button type="submit" class="cta-main full purchase-field-span-2"><%= isEn ? 'Submit Purchase' : '구매 신청하기' %></button>
+      </form>
+
+      <div class="notice-box purchase-transfer-notice">
+        <h4><%= isEn ? 'Bank Transfer Guide' : '계좌이체 안내' %></h4>
+        <p><%= ctx.settings.bankAccountInfo %></p>
+      </div>
     </div>
-
-    <button type="submit" class="cta-main full"><%= isEn ? 'Submit Purchase' : '구매 신청하기' %></button>
-  </form>
-
-  <div class="notice-box">
-    <h4><%= isEn ? 'Bank Transfer Guide' : '계좌이체 안내' %></h4>
-    <p><%= ctx.settings.bankAccountInfo %></p>
   </div>
 </section>
 
