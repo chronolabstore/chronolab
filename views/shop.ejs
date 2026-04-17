@@ -97,10 +97,10 @@
     <div class="filter-group">
       <h4><%= isEn ? 'Factory' : '공장' %></h4>
       <div class="chip-row chip-scroll-row">
-        <a href="<%= makeShopHref({ factory: '', model: '' }) %>" class="chip filter-chip <%= safeFactory ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
+        <a href="<%= makeShopHref({ factory: '' }) %>" class="chip filter-chip <%= safeFactory ? '' : 'dark' %>"><%= isEn ? 'All' : '전체' %></a>
         <% safeFactoryItems.forEach((item) => { %>
           <% const value = String(item?.value || '').trim(); const label = String(item?.label || value).trim() || value; %>
-          <a href="<%= makeShopHref({ factory: value, model: '' }) %>" class="chip filter-chip <%= safeFactory === value ? 'dark' : '' %>"><%= label %></a>
+          <a href="<%= makeShopHref({ factory: value }) %>" class="chip filter-chip <%= safeFactory === value ? 'dark' : '' %>"><%= label %></a>
         <% }) %>
       </div>
     </div>
