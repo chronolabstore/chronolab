@@ -49,6 +49,10 @@
   --btn-secondary-text-hover: var(--color-navy);
   --focus-ring: rgba(59, 130, 246, 0.32);
   --error-text: #b91c1c;
+  --support-fab-bg: #0f172a;
+  --support-fab-fg: #f8fafc;
+  --support-fab-ring: rgba(248, 250, 252, 0.94);
+  --support-fab-ring-outer: rgba(15, 23, 42, 0.3);
   --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 14px;
@@ -130,6 +134,10 @@ body.theme-night {
   --btn-secondary-text-hover: #ffffff;
   --focus-ring: rgba(191, 219, 254, 0.45);
   --error-text: #fda4af;
+  --support-fab-bg: #dbe6fb;
+  --support-fab-fg: #0b1220;
+  --support-fab-ring: rgba(11, 18, 32, 0.86);
+  --support-fab-ring-outer: rgba(226, 232, 240, 0.34);
   --shadow: 0 18px 34px rgba(0, 0, 0, 0.5);
 }
 
@@ -2627,13 +2635,15 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 1px solid rgba(32, 32, 32, 0.18);
-  background: var(--card-dark);
-  color: var(--card-dark-text);
+  border: 2px solid var(--support-fab-ring);
+  background: var(--support-fab-bg);
+  color: var(--support-fab-fg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
+  box-shadow:
+    0 0 0 2px var(--support-fab-ring-outer),
+    0 10px 20px rgba(15, 23, 42, 0.24);
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
 }
@@ -2641,12 +2651,16 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
 .floating-support-btn:hover {
   transform: translateY(-1px);
   filter: brightness(1.04);
-  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.28);
+  box-shadow:
+    0 0 0 2px var(--support-fab-ring-outer),
+    0 12px 22px rgba(15, 23, 42, 0.28);
 }
 
 .floating-support-btn:active {
   transform: translateY(0);
-  box-shadow: 0 7px 14px rgba(15, 23, 42, 0.22);
+  box-shadow:
+    0 0 0 2px var(--support-fab-ring-outer),
+    0 7px 14px rgba(15, 23, 42, 0.22);
 }
 
 .floating-support-btn:focus-visible {
