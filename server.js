@@ -9925,24 +9925,45 @@ app.get('/shop/item/:id', (req, res) => {
     appendUniqueSimilarRows(fallbackRows);
   };
 
-  const currentGroupKey = normalizeProductGroupKey(product.category_group || '');
-  appendSimilarRowsFromGroup(currentGroupKey);
-
-  const configuredFactoryGroup = productGroupConfigs.find((groupConfig) => {
-    const groupKey = normalizeProductGroupKey(groupConfig?.key || '');
-    if (groupKey === '공장제') {
-      return true;
+  const resolveConfiguredGroupKey = (matcher, fallbackKey = '') => {
+    const matchedGroup = productGroupConfigs.find((groupConfig) => {
+      if (!groupConfig || typeof groupConfig !== 'object') {
+        return false;
+      }
+      return matcher(groupConfig);
+    });
+    const resolved = String(matchedGroup?.key || fallbackKey || '').trim();
+    return normalizeProductGroupKey(resolved) ? resolved : '';
+  };
+  const isLocalUsedGroup = (groupConfig = null) => {
+    const safeGroup = groupConfig && typeof groupConfig === 'object' ? groupConfig : {};
+    const normalizedValues = [safeGroup.key, safeGroup.labelKo, safeGroup.labelEn]
+      .map((value) => normalizeProductGroupMatchKey(value))
+      .filter(Boolean);
+    return normalizedValues.some((value) => value === '현지중고' || value === 'localused' || value === 'used');
+  };
+  const prioritizedGroupKeys = [];
+  const prioritizedGroupKeySet = new Set();
+  const appendPrioritizedGroup = (groupKey = '') => {
+    const resolvedGroupKey = String(groupKey || '').trim();
+    const normalizedGroupKey = normalizeProductGroupKey(resolvedGroupKey);
+    if (!normalizedGroupKey || prioritizedGroupKeySet.has(normalizedGroupKey)) {
+      return;
     }
-    return normalizeProductGroupKey(groupConfig?.labelKo || '') === '공장제';
+    prioritizedGroupKeySet.add(normalizedGroupKey);
+    prioritizedGroupKeys.push(resolvedGroupKey);
+  };
+
+  appendPrioritizedGroup(product.category_group || '');
+  appendPrioritizedGroup(resolveConfiguredGroupKey((groupConfig) => isDomesticStockGroup(groupConfig), '국내재고'));
+  appendPrioritizedGroup(resolveConfiguredGroupKey((groupConfig) => isFactoryTemplateGroup(groupConfig), '공장제'));
+  appendPrioritizedGroup(resolveConfiguredGroupKey((groupConfig) => isLocalUsedGroup(groupConfig), '현지중고'));
+  prioritizedGroupKeys.forEach((groupKey) => {
+    if (similarRows.length >= SIMILAR_LIMIT) {
+      return;
+    }
+    appendSimilarRowsFromGroup(groupKey);
   });
-  const factoryGroupKey = String(configuredFactoryGroup?.key || '공장제').trim();
-  if (
-    similarRows.length < SIMILAR_LIMIT &&
-    normalizeProductGroupKey(factoryGroupKey) &&
-    normalizeProductGroupKey(factoryGroupKey) !== currentGroupKey
-  ) {
-    appendSimilarRowsFromGroup(factoryGroupKey);
-  }
 
   const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
