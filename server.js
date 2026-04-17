@@ -554,6 +554,10 @@ const SALES_ORDER_WORKBOOK_BACKFILL_VERSION_KEY = 'salesWorkbookOrderBackfillV20
 const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v4';
 const SALES_ORDER_WORKBOOK_SYNC_MEMO_PREFIX = '[AUTO_ORDER_SYNC]';
 const SALES_ORDER_WORKBOOK_MAX_SYNCED_IDS = 50000;
+const SALES_ALL_DATE_TAB_KEY = 'all-sales';
+const SALES_ALL_DATE_TAB_GROUP_KEY = '__all__';
+const SALES_ALL_DATE_TAB_LABEL_KO = '전체 매출';
+const SALES_ALL_DATE_TAB_LABEL_EN = 'All Sales';
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const PRODUCT_BADGE_CODE_MAX_LENGTH = 40;
 const PRODUCT_BADGE_LABEL_MAX_LENGTH = 40;
@@ -4937,7 +4941,18 @@ function getSalesMainTabs(groupConfigs = null) {
   const priceTabs = [];
   const dateTabs = [];
   const legacyTabByKey = new Map(SALES_MAIN_TABS.map((item) => [item.key, item]));
-  const usedTabKeys = new Set(roundTabs.map((item) => String(item.key || '').trim()).filter(Boolean));
+  const allDateTab = {
+    key: SALES_ALL_DATE_TAB_KEY,
+    labelKo: SALES_ALL_DATE_TAB_LABEL_KO,
+    labelEn: SALES_ALL_DATE_TAB_LABEL_EN,
+    scopeType: 'date',
+    groupKey: SALES_ALL_DATE_TAB_GROUP_KEY,
+    readOnly: true,
+    aggregateType: 'all'
+  };
+  const usedTabKeys = new Set(
+    [...roundTabs.map((item) => String(item.key || '').trim()), SALES_ALL_DATE_TAB_KEY].filter(Boolean)
+  );
 
   mergedGroups.forEach((group, index) => {
     const groupKey = normalizeProductGroupKey(group?.key || '');
@@ -4986,7 +5001,7 @@ function getSalesMainTabs(groupConfigs = null) {
     });
   });
 
-  return [...priceTabs, ...roundTabs, ...dateTabs];
+  return [...priceTabs, ...roundTabs, allDateTab, ...dateTabs];
 }
 
 function normalizeSalesSettingValues(raw = {}, fallback = {}) {
@@ -5400,6 +5415,68 @@ function normalizeSalesScope(rawScope = {}, index = 0, tabKey = '', scopeType = 
   return normalizedScope;
 }
 
+function rebuildAllSalesAggregateScopes(tabs = {}, workbookGlobals = {}, fallbackSettings = {}) {
+  const dateBuckets = new Map();
+  Object.entries(tabs || {}).forEach(([tabKey, tab]) => {
+    if (String(tabKey || '').trim() === SALES_ALL_DATE_TAB_KEY) {
+      return;
+    }
+    if (getSalesScopeMode(tabKey) !== 'date') {
+      return;
+    }
+    const scopes = getSalesScopeList(tab);
+    if (!Array.isArray(scopes) || scopes.length === 0) {
+      return;
+    }
+    const sourceLabel = normalizeSalesText(tab?.labelKo || tab?.key || '', 60);
+    scopes.forEach((scope) => {
+      const scopeDate = normalizeSalesDate(scope?.settings?.baseDate || scope?.date || scope?.name || '');
+      if (!scopeDate) {
+        return;
+      }
+      if (!dateBuckets.has(scopeDate)) {
+        dateBuckets.set(scopeDate, []);
+      }
+      const rows = Array.isArray(scope?.rows) ? scope.rows : [];
+      rows.forEach((row) => {
+        const normalizedRow = createDefaultSalesRow(row);
+        if (!normalizedRow.factory && sourceLabel) {
+          normalizedRow.factory = sourceLabel;
+        }
+        dateBuckets.get(scopeDate).push(normalizedRow);
+      });
+    });
+  });
+
+  const sortedDates = [...dateBuckets.keys()].sort((left, right) => {
+    if (left === right) return 0;
+    return left < right ? 1 : -1;
+  });
+
+  if (sortedDates.length === 0) {
+    sortedDates.push(getTodayDateString());
+  }
+
+  return sortedDates.map((scopeDate, index) =>
+    normalizeSalesScope(
+      {
+        id: createSalesId(`round-${SALES_ALL_DATE_TAB_KEY}-${index + 1}`),
+        name: scopeDate,
+        date: scopeDate,
+        settings: {
+          ...normalizeSalesSettingValues(fallbackSettings || {}, workbookGlobals || {}),
+          baseDate: scopeDate
+        },
+        rows: dateBuckets.get(scopeDate) || []
+      },
+      index,
+      SALES_ALL_DATE_TAB_KEY,
+      'round',
+      fallbackSettings
+    )
+  );
+}
+
 function normalizeSalesWorkbook(rawWorkbook = null) {
   const fallback = buildDefaultSalesWorkbook();
   const salesMainTabs = getSalesMainTabs();
@@ -5464,6 +5541,15 @@ function normalizeSalesWorkbook(rawWorkbook = null) {
       settings: tabSettings,
       rounds
     };
+  }
+
+  const allDateTab = tabs[SALES_ALL_DATE_TAB_KEY];
+  if (allDateTab && typeof allDateTab === 'object') {
+    allDateTab.rounds = rebuildAllSalesAggregateScopes(
+      tabs,
+      globals,
+      normalizeSalesSettingValues(allDateTab.settings || {}, globals)
+    );
   }
 
   return {
@@ -9679,28 +9765,62 @@ app.get('/shop/item/:id', (req, res) => {
   const normalizedModel = String(product.model || '')
     .trim()
     .toLowerCase();
+  const seenSimilarIds = new Set([Number(product.id)]);
+  const similarRows = [];
+  const appendUniqueSimilarRows = (rows = []) => {
+    rows.forEach((row) => {
+      const rowId = Number.parseInt(String(row?.id ?? ''), 10);
+      if (!Number.isInteger(rowId) || rowId <= 0 || seenSimilarIds.has(rowId)) {
+        return;
+      }
+      if (similarRows.length >= SIMILAR_LIMIT) {
+        return;
+      }
+      seenSimilarIds.add(rowId);
+      similarRows.push(row);
+    });
+  };
+  const appendSimilarRowsFromGroup = (groupKey = '') => {
+    const requestedGroupKey = String(groupKey || '').trim();
+    const normalizedGroupKey = normalizeProductGroupKey(requestedGroupKey);
+    if (!normalizedGroupKey || similarRows.length >= SIMILAR_LIMIT) {
+      return;
+    }
+    const resolvedGroupValue = (
+      productGroupConfigs.find(
+        (groupConfig) => normalizeProductGroupKey(groupConfig?.key || '') === normalizedGroupKey
+      )?.key || requestedGroupKey || normalizedGroupKey
+    );
+    const excludedIds = [...seenSimilarIds];
+    const excludedPlaceholders = excludedIds.map(() => '?').join(', ');
+    const baseParams = [product.brand, resolvedGroupValue, ...excludedIds];
 
-  let similarRows = [];
+    if (normalizedModel) {
+      const exactRows = db
+        .prepare(
+          `
+            SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
+            FROM products
+            WHERE is_active = 1
+              AND brand = ?
+              AND category_group = ?
+              AND id NOT IN (${excludedPlaceholders})
+              AND LOWER(TRIM(COALESCE(model, ''))) = ?
+            ORDER BY id DESC
+            LIMIT ?
+          `
+        )
+        .all(...baseParams, normalizedModel, SIMILAR_LIMIT - similarRows.length);
+      appendUniqueSimilarRows(exactRows);
+    }
 
-  if (normalizedModel) {
-    similarRows = db
-      .prepare(
-        `
-          SELECT id, category_group, brand, model, sub_model, price, image_path, extra_fields_json, is_sold_out
-          FROM products
-          WHERE is_active = 1
-            AND brand = ?
-            AND id != ?
-            AND LOWER(TRIM(COALESCE(model, ''))) = ?
-          ORDER BY id DESC
-          LIMIT ?
-        `
-      )
-      .all(product.brand, product.id, normalizedModel, SIMILAR_LIMIT);
-  }
+    if (similarRows.length >= SIMILAR_LIMIT) {
+      return;
+    }
 
-  const remainingSimilarCount = SIMILAR_LIMIT - similarRows.length;
-  if (remainingSimilarCount > 0) {
+    const fallbackExcludedIds = [...seenSimilarIds];
+    const fallbackExcludedPlaceholders = fallbackExcludedIds.map(() => '?').join(', ');
+    const fallbackBaseParams = [product.brand, resolvedGroupValue, ...fallbackExcludedIds];
     const fallbackRows = normalizedModel
       ? db
           .prepare(
@@ -9709,13 +9829,14 @@ app.get('/shop/item/:id', (req, res) => {
               FROM products
               WHERE is_active = 1
                 AND brand = ?
-                AND id != ?
+                AND category_group = ?
+                AND id NOT IN (${fallbackExcludedPlaceholders})
                 AND LOWER(TRIM(COALESCE(model, ''))) != ?
               ORDER BY RANDOM()
               LIMIT ?
             `
           )
-          .all(product.brand, product.id, normalizedModel, remainingSimilarCount)
+          .all(...fallbackBaseParams, normalizedModel, SIMILAR_LIMIT - similarRows.length)
       : db
           .prepare(
             `
@@ -9723,14 +9844,33 @@ app.get('/shop/item/:id', (req, res) => {
               FROM products
               WHERE is_active = 1
                 AND brand = ?
-                AND id != ?
+                AND category_group = ?
+                AND id NOT IN (${fallbackExcludedPlaceholders})
               ORDER BY RANDOM()
               LIMIT ?
             `
           )
-          .all(product.brand, product.id, remainingSimilarCount);
+          .all(...fallbackBaseParams, SIMILAR_LIMIT - similarRows.length);
+    appendUniqueSimilarRows(fallbackRows);
+  };
 
-    similarRows = [...similarRows, ...fallbackRows];
+  const currentGroupKey = normalizeProductGroupKey(product.category_group || '');
+  appendSimilarRowsFromGroup(currentGroupKey);
+
+  const configuredFactoryGroup = productGroupConfigs.find((groupConfig) => {
+    const groupKey = normalizeProductGroupKey(groupConfig?.key || '');
+    if (groupKey === '공장제') {
+      return true;
+    }
+    return normalizeProductGroupKey(groupConfig?.labelKo || '') === '공장제';
+  });
+  const factoryGroupKey = String(configuredFactoryGroup?.key || '공장제').trim();
+  if (
+    similarRows.length < SIMILAR_LIMIT &&
+    normalizeProductGroupKey(factoryGroupKey) &&
+    normalizeProductGroupKey(factoryGroupKey) !== currentGroupKey
+  ) {
+    appendSimilarRowsFromGroup(factoryGroupKey);
   }
 
   const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
@@ -15497,6 +15637,40 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
   });
 
   setFlash(req, 'success', '쇼핑몰 분류가 추가되었습니다.');
+  return res.redirect(backPath);
+});
+
+app.post('/admin/product-group/update', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/menus?section=groups');
+  const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const labelKo = String(req.body.labelKo || '').trim().slice(0, 60);
+  const labelEn = String(req.body.labelEn || '').trim().slice(0, 60);
+
+  if (!groupKey) {
+    setFlash(req, 'error', '수정할 분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+  if (!labelKo || !labelEn) {
+    setFlash(req, 'error', '분류명(KR/EN)을 모두 입력해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  const configs = getProductGroupConfigs();
+  const targetIndex = configs.findIndex((group) => group.key === groupKey);
+  if (targetIndex < 0) {
+    setFlash(req, 'error', '수정할 분류를 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const nextGroups = [...configs];
+  nextGroups[targetIndex] = {
+    ...nextGroups[targetIndex],
+    labelKo,
+    labelEn
+  };
+  setProductGroupConfigs(nextGroups);
+
+  setFlash(req, 'success', '쇼핑몰 분류 정보가 수정되었습니다.');
   return res.redirect(backPath);
 });
 

@@ -17,13 +17,11 @@
     <% items.forEach((item) => { %>
       <% const qcImages = Array.isArray(item.image_paths) ? item.image_paths : []; %>
       <li class="media-line-item">
-        <span class="media-line-thumb">
-          <% if (qcImages.length > 0) { %>
+        <% if (qcImages.length > 0) { %>
+          <span class="media-line-thumb">
             <img src="<%= qcImages[0] %>" alt="qc image" loading="lazy" data-lightbox-enabled="1" />
-          <% } else { %>
-            <span class="media-line-fallback"><%= isEn ? 'NO IMG' : '이미지 없음' %></span>
-          <% } %>
-        </span>
+          </span>
+        <% } %>
         <div class="media-line-body">
           <strong class="media-line-title"><%= isEn ? 'Order No.' : '구매번호' %>: <%= item.order_no %></strong>
           <p class="media-line-note"><%= item.note || '-' %></p>

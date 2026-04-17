@@ -10,15 +10,13 @@
     <% } %>
     <% notices.forEach((item) => { %>
       <li class="media-line-item">
-        <a href="/notice/<%= item.id %>" class="media-line-thumb-link">
-          <span class="media-line-thumb">
-            <% if (item.image_path) { %>
+        <% if (item.image_path) { %>
+          <a href="/notice/<%= item.id %>" class="media-line-thumb-link">
+            <span class="media-line-thumb">
               <img src="<%= item.image_path %>" alt="<%= item.title %>" loading="lazy" />
-            <% } else { %>
-              <span class="media-line-fallback"><%= ctx.lang === 'en' ? 'NO IMG' : '이미지 없음' %></span>
-            <% } %>
-          </span>
-        </a>
+            </span>
+          </a>
+        <% } %>
         <div class="media-line-body">
           <a href="/notice/<%= item.id %>" class="media-line-title"><%= item.title %></a>
           <span class="media-line-meta"><%= item.is_popup ? (ctx.lang === 'en' ? 'Popup' : '팝업') : (ctx.lang === 'en' ? 'Normal' : '일반') %> / <%= item.created_at.slice(0, 10) %></span>
