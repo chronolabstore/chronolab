@@ -1906,6 +1906,42 @@ function normalizeProductGroupConfigs(rawValue) {
     return fallback;
   }
 
+  // Keep domestic stock factory filters aligned with factory group options.
+  const factoryGroupIndex = normalizedGroups.findIndex((group) => isFactoryTemplateGroup(group));
+  const domesticGroupIndex = normalizedGroups.findIndex((group) => isDomesticStockGroup(group));
+  if (factoryGroupIndex >= 0 && domesticGroupIndex >= 0) {
+    const factoryGroup = normalizedGroups[factoryGroupIndex] || {};
+    const domesticGroup = normalizedGroups[domesticGroupIndex] || {};
+    const mergedFactoryOptions = normalizeProductFilterOptionList([
+      ...(Array.isArray(domesticGroup.factoryOptions) ? domesticGroup.factoryOptions : []),
+      ...(Array.isArray(factoryGroup.factoryOptions) ? factoryGroup.factoryOptions : [])
+    ]);
+    const mergedFactoryOptionLabels = normalizeProductFilterOptionLabelMap(
+      {
+        ...(factoryGroup.factoryOptionLabels && typeof factoryGroup.factoryOptionLabels === 'object'
+          ? factoryGroup.factoryOptionLabels
+          : {}),
+        ...(domesticGroup.factoryOptionLabels && typeof domesticGroup.factoryOptionLabels === 'object'
+          ? domesticGroup.factoryOptionLabels
+          : {})
+      },
+      mergedFactoryOptions
+    );
+
+    if (
+      JSON.stringify(mergedFactoryOptions) !== JSON.stringify(domesticGroup.factoryOptions || []) ||
+      JSON.stringify(mergedFactoryOptionLabels) !== JSON.stringify(domesticGroup.factoryOptionLabels || {}) ||
+      domesticGroup.enableFactoryFilter !== true
+    ) {
+      normalizedGroups[domesticGroupIndex] = {
+        ...domesticGroup,
+        enableFactoryFilter: true,
+        factoryOptions: mergedFactoryOptions,
+        factoryOptionLabels: mergedFactoryOptionLabels
+      };
+    }
+  }
+
   return normalizedGroups;
 }
 
