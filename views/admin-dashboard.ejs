@@ -857,7 +857,10 @@
                           method="post"
                           action="/admin/security/admin/<%= adminItem.id %>/otp-reset"
                           class="inline-form"
-                          onsubmit="return confirm('<%= isEn ? 'Reset OTP for this admin?' : '이 관리자 계정의 OTP를 초기화할까요?' %>');"
+                          data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                          data-confirm-message="<%= isEn ? 'Reset OTP for this admin?' : '이 관리자 계정의 OTP를 초기화할까요?' %>"
+                          data-confirm-ok-label="<%= isEn ? 'Reset' : '초기화' %>"
+                          data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
                         >
                           <button type="submit" class="chip"><%= isEn ? 'OTP Reset' : 'OTP 초기화' %></button>
                         </form>
@@ -1505,15 +1508,29 @@
           form.addEventListener('submit', (event) => {
             event.preventDefault();
             const reasonInput = form.querySelector('[data-member-block-reason]');
-            const promptLabel = <%- JSON.stringify(isEn ? 'Enter block reason (optional):' : '블락 사유를 입력해 주세요. (선택)') %>;
-            const reasonRaw = window.prompt(promptLabel, reasonInput ? reasonInput.value : '');
-            if (reasonRaw === null) {
+            const popupTitle = <%- JSON.stringify(isEn ? 'Block Reason' : '블락 사유') %>;
+            const promptLabel = <%- JSON.stringify(isEn ? 'Enter block reason (optional).' : '블락 사유를 입력해 주세요. (선택)') %>;
+            const placeholder = <%- JSON.stringify(isEn ? 'Type reason...' : '사유를 입력하세요...') %>;
+            if (!window.ChronoPopup || typeof window.ChronoPopup.prompt !== 'function') {
               return;
             }
-            if (reasonInput) {
-              reasonInput.value = String(reasonRaw).trim().slice(0, 120);
-            }
-            form.submit();
+            window.ChronoPopup.prompt({
+              title: popupTitle,
+              message: promptLabel,
+              initialValue: reasonInput ? reasonInput.value : '',
+              placeholder,
+              maxLength: 120,
+              confirmLabel: <%- JSON.stringify(isEn ? 'Apply' : '적용') %>,
+              cancelLabel: <%- JSON.stringify(isEn ? 'Cancel' : '취소') %>
+            }).then((reasonRaw) => {
+              if (reasonRaw === null) {
+                return;
+              }
+              if (reasonInput) {
+                reasonInput.value = String(reasonRaw).trim().slice(0, 120);
+              }
+              form.submit();
+            });
           });
         });
       })();
@@ -2965,6 +2982,17 @@
           const imageOverCountMessage = '<%= isEn ? `You can keep up to ${Number(ctx.settings.maxUploadImageCount || 20)} images in total. Remove some images before adding more.` : `이미지는 최대 ${Number(ctx.settings.maxUploadImageCount || 20)}장까지 유지할 수 있습니다. 기존 이미지를 일부 삭제한 뒤 추가해 주세요.` %>';
           const removeImageLabel = '<%= isEn ? 'Remove image' : '이미지 선택 취소' %>';
           const browserUnsupportedFileEditMessage = '<%= isEn ? 'Your browser does not support file reordering/removal for this input. Please reselect images.' : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.' %>';
+          const showAdminAlert = (message) => {
+            if (!window.ChronoPopup || typeof window.ChronoPopup.alert !== 'function') {
+              return;
+            }
+            window.ChronoPopup.alert({
+              type: 'error',
+              title: <%- JSON.stringify(isEn ? 'Notice' : '안내') %>,
+              message: String(message || ''),
+              confirmLabel: <%- JSON.stringify(isEn ? 'OK' : '확인') %>
+            });
+          };
           const existingImageLabelPrefix = '<%= isEn ? 'Current image' : '기존 이미지' %>';
           const selectBrandFirstLabel = '<%= isEn ? 'Select brand first' : '브랜드를 먼저 선택하세요' %>';
           const selectModelLabel = '<%= isEn ? 'Select Model' : '모델 선택' %>';
@@ -3231,7 +3259,7 @@
             selectedImageEntries = selectedImageEntries.filter((entry) => entry && entry.type === 'existing');
             syncExistingImageOrderInput();
             renderWatermarkPreview();
-            window.alert(browserUnsupportedFileEditMessage);
+            showAdminAlert(browserUnsupportedFileEditMessage);
             return false;
           };
 
@@ -3570,7 +3598,7 @@
 
             const validFiles = rawFiles.filter((file) => Number(file.size || 0) <= MAX_IMAGE_FILE_BYTES);
             if (validFiles.length !== rawFiles.length) {
-              window.alert(imageOverLimitMessage);
+              showAdminAlert(imageOverLimitMessage);
             }
 
             const currentNewFiles = getNewImageFiles();
@@ -3585,7 +3613,7 @@
             );
             const remainingSlotCount = Math.max(0, MAX_IMAGE_FILE_COUNT - selectedImageEntries.length);
             if (remainingSlotCount <= 0) {
-              window.alert(imageOverCountMessage);
+              showAdminAlert(imageOverCountMessage);
               if (!syncInputFilesOrReset()) {
                 return;
               }
@@ -3593,7 +3621,7 @@
               return;
             }
             if (dedupedFiles.length > remainingSlotCount) {
-              window.alert(imageOverCountMessage);
+              showAdminAlert(imageOverCountMessage);
             }
             const filesToAppend = dedupedFiles.slice(0, remainingSlotCount);
 
@@ -3751,7 +3779,15 @@
                     <form method="post" action="/admin/product/<%= item.id %>/toggle" class="inline-form">
                       <button type="submit" class="chip"><%= item.is_active ? (isEn ? 'Hide' : '숨김') : (isEn ? 'Show' : '노출') %></button>
                     </form>
-                    <form method="post" action="/admin/product/<%= item.id %>/delete" class="inline-form" onsubmit="return confirm('<%= isEn ? 'Delete this product?' : '이 상품을 삭제할까요?' %>');">
+                    <form
+                      method="post"
+                      action="/admin/product/<%= item.id %>/delete"
+                      class="inline-form"
+                      data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                      data-confirm-message="<%= isEn ? 'Delete this product?' : '이 상품을 삭제할까요?' %>"
+                      data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                      data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+                    >
                       <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
                     </form>
                   </div>
@@ -3860,7 +3896,15 @@
                   </div>
                 </form>
                 <div class="admin-field-chip-row">
-                  <form method="post" action="/admin/product-badge/<%= badge.id %>/delete" class="inline-form" onsubmit="return confirm('<%= isEn ? 'Delete this badge? (It will also be removed from linked products.)' : '이 배지를 삭제할까요? (연결된 상품에서도 함께 제거됩니다.)' %>');">
+                  <form
+                    method="post"
+                    action="/admin/product-badge/<%= badge.id %>/delete"
+                    class="inline-form"
+                    data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                    data-confirm-message="<%= isEn ? 'Delete this badge? (It will also be removed from linked products.)' : '이 배지를 삭제할까요? (연결된 상품에서도 함께 제거됩니다.)' %>"
+                    data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                    data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+                  >
                     <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
                   </form>
                 </div>
@@ -3935,8 +3979,16 @@
               <form method="post" action="/admin/notice/<%= item.id %>/toggle" class="inline-form">
                 <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
               </form>
-              <form method="post" action="/admin/notice/<%= item.id %>/delete" class="inline-form">
-                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this notice?' : '이 공지사항을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              <form
+                method="post"
+                action="/admin/notice/<%= item.id %>/delete"
+                class="inline-form"
+                data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                data-confirm-message="<%= isEn ? 'Delete this notice?' : '이 공지사항을 삭제할까요?' %>"
+                data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+              >
+                <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
               </form>
             </div>
           </details>
@@ -4002,8 +4054,16 @@
               <form method="post" action="/admin/news/<%= item.id %>/toggle" class="inline-form">
                 <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
               </form>
-              <form method="post" action="/admin/news/<%= item.id %>/delete" class="inline-form">
-                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this news post?' : '이 뉴스 게시글을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              <form
+                method="post"
+                action="/admin/news/<%= item.id %>/delete"
+                class="inline-form"
+                data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                data-confirm-message="<%= isEn ? 'Delete this news post?' : '이 뉴스 게시글을 삭제할까요?' %>"
+                data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+              >
+                <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
               </form>
             </div>
           </details>
@@ -4069,8 +4129,16 @@
               <form method="post" action="/admin/qc/<%= item.id %>/toggle" class="inline-form">
                 <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
               </form>
-              <form method="post" action="/admin/qc/<%= item.id %>/delete" class="inline-form">
-                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this QC item?' : '이 QC 항목을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              <form
+                method="post"
+                action="/admin/qc/<%= item.id %>/delete"
+                class="inline-form"
+                data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                data-confirm-message="<%= isEn ? 'Delete this QC item?' : '이 QC 항목을 삭제할까요?' %>"
+                data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+              >
+                <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
               </form>
             </div>
           </details>
@@ -6436,8 +6504,16 @@
               <form method="post" action="/admin/inquiry/<%= item.id %>/toggle" class="inline-form">
                 <button type="submit" class="chip"><%= Number(item.is_hidden || 0) === 1 ? (isEn ? 'Show' : '표시') : (isEn ? 'Hide' : '숨김') %></button>
               </form>
-              <form method="post" action="/admin/inquiry/<%= item.id %>/delete" class="inline-form">
-                <button type="submit" class="chip" onclick="return confirm('<%= isEn ? 'Delete this inquiry?' : '이 문의 항목을 삭제할까요?' %>');"><%= isEn ? 'Delete' : '삭제' %></button>
+              <form
+                method="post"
+                action="/admin/inquiry/<%= item.id %>/delete"
+                class="inline-form"
+                data-confirm-title="<%= isEn ? 'Confirm' : '확인' %>"
+                data-confirm-message="<%= isEn ? 'Delete this inquiry?' : '이 문의 항목을 삭제할까요?' %>"
+                data-confirm-ok-label="<%= isEn ? 'Delete' : '삭제' %>"
+                data-confirm-cancel-label="<%= isEn ? 'Cancel' : '취소' %>"
+              >
+                <button type="submit" class="chip"><%= isEn ? 'Delete' : '삭제' %></button>
               </form>
             </div>
           </details>

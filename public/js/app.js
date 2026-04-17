@@ -19,6 +19,30 @@
     }
   }
 
+  function getPopupLocaleConfig() {
+    var htmlLang = String(document.documentElement.lang || 'ko').toLowerCase();
+    var isEnglish = htmlLang.indexOf('en') === 0;
+    var isChinese = htmlLang.indexOf('zh') === 0;
+    return {
+      isEnglish: isEnglish,
+      isChinese: isChinese,
+      okLabel: isEnglish ? 'OK' : isChinese ? '确定' : '확인',
+      cancelLabel: isEnglish ? 'Cancel' : isChinese ? '取消' : '취소',
+      noticeTitle: isEnglish ? 'Notice' : isChinese ? '通知' : '안내',
+      confirmTitle: isEnglish ? 'Confirm' : isChinese ? '确认' : '확인'
+    };
+  }
+
+  function normalizePopupOptions(options) {
+    if (typeof options === 'string') {
+      return { message: String(options || '') };
+    }
+    if (!options || typeof options !== 'object') {
+      return {};
+    }
+    return options;
+  }
+
   function ensureActionAlertPopup() {
     var existing = document.getElementById('actionAlertPopup');
     if (existing) {
@@ -39,8 +63,52 @@
     return popup;
   }
 
+  function ensureActionConfirmPopup() {
+    var existing = document.getElementById('actionConfirmPopup');
+    if (existing) {
+      return existing;
+    }
+    var popup = document.createElement('div');
+    popup.id = 'actionConfirmPopup';
+    popup.className = 'popup-backdrop popup-alert-backdrop hidden';
+    popup.innerHTML =
+      '<div class="popup-card popup-alert-card">' +
+      '  <h3 data-action-confirm-title></h3>' +
+      '  <p data-action-confirm-message></p>' +
+      '  <div class="popup-actions">' +
+      '    <button type="button" class="chip ghost" data-action-confirm-cancel></button>' +
+      '    <button type="button" class="chip dark" data-action-confirm-ok></button>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(popup);
+    return popup;
+  }
+
+  function ensureActionPromptPopup() {
+    var existing = document.getElementById('actionPromptPopup');
+    if (existing) {
+      return existing;
+    }
+    var popup = document.createElement('div');
+    popup.id = 'actionPromptPopup';
+    popup.className = 'popup-backdrop popup-alert-backdrop hidden';
+    popup.innerHTML =
+      '<div class="popup-card popup-alert-card">' +
+      '  <h3 data-action-prompt-title></h3>' +
+      '  <p data-action-prompt-message></p>' +
+      '  <input type="text" class="popup-prompt-input" data-action-prompt-input />' +
+      '  <div class="popup-actions">' +
+      '    <button type="button" class="chip ghost" data-action-prompt-cancel></button>' +
+      '    <button type="button" class="chip dark" data-action-prompt-ok></button>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(popup);
+    return popup;
+  }
+
   function showActionAlertPopup(options) {
-    var config = options || {};
+    var locale = getPopupLocaleConfig();
+    var config = normalizePopupOptions(options);
     var popup = ensureActionAlertPopup();
     var titleNode = popup.querySelector('[data-action-alert-title]');
     var messageNode = popup.querySelector('[data-action-alert-message]');
@@ -53,13 +121,13 @@
       card.classList.add(popupType);
     }
     if (titleNode) {
-      titleNode.textContent = String(config.title || '');
+      titleNode.textContent = String(config.title || locale.noticeTitle);
     }
     if (messageNode) {
       messageNode.textContent = String(config.message || '');
     }
     if (confirmButton) {
-      confirmButton.textContent = String(config.confirmLabel || 'OK');
+      confirmButton.textContent = String(config.confirmLabel || locale.okLabel);
     }
 
     return new Promise(function (resolve) {
@@ -105,6 +173,171 @@
     });
   }
 
+  function showActionConfirmPopup(options) {
+    var locale = getPopupLocaleConfig();
+    var config = normalizePopupOptions(options);
+    var popup = ensureActionConfirmPopup();
+    var titleNode = popup.querySelector('[data-action-confirm-title]');
+    var messageNode = popup.querySelector('[data-action-confirm-message]');
+    var cancelButton = popup.querySelector('[data-action-confirm-cancel]');
+    var confirmButton = popup.querySelector('[data-action-confirm-ok]');
+
+    if (titleNode) {
+      titleNode.textContent = String(config.title || locale.confirmTitle);
+    }
+    if (messageNode) {
+      messageNode.textContent = String(config.message || '');
+    }
+    if (cancelButton) {
+      cancelButton.textContent = String(config.cancelLabel || locale.cancelLabel);
+    }
+    if (confirmButton) {
+      confirmButton.textContent = String(config.confirmLabel || locale.okLabel);
+    }
+
+    return new Promise(function (resolve) {
+      function closePopup(confirmed) {
+        popup.classList.add('hidden');
+        popup.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKeyDown);
+        window.setTimeout(initPrimaryInputAutofocus, 0);
+        resolve(Boolean(confirmed));
+      }
+
+      function onClick(event) {
+        if (event.target.closest('[data-action-confirm-ok]')) {
+          closePopup(true);
+          return;
+        }
+        if (event.target.closest('[data-action-confirm-cancel]')) {
+          closePopup(false);
+          return;
+        }
+        if (event.target === popup) {
+          closePopup(false);
+        }
+      }
+
+      function onKeyDown(event) {
+        if (popup.classList.contains('hidden')) {
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          closePopup(true);
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closePopup(false);
+        }
+      }
+
+      popup.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKeyDown);
+      popup.classList.remove('hidden');
+      if (confirmButton) {
+        confirmButton.focus();
+      }
+    });
+  }
+
+  function showActionPromptPopup(options) {
+    var locale = getPopupLocaleConfig();
+    var config = normalizePopupOptions(options);
+    var popup = ensureActionPromptPopup();
+    var titleNode = popup.querySelector('[data-action-prompt-title]');
+    var messageNode = popup.querySelector('[data-action-prompt-message]');
+    var inputNode = popup.querySelector('[data-action-prompt-input]');
+    var cancelButton = popup.querySelector('[data-action-prompt-cancel]');
+    var confirmButton = popup.querySelector('[data-action-prompt-ok]');
+    var maxLength = Number(config.maxLength || 0);
+
+    if (titleNode) {
+      titleNode.textContent = String(config.title || locale.confirmTitle);
+    }
+    if (messageNode) {
+      messageNode.textContent = String(config.message || '');
+    }
+    if (inputNode) {
+      inputNode.value = String(config.initialValue || '');
+      inputNode.placeholder = String(config.placeholder || '');
+      inputNode.maxLength = maxLength > 0 ? maxLength : 200;
+    }
+    if (cancelButton) {
+      cancelButton.textContent = String(config.cancelLabel || locale.cancelLabel);
+    }
+    if (confirmButton) {
+      confirmButton.textContent = String(config.confirmLabel || locale.okLabel);
+    }
+
+    return new Promise(function (resolve) {
+      function closePopup(value) {
+        popup.classList.add('hidden');
+        popup.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKeyDown);
+        window.setTimeout(initPrimaryInputAutofocus, 0);
+        resolve(value);
+      }
+
+      function confirmPopup() {
+        closePopup(inputNode ? String(inputNode.value || '') : '');
+      }
+
+      function onClick(event) {
+        if (event.target.closest('[data-action-prompt-ok]')) {
+          confirmPopup();
+          return;
+        }
+        if (event.target.closest('[data-action-prompt-cancel]')) {
+          closePopup(null);
+          return;
+        }
+        if (event.target === popup) {
+          closePopup(null);
+        }
+      }
+
+      function onKeyDown(event) {
+        if (popup.classList.contains('hidden')) {
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          confirmPopup();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closePopup(null);
+        }
+      }
+
+      popup.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKeyDown);
+      popup.classList.remove('hidden');
+      if (inputNode) {
+        inputNode.focus();
+        inputNode.select();
+      } else if (confirmButton) {
+        confirmButton.focus();
+      }
+    });
+  }
+
+  function registerChronoPopupApi() {
+    if (!window.ChronoPopup || typeof window.ChronoPopup !== 'object') {
+      window.ChronoPopup = {};
+    }
+    window.ChronoPopup.alert = function (options) {
+      return showActionAlertPopup(options);
+    };
+    window.ChronoPopup.confirm = function (options) {
+      return showActionConfirmPopup(options);
+    };
+    window.ChronoPopup.prompt = function (options) {
+      return showActionPromptPopup(options);
+    };
+  }
+
   function isElementVisible(element) {
     if (!element || element.hidden) {
       return false;
@@ -144,7 +377,15 @@
   }
 
   function hasOpenBlockingLayer() {
-    var overlays = ['#flashPopup', '#noticePopupDeck', '#noticePopup', '#imageLightbox'];
+    var overlays = [
+      '#flashPopup',
+      '#noticePopupDeck',
+      '#noticePopup',
+      '#imageLightbox',
+      '#actionAlertPopup',
+      '#actionConfirmPopup',
+      '#actionPromptPopup'
+    ];
     return overlays.some(function (selector) {
       var layer = document.querySelector(selector);
       if (!layer || layer.classList.contains('hidden')) {
@@ -1052,11 +1293,13 @@
         if (!syncInputFiles(selectedEntries)) {
           input.value = '';
           resetPreview();
-          window.alert(
-            isEn
+          showActionAlertPopup({
+            type: 'error',
+            title: isEn ? 'Notice' : '안내',
+            message: isEn
               ? 'Your browser does not support file reorder/removal for this input. Please reselect images.'
               : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.'
-          );
+          });
           return;
         }
 
@@ -1164,11 +1407,13 @@
         if (!syncInputFiles(selectedEntries)) {
           input.value = '';
           resetPreview();
-          window.alert(
-            isEn
+          showActionAlertPopup({
+            type: 'error',
+            title: isEn ? 'Notice' : '안내',
+            message: isEn
               ? 'Your browser does not support file reorder/removal for this input. Please reselect images.'
               : '현재 브라우저에서는 이미지 순서/삭제 반영을 지원하지 않습니다. 이미지를 다시 선택해 주세요.'
-          );
+          });
           return;
         }
 
@@ -1720,6 +1965,49 @@
       };
       window.__chronolabCsrfWrappedFetch = true;
     }
+  }
+
+  function initDeclarativeConfirmForms() {
+    var locale = getPopupLocaleConfig();
+    var forms = document.querySelectorAll('form[data-confirm-message]');
+    forms.forEach(function (form) {
+      if (form.dataset.popupConfirmBound === '1') {
+        return;
+      }
+      form.dataset.popupConfirmBound = '1';
+      form.addEventListener('submit', function (event) {
+        if (form.dataset.popupConfirmBypass === '1') {
+          form.dataset.popupConfirmBypass = '';
+          return;
+        }
+        var message = String(form.getAttribute('data-confirm-message') || '').trim();
+        if (!message) {
+          return;
+        }
+        event.preventDefault();
+        var submitter = event.submitter || null;
+        showActionConfirmPopup({
+          title: String(form.getAttribute('data-confirm-title') || locale.confirmTitle),
+          message: message,
+          confirmLabel: String(form.getAttribute('data-confirm-ok-label') || locale.okLabel),
+          cancelLabel: String(form.getAttribute('data-confirm-cancel-label') || locale.cancelLabel)
+        }).then(function (confirmed) {
+          if (!confirmed) {
+            return;
+          }
+          form.dataset.popupConfirmBypass = '1';
+          if (typeof form.requestSubmit === 'function') {
+            if (submitter) {
+              form.requestSubmit(submitter);
+            } else {
+              form.requestSubmit();
+            }
+            return;
+          }
+          form.submit();
+        });
+      });
+    });
   }
 
   function initMemberSupportChat() {
@@ -2375,7 +2663,9 @@
   }
 
   function initApp() {
+    registerChronoPopupApi();
     initCsrfRequestProtection();
+    initDeclarativeConfirmForms();
     initDetailsFieldAutofocus();
     initNoticePopup();
     initFlashPopup();
