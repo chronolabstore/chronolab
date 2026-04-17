@@ -551,7 +551,7 @@ const SALES_PRICE_FILTER_BASELINE_VERSION_KEY = 'salesWorkbookPriceFilterSeedV20
 const SALES_PRICE_FILTER_BASELINE_VERSION = '2026-04-14-v3';
 const SALES_ORDER_WORKBOOK_SYNCED_IDS_KEY = 'salesWorkbookSyncedOrderIdsV20260417';
 const SALES_ORDER_WORKBOOK_BACKFILL_VERSION_KEY = 'salesWorkbookOrderBackfillV20260417';
-const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v2';
+const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v3';
 const SALES_ORDER_WORKBOOK_SYNC_MEMO_PREFIX = '[AUTO_ORDER_SYNC]';
 const SALES_ORDER_WORKBOOK_MAX_SYNCED_IDS = 50000;
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -6242,7 +6242,7 @@ function applySalesWorkbookOrderBackfillSeedOnce() {
     return;
   }
 
-  const result = syncPaidOrdersToSalesWorkbookSafely({ forceResync: false });
+  const result = syncPaidOrdersToSalesWorkbookSafely({ forceResync: true });
   if (result) {
     setSetting(
       SALES_ORDER_WORKBOOK_BACKFILL_VERSION_KEY,
