@@ -1652,6 +1652,9 @@
     var unreadBadge = openButton.querySelector('[data-member-chat-unread-badge]');
     var threadId = 0;
     var isPanelOpen = false;
+    var isSubmitInFlight = false;
+    var lastSubmittedSignature = '';
+    var lastSubmittedAt = 0;
     var pollTimerId = null;
     var unreadPollTimerId = null;
     var isLoadingThread = false;
@@ -1818,8 +1821,14 @@
 
     if (form && textarea) {
       textarea.addEventListener('keydown', function (event) {
+        if (event.isComposing || Number(event.keyCode) === 229 || event.repeat) {
+          return;
+        }
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
+          if (isSubmitInFlight) {
+            return;
+          }
           if (typeof form.requestSubmit === 'function') {
             form.requestSubmit();
           } else {
@@ -1830,10 +1839,21 @@
 
       form.addEventListener('submit', function (event) {
         event.preventDefault();
+        if (isSubmitInFlight) {
+          return;
+        }
         var messageText = String(textarea.value || '').trim();
         if (!messageText) {
           return;
         }
+        var submitSignature = String(threadId || 0) + '::' + messageText;
+        var now = Date.now();
+        if (submitSignature === lastSubmittedSignature && now - lastSubmittedAt < 1200) {
+          return;
+        }
+        lastSubmittedSignature = submitSignature;
+        lastSubmittedAt = now;
+        isSubmitInFlight = true;
         if (submitButton) {
           submitButton.disabled = true;
         }
@@ -1848,6 +1868,7 @@
           })
           .catch(function () {})
           .finally(function () {
+            isSubmitInFlight = false;
             if (submitButton) {
               submitButton.disabled = false;
             }
@@ -1884,6 +1905,9 @@
     var threads = [];
     var selectedThreadId = 0;
     var isPanelOpen = false;
+    var isSubmitInFlight = false;
+    var lastSubmittedSignature = '';
+    var lastSubmittedAt = 0;
     var threadPollTimerId = null;
     var unreadPollTimerId = null;
 
@@ -2158,8 +2182,14 @@
 
     if (form && textarea) {
       textarea.addEventListener('keydown', function (event) {
+        if (event.isComposing || Number(event.keyCode) === 229 || event.repeat) {
+          return;
+        }
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
+          if (isSubmitInFlight) {
+            return;
+          }
           if (typeof form.requestSubmit === 'function') {
             form.requestSubmit();
           } else {
@@ -2170,10 +2200,21 @@
 
       form.addEventListener('submit', function (event) {
         event.preventDefault();
+        if (isSubmitInFlight) {
+          return;
+        }
         var messageText = String(textarea.value || '').trim();
         if (!messageText || !selectedThreadId) {
           return;
         }
+        var submitSignature = String(selectedThreadId || 0) + '::' + messageText;
+        var now = Date.now();
+        if (submitSignature === lastSubmittedSignature && now - lastSubmittedAt < 1200) {
+          return;
+        }
+        lastSubmittedSignature = submitSignature;
+        lastSubmittedAt = now;
+        isSubmitInFlight = true;
         if (submitButton) {
           submitButton.disabled = true;
         }
@@ -2190,6 +2231,7 @@
           })
           .catch(function () {})
           .finally(function () {
+            isSubmitInFlight = false;
             if (submitButton) {
               submitButton.disabled = false;
             }
