@@ -2059,15 +2059,16 @@
                 <summary><%= isEn ? 'Edit' : '수정' %></summary>
                 <form method="post" action="/admin/product-group/update" class="form-grid compact menu-inline-edit-form">
                   <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                  <label><%= isEn ? 'Category Key' : '분류 키' %>
+                    <input type="text" name="nextGroupKey" value="<%= group.key %>" required />
+                  </label>
                   <label><%= isEn ? 'Category Name (KR)' : '분류명 (KR)' %>
                     <input type="text" name="labelKo" value="<%= group.labelKo || group.key %>" required />
                   </label>
                   <label><%= isEn ? 'Category Name (EN)' : '분류명 (EN)' %>
                     <input type="text" name="labelEn" value="<%= group.labelEn || group.key %>" required />
                   </label>
-                  <label><%= isEn ? 'Category Key' : '분류 키' %>
-                    <input type="text" value="<%= group.key %>" readonly />
-                  </label>
+                  <small class="muted-label"><%= isEn ? 'When key changes, linked products/sales snapshots are migrated automatically.' : '키를 변경하면 연결된 상품/매출 스냅샷이 자동 마이그레이션됩니다.' %></small>
                   <button type="submit" class="chip dark"><%= isEn ? 'Save Changes' : '수정 저장' %></button>
                 </form>
               </details>

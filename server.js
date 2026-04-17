@@ -5004,6 +5004,77 @@ function getSalesMainTabs(groupConfigs = null) {
   return [...priceTabs, ...roundTabs, allDateTab, ...dateTabs];
 }
 
+function findSalesTabByScopeAndGroup(tabs = [], scopeType = 'date', groupKey = '') {
+  const normalizedGroupKey = normalizeProductGroupKey(groupKey || '');
+  if (!normalizedGroupKey) {
+    return null;
+  }
+  return (
+    (Array.isArray(tabs) ? tabs : []).find(
+      (tab) =>
+        String(tab?.scopeType || '').trim() === String(scopeType || '').trim() &&
+        normalizeProductGroupKey(tab?.groupKey || '') === normalizedGroupKey
+    ) || null
+  );
+}
+
+function migrateSalesWorkbookTabByRename(workbook = {}, previousTabDef = null, nextTabDef = null) {
+  if (!workbook || typeof workbook !== 'object' || !workbook.tabs || typeof workbook.tabs !== 'object') {
+    return false;
+  }
+
+  const previousTabKey = normalizeSalesText(previousTabDef?.key || '', 80);
+  const nextTabKey = normalizeSalesText(nextTabDef?.key || '', 80);
+  if (!nextTabKey) {
+    return false;
+  }
+
+  const applyTabMeta = (targetTab) => {
+    if (!targetTab || typeof targetTab !== 'object') {
+      return;
+    }
+    targetTab.key = nextTabKey;
+    targetTab.labelKo = String(nextTabDef?.labelKo || targetTab.labelKo || nextTabKey);
+    targetTab.labelEn = String(nextTabDef?.labelEn || targetTab.labelEn || targetTab.labelKo || nextTabKey);
+    targetTab.scopeType = String(nextTabDef?.scopeType || targetTab.scopeType || 'date');
+  };
+
+  if (previousTabKey && previousTabKey !== nextTabKey) {
+    const sourceTab = workbook.tabs[previousTabKey];
+    if (sourceTab && typeof sourceTab === 'object') {
+      const targetTab = workbook.tabs[nextTabKey];
+      if (targetTab && typeof targetTab === 'object') {
+        const sourceScopes =
+          sourceTab.scopeType === 'factory'
+            ? (Array.isArray(sourceTab.groups) ? sourceTab.groups : [])
+            : (Array.isArray(sourceTab.rounds) ? sourceTab.rounds : []);
+        const targetScopes =
+          targetTab.scopeType === 'factory'
+            ? (Array.isArray(targetTab.groups) ? targetTab.groups : [])
+            : (Array.isArray(targetTab.rounds) ? targetTab.rounds : []);
+        if (targetTab.scopeType === 'factory') {
+          targetTab.groups = [...targetScopes, ...sourceScopes];
+        } else {
+          targetTab.rounds = [...targetScopes, ...sourceScopes];
+        }
+      } else {
+        workbook.tabs[nextTabKey] = {
+          ...sourceTab
+        };
+      }
+      delete workbook.tabs[previousTabKey];
+    }
+  }
+
+  const migratedTab = workbook.tabs[nextTabKey];
+  if (!migratedTab || typeof migratedTab !== 'object') {
+    return false;
+  }
+
+  applyTabMeta(migratedTab);
+  return true;
+}
+
 function normalizeSalesSettingValues(raw = {}, fallback = {}) {
   const now = new Date().toISOString();
   return {
@@ -15643,6 +15714,7 @@ app.post('/admin/product-group/add', requireAdmin, (req, res) => {
 app.post('/admin/product-group/update', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/menus?section=groups');
   const groupKey = normalizeProductGroupKey(req.body.groupKey || '');
+  const nextGroupKeyInput = String(req.body.nextGroupKey || req.body.key || '').trim();
   const labelKo = String(req.body.labelKo || '').trim().slice(0, 60);
   const labelEn = String(req.body.labelEn || '').trim().slice(0, 60);
 
@@ -15661,16 +15733,111 @@ app.post('/admin/product-group/update', requireAdmin, (req, res) => {
     setFlash(req, 'error', '수정할 분류를 찾을 수 없습니다.');
     return res.redirect(backPath);
   }
+  const nextGroupKey = normalizeProductGroupKey(nextGroupKeyInput || groupKey, labelKo || groupKey);
+  if (!nextGroupKey) {
+    setFlash(req, 'error', '분류 키를 생성할 수 없습니다. 분류 키 입력값을 확인해 주세요.');
+    return res.redirect(backPath);
+  }
+  const hasDuplicatedKey = configs.some(
+    (group, index) => index !== targetIndex && normalizeProductGroupKey(group?.key || '') === nextGroupKey
+  );
+  if (hasDuplicatedKey) {
+    setFlash(req, 'error', '이미 사용 중인 분류 키입니다. 다른 키를 입력해 주세요.');
+    return res.redirect(backPath);
+  }
 
+  const keyChanged = nextGroupKey !== groupKey;
+  const previousTabs = getSalesMainTabs(configs);
   const nextGroups = [...configs];
   nextGroups[targetIndex] = {
     ...nextGroups[targetIndex],
+    key: nextGroupKey,
     labelKo,
     labelEn
   };
-  setProductGroupConfigs(nextGroups);
+  const nextTabs = getSalesMainTabs(nextGroups);
+  const previousDateTab = findSalesTabByScopeAndGroup(previousTabs, 'date', groupKey);
+  const nextDateTab = findSalesTabByScopeAndGroup(nextTabs, 'date', nextGroupKey);
+  const previousPriceTab = findSalesTabByScopeAndGroup(previousTabs, 'factory', groupKey);
+  const nextPriceTab = findSalesTabByScopeAndGroup(nextTabs, 'factory', nextGroupKey);
 
-  setFlash(req, 'success', '쇼핑몰 분류 정보가 수정되었습니다.');
+  const migrationStats = {
+    keyChanged,
+    productsUpdated: 0,
+    orderSnapshotsUpdated: 0,
+    workbookMigrated: false
+  };
+
+  const updateTx = db.transaction(() => {
+    if (keyChanged) {
+      migrationStats.productsUpdated = db
+        .prepare(
+          `
+            UPDATE products
+            SET category_group = ?
+            WHERE category_group = ?
+          `
+        )
+        .run(nextGroupKey, groupKey).changes;
+    }
+
+    setProductGroupConfigs(nextGroups);
+
+    const workbook = getSalesWorkbook();
+    let workbookChanged = false;
+    workbookChanged = migrateSalesWorkbookTabByRename(workbook, previousPriceTab, nextPriceTab) || workbookChanged;
+    workbookChanged = migrateSalesWorkbookTabByRename(workbook, previousDateTab, nextDateTab) || workbookChanged;
+    if (workbookChanged) {
+      saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' });
+      migrationStats.workbookMigrated = true;
+    }
+
+    if (
+      keyChanged &&
+      previousDateTab &&
+      nextDateTab &&
+      normalizeSalesText(previousDateTab.key || '', 80) &&
+      normalizeSalesText(nextDateTab.key || '', 80) &&
+      String(previousDateTab.key) !== String(nextDateTab.key)
+    ) {
+      migrationStats.orderSnapshotsUpdated = db
+        .prepare(
+          `
+            UPDATE orders
+            SET sales_tab_key = ?
+            WHERE sales_tab_key = ?
+          `
+        )
+        .run(String(nextDateTab.key || ''), String(previousDateTab.key || '')).changes;
+    }
+  });
+
+  try {
+    updateTx();
+  } catch (error) {
+    console.error('[product-group] update failed:', error);
+    setFlash(req, 'error', '분류 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  syncSalesWorkbookPriceFiltersSafely({
+    force: true,
+    respectVersion: false,
+    markVersion: true
+  });
+  if (keyChanged) {
+    syncPaidOrdersToSalesWorkbookSafely({ forceResync: true });
+  }
+  logAdminActivity(
+    req,
+    'PRODUCT_GROUP_UPDATE',
+    keyChanged ? `key:${groupKey}->${nextGroupKey}` : `key:${groupKey}`
+  );
+
+  const detailMessage = keyChanged
+    ? ` (상품 ${migrationStats.productsUpdated}건, 주문 스냅샷 ${migrationStats.orderSnapshotsUpdated}건 동기화)`
+    : '';
+  setFlash(req, 'success', `쇼핑몰 분류 정보가 수정되었습니다.${detailMessage}`);
   return res.redirect(backPath);
 });
 
