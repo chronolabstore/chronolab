@@ -2,6 +2,64 @@
   <% const footerBrandCopyKo = String(ctx.settings.footerBrandCopyKo || '').trim() || '심플하고 신뢰할 수 있는 시계 쇼핑.'; %>
   <% const footerBrandCopyEn = String(ctx.settings.footerBrandCopyEn || '').trim() || 'Simple. Clean. Trusted watch shopping.'; %>
   <% const footerNoticeRows = Array.from({ length: 6 }, (_, index) => ctx.footerNotices[index] || null); %>
+  <% const rawBusinessInfo = String(ctx.settings.businessInfo || '').trim(); %>
+  <% const rawContactInfo = String(ctx.settings.contactInfo || '').trim(); %>
+  <% const extractField = (source, regexList = [], fallbackSegment = '') => {
+    for (const regex of regexList) {
+      const match = String(source || '').match(regex);
+      if (match && String(match[1] || '').trim()) {
+        return String(match[1] || '').trim();
+      }
+    }
+    const cleaned = String(fallbackSegment || '')
+      .replace(/^[^:：]+[:：]\s*/u, '')
+      .trim();
+    return cleaned;
+  }; %>
+  <% const businessSegments = rawBusinessInfo.split('|').map((segment) => segment.trim()).filter(Boolean); %>
+  <% const contactSegments = rawContactInfo.split('/').map((segment) => segment.trim()).filter(Boolean); %>
+  <% const siteInfoRows = [
+    {
+      label: ctx.lang === 'en' ? 'Business' : '상호',
+      value: extractField(
+        rawBusinessInfo,
+        [/(?:상호|business\s*name|company)\s*[:：]\s*([^|/\n]+)/iu],
+        businessSegments[0] || ''
+      )
+    },
+    {
+      label: ctx.lang === 'en' ? 'CEO' : '대표',
+      value: extractField(
+        rawBusinessInfo,
+        [/(?:대표|ceo|owner)\s*[:：]\s*([^|/\n]+)/iu],
+        businessSegments[1] || ''
+      )
+    },
+    {
+      label: ctx.lang === 'en' ? 'Business No.' : '사업자번호',
+      value: extractField(
+        rawBusinessInfo,
+        [/(?:사업자(?:등록)?번호|business(?:\s*registration)?\s*(?:no\.?|number)?)\s*[:：]\s*([^|/\n]+)/iu],
+        businessSegments[2] || ''
+      )
+    },
+    {
+      label: ctx.lang === 'en' ? 'Support' : '고객센터',
+      value: extractField(
+        rawContactInfo,
+        [/(?:고객센터|customer\s*(?:service|support)|support)\s*[:：]\s*([^|/\n]+)/iu],
+        contactSegments[0] || ''
+      )
+    },
+    {
+      label: ctx.lang === 'en' ? 'KakaoTalk' : '카카오톡',
+      value: extractField(
+        rawContactInfo,
+        [/(?:카카오톡|kakao(?:talk)?)\s*[:：]\s*([^|/\n]+)/iu],
+        contactSegments[1] || ''
+      )
+    }
+  ].map((row) => ({ ...row, value: String(row.value || '').trim() || '-' })); %>
   <div class="footer-grid">
     <section class="footer-card footer-brand-card">
       <h4>Brand</h4>
@@ -20,8 +78,14 @@
     <section class="footer-card footer-site-info-card">
       <h4><%= ctx.lang === 'en' ? 'Site Info' : '사이트 정보' %></h4>
       <div class="footer-site-info-body">
-        <p class="footer-small"><%= ctx.settings.businessInfo %></p>
-        <p class="footer-small"><%= ctx.settings.contactInfo %></p>
+        <ul class="footer-site-info-list">
+          <% siteInfoRows.forEach((row) => { %>
+            <li class="footer-data-row footer-site-info-row">
+              <span class="footer-site-info-label"><%= row.label %></span>
+              <span class="footer-site-info-value"><%= row.value %></span>
+            </li>
+          <% }) %>
+        </ul>
       </div>
     </section>
 

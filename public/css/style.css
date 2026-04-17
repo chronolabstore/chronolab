@@ -2489,14 +2489,62 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   margin-bottom: 11px;
 }
 
-.footer-brand-card-body,
-.footer-site-info-body {
+.footer-brand-card-body {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
   gap: 6px;
+}
+
+.footer-site-info-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.footer-site-info-card h4 {
+  margin-bottom: 11px;
+}
+
+.footer-site-info-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: left;
+}
+
+.footer-site-info-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: 3px;
+}
+
+.footer-site-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.footer-site-info-label {
+  flex: 0 0 82px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.footer-site-info-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .footer-brand-visual {
@@ -2524,10 +2572,6 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
 .footer-notice-row .footer-data-row {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.footer-site-info-body .footer-small {
-  margin: 0;
 }
 
 .admin-grid {
