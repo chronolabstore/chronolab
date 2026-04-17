@@ -2834,13 +2834,11 @@ export function incrementFunnelEvent(eventDate, eventKey, count = 1) {
 
 export function getVisitCounts(visitDate) {
   const todayRow = db.prepare('SELECT visit_count FROM daily_visits WHERE visit_date = ?').get(visitDate);
-  const totalRow = db
-    .prepare('SELECT metric_value FROM metrics WHERE metric_key = ? LIMIT 1')
-    .get('totalVisits');
+  const totalRow = db.prepare('SELECT COALESCE(SUM(visit_count), 0) AS total FROM daily_visits').get();
 
   return {
     today: todayRow ? Number(todayRow.visit_count) : 0,
-    total: totalRow ? Number(totalRow.metric_value) : 0
+    total: totalRow ? Number(totalRow.total || 0) : 0
   };
 }
 
@@ -2849,25 +2847,23 @@ export function getPostCounts(visitDate) {
     .prepare(
       `
         SELECT (
-          (SELECT COUNT(*) FROM notices WHERE date(created_at, '+9 hours') = ?) +
-          (SELECT COUNT(*) FROM news_posts WHERE date(created_at, '+9 hours') = ?) +
+          (SELECT COUNT(*) FROM notices WHERE COALESCE(is_hidden, 0) = 0 AND date(created_at, '+9 hours') = ?) +
+          (SELECT COUNT(*) FROM news_posts WHERE COALESCE(is_hidden, 0) = 0 AND date(created_at, '+9 hours') = ?) +
           (SELECT COUNT(*) FROM reviews WHERE date(created_at, '+9 hours') = ?) +
-          (SELECT COUNT(*) FROM inquiries WHERE date(created_at, '+9 hours') = ?) +
-          (SELECT COUNT(*) FROM qc_items WHERE date(created_at, '+9 hours') = ?)
+          (SELECT COUNT(*) FROM qc_items WHERE COALESCE(is_hidden, 0) = 0 AND date(created_at, '+9 hours') = ?)
         ) AS count
       `
     )
-    .get(visitDate, visitDate, visitDate, visitDate, visitDate);
+    .get(visitDate, visitDate, visitDate, visitDate);
 
   const totalPosts = db
     .prepare(
       `
         SELECT (
-          (SELECT COUNT(*) FROM notices) +
-          (SELECT COUNT(*) FROM news_posts) +
+          (SELECT COUNT(*) FROM notices WHERE COALESCE(is_hidden, 0) = 0) +
+          (SELECT COUNT(*) FROM news_posts WHERE COALESCE(is_hidden, 0) = 0) +
           (SELECT COUNT(*) FROM reviews) +
-          (SELECT COUNT(*) FROM inquiries) +
-          (SELECT COUNT(*) FROM qc_items)
+          (SELECT COUNT(*) FROM qc_items WHERE COALESCE(is_hidden, 0) = 0)
         ) AS count
       `
     )
