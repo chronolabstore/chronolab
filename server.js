@@ -551,7 +551,7 @@ const SALES_PRICE_FILTER_BASELINE_VERSION_KEY = 'salesWorkbookPriceFilterSeedV20
 const SALES_PRICE_FILTER_BASELINE_VERSION = '2026-04-14-v3';
 const SALES_ORDER_WORKBOOK_SYNCED_IDS_KEY = 'salesWorkbookSyncedOrderIdsV20260417';
 const SALES_ORDER_WORKBOOK_BACKFILL_VERSION_KEY = 'salesWorkbookOrderBackfillV20260417';
-const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v1';
+const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v2';
 const SALES_ORDER_WORKBOOK_SYNC_MEMO_PREFIX = '[AUTO_ORDER_SYNC]';
 const SALES_ORDER_WORKBOOK_MAX_SYNCED_IDS = 50000;
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -5945,13 +5945,13 @@ function appendSalesOrderSyncMemo(existingMemo = '', orderId = 0, orderNo = '') 
 }
 
 function resolveSalesWorkbookScopeDateFromOrder(order = {}) {
-  const explicitDate = normalizeSalesDate(order?.sales_scope_date || '');
-  if (explicitDate) {
-    return explicitDate;
-  }
   const saleDate = normalizeSalesDate(order?.sale_date || '');
   if (saleDate) {
     return saleDate;
+  }
+  const explicitDate = normalizeSalesDate(order?.sales_scope_date || '');
+  if (explicitDate) {
+    return explicitDate;
   }
   return getTodayDateString();
 }
@@ -6086,15 +6086,82 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
     }
 
     const token = buildSalesOrderSyncMemoToken(orderId);
-    const duplicate = token
-      ? scope.rows.some((row) => String(row?.memo || '').includes(token))
-      : false;
-    if (duplicate) {
+    const scopeList = Array.isArray(tab.rounds) ? tab.rounds : [];
+    const tokenScopes = token
+      ? scopeList.filter(
+          (candidate) =>
+            candidate &&
+            Array.isArray(candidate.rows) &&
+            candidate.rows.some((row) => String(row?.memo || '').includes(token))
+        )
+      : [];
+
+    const hasTokenInTargetScope = tokenScopes.some((candidate) => candidate === scope);
+    if (hasTokenInTargetScope) {
       if (!syncedOrderIdSet.has(orderId)) {
         syncedOrderIdSet.add(orderId);
         syncedIdsChanged = true;
       }
+      const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
+      const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
+      if (currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate) {
+        db.prepare(
+          `
+            UPDATE orders
+            SET
+              sales_tab_key = ?,
+              sales_scope_date = ?,
+              sales_synced_at = datetime('now')
+            WHERE id = ?
+          `
+        ).run(resolvedTabKey, scopeDate, orderId);
+        orderSnapshotChanged = true;
+      }
       continue;
+    }
+
+    if (forceResync && tokenScopes.length > 0) {
+      let movedRowCount = 0;
+      tokenScopes.forEach((candidateScope) => {
+        if (!candidateScope || !Array.isArray(candidateScope.rows) || candidateScope === scope) {
+          return;
+        }
+        const remainedRows = [];
+        candidateScope.rows.forEach((row) => {
+          if (String(row?.memo || '').includes(token)) {
+            scope.rows.push(row);
+            movedRowCount += 1;
+          } else {
+            remainedRows.push(row);
+          }
+        });
+        candidateScope.rows = remainedRows;
+      });
+
+      if (movedRowCount > 0) {
+        workbookChanged = true;
+        updatedRows += movedRowCount;
+        if (!syncedOrderIdSet.has(orderId)) {
+          syncedOrderIdSet.add(orderId);
+          syncedIdsChanged = true;
+        }
+        const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
+        const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
+        if (currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate) {
+          db.prepare(
+            `
+              UPDATE orders
+              SET
+                sales_tab_key = ?,
+                sales_scope_date = ?,
+                sales_synced_at = datetime('now')
+              WHERE id = ?
+            `
+          ).run(resolvedTabKey, scopeDate, orderId);
+          orderSnapshotChanged = true;
+        }
+        continue;
+      }
     }
 
     const quantity = Math.max(1, Math.floor(parseNonNegativeNumber(order?.quantity, 1) || 1));
