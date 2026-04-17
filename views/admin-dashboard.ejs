@@ -172,6 +172,15 @@
     if (Array.isArray(salesMainTabs) && salesMainTabs.length > 0) {
       return salesMainTabs;
     }
+    const fallbackAllDateTab = {
+      key: 'all-sales',
+      labelKo: '전체 매출',
+      labelEn: 'All Sales',
+      scopeType: 'date',
+      groupKey: '__all__',
+      readOnly: true,
+      aggregateType: 'all'
+    };
     const fallbackTabs = [
       { key: 'preorder', labelKo: '선주문 정산', labelEn: 'Pre-Order Settlement', scopeType: 'round' }
     ];
@@ -193,7 +202,10 @@
     fallbackBaseGroups.forEach((group) => pushFallbackGroup(group));
     productGroupConfigList.forEach((group) => pushFallbackGroup(group));
     const fallbackGroups = [...fallbackGroupMap.values()];
-    const usedTabKeys = new Set(fallbackTabs.map((tabInfo) => String(tabInfo.key || '').trim()));
+    const usedTabKeys = new Set([
+      ...fallbackTabs.map((tabInfo) => String(tabInfo.key || '').trim()),
+      String(fallbackAllDateTab.key || '').trim()
+    ]);
 
     fallbackGroups.forEach((group, index) => {
       const groupKey = String(group?.key || '').trim();
@@ -243,7 +255,10 @@
       });
     });
 
-    return fallbackTabs;
+    const fallbackPriceTabs = fallbackTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'factory');
+    const fallbackRoundTabs = fallbackTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'round');
+    const fallbackDateTabs = fallbackTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'date');
+    return [...fallbackPriceTabs, ...fallbackRoundTabs, fallbackAllDateTab, ...fallbackDateTabs];
   })();
   const salesPriceTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'factory');
   const salesPreorderTabs = salesAllTabs.filter((tabInfo) => String(tabInfo?.scopeType || '') === 'round');
@@ -2040,6 +2055,22 @@
                   <% } %>
                 </div>
               </div>
+              <details class="menu-inline-edit">
+                <summary><%= isEn ? 'Edit' : '수정' %></summary>
+                <form method="post" action="/admin/product-group/update" class="form-grid compact menu-inline-edit-form">
+                  <input type="hidden" name="groupKey" value="<%= group.key %>" />
+                  <label><%= isEn ? 'Category Name (KR)' : '분류명 (KR)' %>
+                    <input type="text" name="labelKo" value="<%= group.labelKo || group.key %>" required />
+                  </label>
+                  <label><%= isEn ? 'Category Name (EN)' : '분류명 (EN)' %>
+                    <input type="text" name="labelEn" value="<%= group.labelEn || group.key %>" required />
+                  </label>
+                  <label><%= isEn ? 'Category Key' : '분류 키' %>
+                    <input type="text" value="<%= group.key %>" readonly />
+                  </label>
+                  <button type="submit" class="chip dark"><%= isEn ? 'Save Changes' : '수정 저장' %></button>
+                </form>
+              </details>
               <form method="post" action="/admin/product-group/layout/update" class="form-grid compact menu-group-layout-form">
                 <input type="hidden" name="groupKey" value="<%= group.key %>" />
                 <label class="check-row">
@@ -4393,6 +4424,13 @@
       };
 
       const isPriceTableActive = () => getScopeMode(activeTabKey) === 'factory';
+      const isReadOnlyTab = (tabKey = activeTabKey) => {
+        const tabDef = tabDefs.find((item) => item.key === tabKey) || null;
+        return (
+          Boolean(tabDef?.readOnly) ||
+          String(tabDef?.aggregateType || '').trim().toLowerCase() === 'all'
+        );
+      };
 
       const normalizePriceSheetName = (value, maxLength = 80) =>
         String(value || '')
@@ -4788,12 +4826,22 @@
       const renderGlobalFields = () => {
         const activeSettings = getActiveSettings();
         if (!activeSettings) return;
+        const isReadOnly = isReadOnlyTab();
         renderGlobalContext();
         const exchangeRate = Number(roundToStep(toPositive(activeSettings.exchangeRate, 0), 0.01).toFixed(2));
         const shippingKrw = Math.round(roundToStep(toPositive(activeSettings.shippingFeeKrw, 0), 1000));
         exchangeRateInput.value = exchangeRate;
         shippingFeeInput.value = shippingKrw;
         scopeDateInput.value = normalizeDate(activeSettings.baseDate || '');
+        exchangeRateInput.disabled = isReadOnly;
+        shippingFeeInput.disabled = isReadOnly;
+        scopeDateInput.disabled = isReadOnly;
+        if (applyGlobalBtn) {
+          applyGlobalBtn.disabled = isReadOnly;
+        }
+        if (fxSyncBtn) {
+          fxSyncBtn.disabled = isReadOnly;
+        }
       };
 
       const getVisibleRowEntries = () => {
@@ -4891,6 +4939,7 @@
         }
 
         const isPriceSheet = isPriceTableActive();
+        const isReadOnlySheet = isReadOnlyTab();
         const visibleRowEntries = getVisibleRowEntries();
         if (visibleRowEntries.length === 0) {
           tableBody.innerHTML = `<tr><td colspan="14" class="muted-label">${
@@ -4931,6 +4980,10 @@
             input.dataset.rowId = row.id;
             input.dataset.field = field;
             input.className = 'sales-inline-input';
+            if (isReadOnlySheet) {
+              input.readOnly = true;
+              input.disabled = true;
+            }
             return input;
           };
 
@@ -4969,6 +5022,9 @@
           deleteBtn.className = 'chip';
           deleteBtn.dataset.rowDelete = row.id;
           deleteBtn.textContent = isEn ? 'Delete' : '삭제';
+          if (isReadOnlySheet) {
+            deleteBtn.disabled = true;
+          }
           tr.appendChild(makeCell(deleteBtn));
 
           updateComputedCells(tr, row);
@@ -4987,6 +5043,8 @@
         const scopes = getScopes();
         if (!tab) return;
         const scopeMode = getScopeMode(tab.key);
+        const readOnlyTab = isReadOnlyTab(tab.key);
+        rowActionHost.style.display = readOnlyTab ? 'none' : '';
 
         if (scopeMode === 'factory') {
           const activePriceScope = getActiveScope();
@@ -5524,8 +5582,12 @@
           return;
         }
 
-        addRowBtn.disabled = false;
-        addRowBtn.removeAttribute('title');
+        addRowBtn.disabled = readOnlyTab;
+        if (readOnlyTab) {
+          addRowBtn.setAttribute('title', isEn ? 'This tab is read-only.' : '이 탭은 읽기 전용입니다.');
+        } else {
+          addRowBtn.removeAttribute('title');
+        }
 
         if (scopeMode === 'date') {
           const action = document.createElement('div');
@@ -5561,6 +5623,12 @@
             renderMeta();
           });
           dateLabel.append(dateCaption, datePickerInput);
+
+          if (readOnlyTab) {
+            action.append(dateLabel);
+            scopeControls.appendChild(action);
+            return;
+          }
 
           const addBtn = document.createElement('button');
           addBtn.type = 'button';
@@ -5937,6 +6005,7 @@
         });
         if (saveBtn) {
           saveBtn.style.display = isPriceTableActive() ? 'none' : '';
+          saveBtn.disabled = isReadOnlyTab(activeTabKey);
         }
         ensureActiveScope();
         const createdTodayScope = ensureTodayScopeForDateTab();
@@ -5995,6 +6064,7 @@
       };
 
       tableBody.addEventListener('input', (event) => {
+        if (isReadOnlyTab()) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         const rowId = String(target.dataset.rowId || '');
@@ -6022,6 +6092,7 @@
       });
 
       tableBody.addEventListener('click', (event) => {
+        if (isReadOnlyTab()) return;
         const target = event.target;
         if (!(target instanceof HTMLButtonElement)) return;
         const rowId = String(target.dataset.rowDelete || '');
@@ -6037,6 +6108,7 @@
       });
 
       addRowBtn?.addEventListener('click', () => {
+        if (isReadOnlyTab()) return;
         const scope = getActiveScope();
         if (!scope || !Array.isArray(scope.rows)) return;
         const isPriceSheet = getScopeMode(activeTabKey) === 'factory';
@@ -6066,6 +6138,7 @@
       });
 
       const applySettingsInputsToActiveScope = () => {
+        if (isReadOnlyTab()) return;
         const tab = getTabData();
         const scope = getActiveScope();
         const activeSettings = getActiveSettings();
@@ -6120,15 +6193,18 @@
       });
 
       applyGlobalBtn?.addEventListener('click', () => {
+        if (isReadOnlyTab()) return;
         applySettingsInputsToActiveScope();
         void saveWorkbook();
       });
 
       saveBtn?.addEventListener('click', () => {
+        if (isReadOnlyTab()) return;
         void saveWorkbook();
       });
 
       fxSyncBtn?.addEventListener('click', async () => {
+        if (isReadOnlyTab()) return;
         clearError();
         try {
           const requestBody = {
