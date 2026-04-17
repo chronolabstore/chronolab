@@ -2440,6 +2440,16 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   color: var(--muted);
 }
 
+.footer-metrics-list {
+  display: grid;
+  gap: 3px;
+}
+
+.footer-metrics-list .footer-small {
+  margin: 0;
+  line-height: 1.2;
+}
+
 .footer-logo {
   width: clamp(64px, 35%, 90px);
   height: auto;
