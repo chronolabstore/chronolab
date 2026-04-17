@@ -113,6 +113,8 @@ const AUTH_PERSIST_HMAC_KEY = crypto
 const CSRF_TOKEN_SIZE_BYTES = 32;
 const CSRF_TOKEN_REGEX = /^[a-f0-9]{64}$/i;
 const ORDER_COMPLETE_VIEW_TTL_MS = 1000 * 60 * 60;
+const SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME = 'admin1';
+const SUPPORT_CHAT_MAX_MESSAGE_LENGTH = 1000;
 
 function resolveIdleTimeoutMs({
   envKey = '',
@@ -7304,6 +7306,224 @@ function sanitizePath(pathValue = '') {
   return sanitized.startsWith('/') ? sanitized : `/${sanitized}`;
 }
 
+function normalizeSupportChatMessage(rawValue = '') {
+  const message = String(rawValue || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+  return message.slice(0, SUPPORT_CHAT_MAX_MESSAGE_LENGTH);
+}
+
+function resolveSupportAssignedAdminUserId() {
+  const preferred = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE is_admin = 1
+          AND lower(username) = lower(?)
+        LIMIT 1
+      `
+    )
+    .get(SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME);
+  if (preferred && Number(preferred.id) > 0) {
+    return Number(preferred.id);
+  }
+
+  const primary = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE is_admin = 1
+          AND admin_role = 'PRIMARY'
+        ORDER BY id ASC
+        LIMIT 1
+      `
+    )
+    .get();
+  if (primary && Number(primary.id) > 0) {
+    return Number(primary.id);
+  }
+
+  const fallback = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE is_admin = 1
+        ORDER BY id ASC
+        LIMIT 1
+      `
+    )
+    .get();
+  return fallback && Number(fallback.id) > 0 ? Number(fallback.id) : 0;
+}
+
+function ensureSupportChatThreadForMember(memberUserId) {
+  const safeMemberUserId = Number.parseInt(String(memberUserId || ''), 10);
+  if (!Number.isInteger(safeMemberUserId) || safeMemberUserId <= 0) {
+    return null;
+  }
+
+  let thread = db
+    .prepare(
+      `
+        SELECT *
+        FROM support_chat_threads
+        WHERE member_user_id = ?
+        LIMIT 1
+      `
+    )
+    .get(safeMemberUserId);
+
+  if (!thread) {
+    const assignedAdminUserId = resolveSupportAssignedAdminUserId();
+    db.prepare(
+      `
+        INSERT INTO support_chat_threads (
+          member_user_id,
+          assigned_admin_user_id,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, datetime('now'), datetime('now'))
+      `
+    ).run(safeMemberUserId, assignedAdminUserId > 0 ? assignedAdminUserId : null);
+
+    thread = db
+      .prepare(
+        `
+          SELECT *
+          FROM support_chat_threads
+          WHERE member_user_id = ?
+          LIMIT 1
+        `
+      )
+      .get(safeMemberUserId);
+  }
+
+  if (
+    thread &&
+    (!Number.isInteger(Number(thread.assigned_admin_user_id)) || Number(thread.assigned_admin_user_id) <= 0)
+  ) {
+    const assignedAdminUserId = resolveSupportAssignedAdminUserId();
+    if (assignedAdminUserId > 0) {
+      db.prepare(
+        `
+          UPDATE support_chat_threads
+          SET assigned_admin_user_id = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `
+      ).run(assignedAdminUserId, thread.id);
+      thread = { ...thread, assigned_admin_user_id: assignedAdminUserId };
+    }
+  }
+
+  return thread || null;
+}
+
+function mapSupportChatMessageRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: Number(row.id || 0),
+    threadId: Number(row.thread_id || 0),
+    senderUserId: Number(row.sender_user_id || 0),
+    senderRole: String(row.sender_role || '').trim(),
+    messageText: String(row.message_text || ''),
+    createdAt: String(row.created_at || ''),
+    memberReadAt: String(row.member_read_at || ''),
+    adminReadAt: String(row.admin_read_at || '')
+  }));
+}
+
+function getSupportChatMessagesByThreadId(threadId, limit = 120) {
+  const safeThreadId = Number.parseInt(String(threadId || ''), 10);
+  const safeLimit = Math.max(1, Math.min(400, Number.parseInt(String(limit || ''), 10) || 120));
+  if (!Number.isInteger(safeThreadId) || safeThreadId <= 0) {
+    return [];
+  }
+
+  const rows = db
+    .prepare(
+      `
+        SELECT id, thread_id, sender_user_id, sender_role, message_text, member_read_at, admin_read_at, created_at
+        FROM support_chat_messages
+        WHERE thread_id = ?
+        ORDER BY id ASC
+        LIMIT ?
+      `
+    )
+    .all(safeThreadId, safeLimit);
+
+  return mapSupportChatMessageRows(rows);
+}
+
+function canAdminAccessSupportThread(adminUser = null, thread = null) {
+  if (!adminUser || !adminUser.isAdmin || !thread) {
+    return false;
+  }
+  if (adminUser.isPrimaryAdmin) {
+    return true;
+  }
+  const assignedAdminUserId = Number.parseInt(String(thread.assigned_admin_user_id || ''), 10);
+  return Number.isInteger(assignedAdminUserId) && assignedAdminUserId > 0 && assignedAdminUserId === Number(adminUser.id || 0);
+}
+
+function getAdminSupportChatUnreadCount(adminUser = null) {
+  if (!adminUser || !adminUser.isAdmin) {
+    return 0;
+  }
+
+  if (adminUser.isPrimaryAdmin) {
+    const row = db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM support_chat_messages m
+          JOIN support_chat_threads t ON t.id = m.thread_id
+          WHERE m.sender_role = 'member'
+            AND m.admin_read_at IS NULL
+        `
+      )
+      .get();
+    return Number(row?.count || 0);
+  }
+
+  const row = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM support_chat_messages m
+        JOIN support_chat_threads t ON t.id = m.thread_id
+        WHERE m.sender_role = 'member'
+          AND m.admin_read_at IS NULL
+          AND t.assigned_admin_user_id = ?
+      `
+    )
+    .get(Number(adminUser.id || 0));
+  return Number(row?.count || 0);
+}
+
+function getMemberSupportChatUnreadCount(memberUserId = 0) {
+  const safeMemberUserId = Number.parseInt(String(memberUserId || ''), 10);
+  if (!Number.isInteger(safeMemberUserId) || safeMemberUserId <= 0) {
+    return 0;
+  }
+  const row = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM support_chat_messages m
+        JOIN support_chat_threads t ON t.id = m.thread_id
+        WHERE t.member_user_id = ?
+          AND m.sender_role = 'admin'
+          AND m.member_read_at IS NULL
+      `
+    )
+    .get(safeMemberUserId);
+  return Number(row?.count || 0);
+}
+
 function normalizeKakaoChannelPath(pathname = '') {
   const rawPath = String(pathname || '').trim();
   if (!rawPath) {
@@ -9077,6 +9297,9 @@ app.use((req, res, next) => {
   const postCounts = getPostCounts(today);
   const contactInfoSetting = getSetting('contactInfo', '');
   const kakaoChatUrl = resolveKakaoChatUrl(contactInfoSetting, getSetting('kakaoChatUrl', ''));
+  const supportChatAdminUnreadCount = req.user?.isAdmin ? getAdminSupportChatUnreadCount(req.user) : 0;
+  const supportChatMemberUnreadCount =
+    req.user && !req.user.isAdmin ? getMemberSupportChatUnreadCount(req.user.id) : 0;
 
   res.locals.ctx = {
     assetVersion: ASSET_VERSION,
@@ -9089,6 +9312,8 @@ app.use((req, res, next) => {
     isPrimaryAdmin: Boolean(req.user?.isPrimaryAdmin),
     isAdminRoute: req.path.startsWith('/admin'),
     isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
+    supportChatAdminUnreadCount,
+    supportChatMemberUnreadCount,
     csrfToken: req.session?.csrfToken || '',
     flash: getFlash(req),
     popupFlash: getPopupFlash(req),
@@ -9115,6 +9340,7 @@ app.use((req, res, next) => {
       purchasePointRate: getLegacyPurchasePointRateSetting(),
       contactInfo: contactInfoSetting,
       kakaoChatUrl,
+      supportChatAdminUsername: SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME,
       businessInfo: getSetting('businessInfo', ''),
       footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
       footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
@@ -9228,6 +9454,320 @@ function requirePrimaryAdmin(req, res, next) {
 
   return next();
 }
+
+function serializeSupportChatThreadRow(thread = {}) {
+  return {
+    id: Number(thread.id || 0),
+    memberUserId: Number(thread.member_user_id || 0),
+    assignedAdminUserId: Number(thread.assigned_admin_user_id || 0),
+    memberUsername: String(thread.member_username || ''),
+    memberNickname: String(thread.member_nickname || ''),
+    memberFullName: String(thread.member_full_name || ''),
+    assignedAdminUsername: String(thread.assigned_admin_username || ''),
+    unreadCount: Number(thread.unread_count || 0),
+    lastMessageText: String(thread.last_message_text || ''),
+    lastMessageAt: String(thread.last_message_at || ''),
+    lastSenderRole: String(thread.last_sender_role || ''),
+    createdAt: String(thread.created_at || ''),
+    updatedAt: String(thread.updated_at || ''),
+    lastMemberMessageAt: String(thread.last_member_message_at || ''),
+    lastAdminMessageAt: String(thread.last_admin_message_at || '')
+  };
+}
+
+app.get('/api/support-chat/thread', requireAuth, (req, res) => {
+  if (!req.user || req.user.isAdmin) {
+    return res.status(403).json({ ok: false, error: 'member_only' });
+  }
+
+  const thread = ensureSupportChatThreadForMember(req.user.id);
+  if (!thread) {
+    return res.status(500).json({ ok: false, error: 'support_thread_create_failed' });
+  }
+
+  db.prepare(
+    `
+      UPDATE support_chat_messages
+      SET member_read_at = datetime('now')
+      WHERE thread_id = ?
+        AND sender_role = 'admin'
+        AND member_read_at IS NULL
+    `
+  ).run(thread.id);
+
+  const messages = getSupportChatMessagesByThreadId(thread.id, 200);
+  const assignedAdmin = db
+    .prepare(
+      `
+        SELECT username, full_name
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `
+    )
+    .get(Number(thread.assigned_admin_user_id || 0));
+
+  return res.json({
+    ok: true,
+    thread: {
+      id: Number(thread.id || 0),
+      assignedAdminUsername: String(assignedAdmin?.username || SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME),
+      assignedAdminName: String(assignedAdmin?.full_name || assignedAdmin?.username || SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME)
+    },
+    messages,
+    unreadCount: getMemberSupportChatUnreadCount(req.user.id)
+  });
+});
+
+app.post('/api/support-chat/message', requireAuth, (req, res) => {
+  if (!req.user || req.user.isAdmin) {
+    return res.status(403).json({ ok: false, error: 'member_only' });
+  }
+
+  const messageText = normalizeSupportChatMessage(req.body?.message || '');
+  if (!messageText) {
+    return res.status(400).json({ ok: false, error: 'message_required' });
+  }
+
+  const thread = ensureSupportChatThreadForMember(req.user.id);
+  if (!thread) {
+    return res.status(500).json({ ok: false, error: 'support_thread_create_failed' });
+  }
+
+  const insertResult = db.prepare(
+    `
+      INSERT INTO support_chat_messages (
+        thread_id,
+        sender_user_id,
+        sender_role,
+        message_text,
+        member_read_at,
+        created_at
+      )
+      VALUES (?, ?, 'member', ?, datetime('now'), datetime('now'))
+    `
+  ).run(thread.id, req.user.id, messageText);
+
+  db.prepare(
+    `
+      UPDATE support_chat_threads
+      SET updated_at = datetime('now'),
+          last_member_message_at = datetime('now'),
+          assigned_admin_user_id = CASE
+            WHEN COALESCE(assigned_admin_user_id, 0) <= 0 THEN ?
+            ELSE assigned_admin_user_id
+          END
+      WHERE id = ?
+    `
+  ).run(resolveSupportAssignedAdminUserId() || null, thread.id);
+
+  const message = mapSupportChatMessageRows(
+    db
+      .prepare(
+        `
+          SELECT id, thread_id, sender_user_id, sender_role, message_text, member_read_at, admin_read_at, created_at
+          FROM support_chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .all(Number(insertResult.lastInsertRowid || 0))
+  )[0] || null;
+
+  return res.json({ ok: true, message });
+});
+
+app.get('/api/support-chat/unread-count', requireAuth, (req, res) => {
+  if (!req.user || req.user.isAdmin) {
+    return res.status(403).json({ ok: false, error: 'member_only' });
+  }
+  return res.json({ ok: true, unreadCount: getMemberSupportChatUnreadCount(req.user.id) });
+});
+
+app.get('/api/admin/support-chat/unread-count', requireAdmin, (req, res) =>
+  res.json({ ok: true, unreadCount: getAdminSupportChatUnreadCount(req.user) })
+);
+
+app.get('/api/admin/support-chat/threads', requireAdmin, (req, res) => {
+  const isPrimary = req.user?.isPrimaryAdmin ? 1 : 0;
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          t.*,
+          u.username AS member_username,
+          u.nickname AS member_nickname,
+          u.full_name AS member_full_name,
+          a.username AS assigned_admin_username,
+          (
+            SELECT COUNT(*)
+            FROM support_chat_messages sm
+            WHERE sm.thread_id = t.id
+              AND sm.sender_role = 'member'
+              AND sm.admin_read_at IS NULL
+          ) AS unread_count,
+          (
+            SELECT sm2.message_text
+            FROM support_chat_messages sm2
+            WHERE sm2.thread_id = t.id
+            ORDER BY sm2.id DESC
+            LIMIT 1
+          ) AS last_message_text,
+          (
+            SELECT sm2.created_at
+            FROM support_chat_messages sm2
+            WHERE sm2.thread_id = t.id
+            ORDER BY sm2.id DESC
+            LIMIT 1
+          ) AS last_message_at,
+          (
+            SELECT sm2.sender_role
+            FROM support_chat_messages sm2
+            WHERE sm2.thread_id = t.id
+            ORDER BY sm2.id DESC
+            LIMIT 1
+          ) AS last_sender_role
+        FROM support_chat_threads t
+        JOIN users u ON u.id = t.member_user_id
+        LEFT JOIN users a ON a.id = t.assigned_admin_user_id
+        WHERE (? = 1 OR t.assigned_admin_user_id = ?)
+        ORDER BY COALESCE(last_message_at, t.updated_at, t.created_at) DESC, t.id DESC
+        LIMIT 200
+      `
+    )
+    .all(isPrimary, Number(req.user?.id || 0));
+
+  return res.json({
+    ok: true,
+    threads: rows.map((row) => serializeSupportChatThreadRow(row)),
+    unreadCount: getAdminSupportChatUnreadCount(req.user)
+  });
+});
+
+app.get('/api/admin/support-chat/thread/:threadId/messages', requireAdmin, (req, res) => {
+  const threadId = Number.parseInt(String(req.params.threadId || ''), 10);
+  if (!Number.isInteger(threadId) || threadId <= 0) {
+    return res.status(400).json({ ok: false, error: 'invalid_thread_id' });
+  }
+
+  const threadRow = db
+    .prepare(
+      `
+        SELECT
+          t.*,
+          u.username AS member_username,
+          u.nickname AS member_nickname,
+          u.full_name AS member_full_name,
+          a.username AS assigned_admin_username
+        FROM support_chat_threads t
+        JOIN users u ON u.id = t.member_user_id
+        LEFT JOIN users a ON a.id = t.assigned_admin_user_id
+        WHERE t.id = ?
+        LIMIT 1
+      `
+    )
+    .get(threadId);
+
+  if (!threadRow) {
+    return res.status(404).json({ ok: false, error: 'thread_not_found' });
+  }
+  if (!canAdminAccessSupportThread(req.user, threadRow)) {
+    return res.status(403).json({ ok: false, error: 'access_denied' });
+  }
+
+  db.prepare(
+    `
+      UPDATE support_chat_messages
+      SET admin_read_at = datetime('now')
+      WHERE thread_id = ?
+        AND sender_role = 'member'
+        AND admin_read_at IS NULL
+    `
+  ).run(threadId);
+
+  const messages = getSupportChatMessagesByThreadId(threadId, 300);
+  return res.json({
+    ok: true,
+    thread: serializeSupportChatThreadRow(threadRow),
+    messages,
+    unreadCount: getAdminSupportChatUnreadCount(req.user)
+  });
+});
+
+app.post('/api/admin/support-chat/thread/:threadId/message', requireAdmin, (req, res) => {
+  const threadId = Number.parseInt(String(req.params.threadId || ''), 10);
+  if (!Number.isInteger(threadId) || threadId <= 0) {
+    return res.status(400).json({ ok: false, error: 'invalid_thread_id' });
+  }
+
+  const threadRow = db
+    .prepare(
+      `
+        SELECT *
+        FROM support_chat_threads
+        WHERE id = ?
+        LIMIT 1
+      `
+    )
+    .get(threadId);
+  if (!threadRow) {
+    return res.status(404).json({ ok: false, error: 'thread_not_found' });
+  }
+  if (!canAdminAccessSupportThread(req.user, threadRow)) {
+    return res.status(403).json({ ok: false, error: 'access_denied' });
+  }
+
+  const messageText = normalizeSupportChatMessage(req.body?.message || '');
+  if (!messageText) {
+    return res.status(400).json({ ok: false, error: 'message_required' });
+  }
+
+  const insertResult = db.prepare(
+    `
+      INSERT INTO support_chat_messages (
+        thread_id,
+        sender_user_id,
+        sender_role,
+        message_text,
+        admin_read_at,
+        created_at
+      )
+      VALUES (?, ?, 'admin', ?, datetime('now'), datetime('now'))
+    `
+  ).run(threadId, Number(req.user.id || 0), messageText);
+
+  db.prepare(
+    `
+      UPDATE support_chat_threads
+      SET updated_at = datetime('now'),
+          last_admin_message_at = datetime('now'),
+          assigned_admin_user_id = CASE
+            WHEN COALESCE(assigned_admin_user_id, 0) <= 0 THEN ?
+            ELSE assigned_admin_user_id
+          END
+      WHERE id = ?
+    `
+  ).run(Number(req.user.id || 0), threadId);
+
+  const message = mapSupportChatMessageRows(
+    db
+      .prepare(
+        `
+          SELECT id, thread_id, sender_user_id, sender_role, message_text, member_read_at, admin_read_at, created_at
+          FROM support_chat_messages
+          WHERE id = ?
+          LIMIT 1
+        `
+      )
+      .all(Number(insertResult.lastInsertRowid || 0))
+  )[0] || null;
+
+  return res.json({
+    ok: true,
+    message,
+    unreadCount: getAdminSupportChatUnreadCount(req.user)
+  });
+});
 
 function getSecurityAlertReasonLabel(reasonCode = '', lang = 'ko') {
   const isEn = lang === 'en';

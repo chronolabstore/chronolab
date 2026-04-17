@@ -1207,6 +1207,63 @@ function ensureAdminSecurityTables() {
   ).run();
 }
 
+function ensureSupportChatTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS support_chat_threads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_user_id INTEGER NOT NULL UNIQUE,
+      assigned_admin_user_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_member_message_at TEXT,
+      last_admin_message_at TEXT,
+      FOREIGN KEY (member_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (assigned_admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS support_chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id INTEGER NOT NULL,
+      sender_user_id INTEGER NOT NULL,
+      sender_role TEXT NOT NULL DEFAULT 'member',
+      message_text TEXT NOT NULL DEFAULT '',
+      member_read_at TEXT,
+      admin_read_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (thread_id) REFERENCES support_chat_threads(id) ON DELETE CASCADE,
+      FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+  `);
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_support_chat_threads_admin
+      ON support_chat_threads (assigned_admin_user_id, updated_at DESC)
+    `
+  ).run();
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_support_chat_messages_thread_id
+      ON support_chat_messages (thread_id, id ASC)
+    `
+  ).run();
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_support_chat_messages_admin_unread
+      ON support_chat_messages (thread_id, sender_role, admin_read_at)
+    `
+  ).run();
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_support_chat_messages_member_unread
+      ON support_chat_messages (thread_id, sender_role, member_read_at)
+    `
+  ).run();
+}
+
 function normalizeOrderStatuses() {
   if (!shouldRunStartupDataMaintenance) {
     return;
@@ -2712,6 +2769,7 @@ export function initDb() {
   ensureContentImagePathsJsonColumns();
   ensureDailyFunnelEventsTable();
   ensureAdminSecurityTables();
+  ensureSupportChatTables();
   normalizeOrderStatuses();
 
   for (const [key, value] of Object.entries(defaultSettings)) {

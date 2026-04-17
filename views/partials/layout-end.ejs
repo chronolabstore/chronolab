@@ -89,6 +89,101 @@
       </div>
     </div>
 
+    <% if (ctx.currentUser && !ctx.currentUser.isAdmin) { %>
+      <button
+        type="button"
+        class="floating-support-btn floating-support-btn-member"
+        data-member-chat-open
+        aria-label="<%= ctx.lang === 'en' ? 'Open support chat' : '상담 채팅 열기' %>"
+      >
+        <span class="floating-support-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5h-6.6l-3.9 3V16H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
+            <circle cx="9" cy="10" r="1.1" />
+            <circle cx="12" cy="10" r="1.1" />
+            <circle cx="15" cy="10" r="1.1" />
+          </svg>
+        </span>
+        <span class="floating-support-label"><%= ctx.lang === 'en' ? 'Support Chat' : '상담 채팅' %></span>
+        <span class="floating-support-badge <%= Number(ctx.supportChatMemberUnreadCount || 0) > 0 ? '' : 'hidden' %>" data-member-chat-unread-badge>
+          <%= Number(ctx.supportChatMemberUnreadCount || 0) > 99 ? '99+' : Number(ctx.supportChatMemberUnreadCount || 0) %>
+        </span>
+      </button>
+
+      <section class="support-chat-panel support-chat-panel-member hidden" data-member-chat-panel>
+        <header class="support-chat-header">
+          <div class="support-chat-header-text">
+            <strong><%= ctx.lang === 'en' ? '1:1 Support Chat' : '1:1 상담 채팅' %></strong>
+            <small data-member-chat-assigned><%= ctx.lang === 'en' ? `Connected: ${ctx.settings.supportChatAdminUsername}` : `담당: ${ctx.settings.supportChatAdminUsername}` %></small>
+          </div>
+          <button type="button" class="chip" data-member-chat-close><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
+        </header>
+        <div class="support-chat-body" data-member-chat-messages></div>
+        <form class="support-chat-composer" data-member-chat-form>
+          <textarea
+            name="message"
+            rows="2"
+            maxlength="1000"
+            placeholder="<%= ctx.lang === 'en' ? 'Type your message...' : '메시지를 입력하세요...' %>"
+            required
+          ></textarea>
+          <button type="submit" class="chip dark"><%= ctx.lang === 'en' ? 'Send' : '전송' %></button>
+        </form>
+      </section>
+    <% } %>
+
+    <% if (ctx.isAdminRoute && ctx.currentUser && ctx.currentUser.isAdmin) { %>
+      <button
+        type="button"
+        class="floating-support-btn floating-support-btn-admin"
+        data-admin-chat-open
+        aria-label="<%= ctx.lang === 'en' ? 'Open member chats' : '회원 채팅 열기' %>"
+      >
+        <span class="floating-support-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5h-6.6l-3.9 3V16H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
+            <circle cx="9" cy="10" r="1.1" />
+            <circle cx="12" cy="10" r="1.1" />
+            <circle cx="15" cy="10" r="1.1" />
+          </svg>
+        </span>
+        <span class="floating-support-label"><%= ctx.lang === 'en' ? 'Member Chat' : '회원 채팅' %></span>
+        <span class="floating-support-badge <%= Number(ctx.supportChatAdminUnreadCount || 0) > 0 ? '' : 'hidden' %>" data-admin-chat-unread-badge>
+          <%= Number(ctx.supportChatAdminUnreadCount || 0) > 99 ? '99+' : Number(ctx.supportChatAdminUnreadCount || 0) %>
+        </span>
+      </button>
+
+      <section class="support-chat-panel support-chat-panel-admin hidden" data-admin-chat-panel>
+        <header class="support-chat-header">
+          <div class="support-chat-header-text">
+            <strong><%= ctx.lang === 'en' ? 'Member Support Chats' : '회원 상담 채팅' %></strong>
+            <small><%= ctx.lang === 'en' ? 'Assigned to current admin account' : '현재 관리자 계정 배정 채팅' %></small>
+          </div>
+          <button type="button" class="chip" data-admin-chat-close><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
+        </header>
+        <div class="support-admin-chat-layout">
+          <aside class="support-admin-thread-list" data-admin-chat-thread-list></aside>
+          <section class="support-admin-thread-panel">
+            <div class="support-admin-thread-head" data-admin-chat-thread-title>
+              <strong><%= ctx.lang === 'en' ? 'Select a member chat' : '회원 채팅을 선택하세요' %></strong>
+            </div>
+            <div class="support-chat-body support-chat-body-admin" data-admin-chat-messages></div>
+            <form class="support-chat-composer" data-admin-chat-form>
+              <textarea
+                name="message"
+                rows="2"
+                maxlength="1000"
+                placeholder="<%= ctx.lang === 'en' ? 'Type a reply...' : '답장을 입력하세요...' %>"
+                required
+                disabled
+              ></textarea>
+              <button type="submit" class="chip dark" disabled><%= ctx.lang === 'en' ? 'Reply' : '답장' %></button>
+            </form>
+          </section>
+        </div>
+      </section>
+    <% } %>
+
     <% if (!ctx.isAdminRoute && ctx.settings.kakaoChatUrl) { %>
       <a
         href="<%= ctx.settings.kakaoChatUrl %>"
