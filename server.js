@@ -551,7 +551,7 @@ const SALES_PRICE_FILTER_BASELINE_VERSION_KEY = 'salesWorkbookPriceFilterSeedV20
 const SALES_PRICE_FILTER_BASELINE_VERSION = '2026-04-14-v3';
 const SALES_ORDER_WORKBOOK_SYNCED_IDS_KEY = 'salesWorkbookSyncedOrderIdsV20260417';
 const SALES_ORDER_WORKBOOK_BACKFILL_VERSION_KEY = 'salesWorkbookOrderBackfillV20260417';
-const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v3';
+const SALES_ORDER_WORKBOOK_BACKFILL_VERSION = '2026-04-17-v4';
 const SALES_ORDER_WORKBOOK_SYNC_MEMO_PREFIX = '[AUTO_ORDER_SYNC]';
 const SALES_ORDER_WORKBOOK_MAX_SYNCED_IDS = 50000;
 const PRODUCT_BADGE_CODE_REGEX = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -4824,8 +4824,7 @@ const SALES_PRICE_TAB_LEGACY_GROUP_KEY_MAP = Object.freeze({
 const SALES_BASE_GROUP_TAB_CONFIGS = Object.freeze([
   { key: '공장제', labelKo: '공장제', labelEn: 'Factory' },
   { key: '젠파츠', labelKo: '젠파츠', labelEn: 'Gen Parts' },
-  { key: '현지중고', labelKo: '현지중고', labelEn: 'Local Used' },
-  { key: '기타', labelKo: '기타', labelEn: 'Other' }
+  { key: '현지중고', labelKo: '현지중고', labelEn: 'Local Used' }
 ]);
 
 const SALES_DYNAMIC_TAB_KEY_PREFIX = 'group';
@@ -4908,7 +4907,6 @@ function getSalesMainTabs(groupConfigs = null) {
           labelKo: groupKey,
           labelEn: groupKey
         }));
-  const observedGroups = getObservedProductGroupKeys();
   const safeGroupMap = new Map();
   safeGroups.forEach((group) => {
     const key = normalizeProductGroupKey(group?.key || '');
@@ -4931,16 +4929,6 @@ function getSalesMainTabs(groupConfigs = null) {
       key,
       labelKo: String(baseGroup?.labelKo || key).trim() || key,
       labelEn: String(baseGroup?.labelEn || baseGroup?.labelKo || key).trim() || key
-    });
-  });
-  observedGroups.forEach((groupKey) => {
-    if (safeGroupMap.has(groupKey)) {
-      return;
-    }
-    safeGroupMap.set(groupKey, {
-      key: groupKey,
-      labelKo: groupKey,
-      labelEn: groupKey
     });
   });
   const mergedGroups = [...safeGroupMap.values()];
@@ -6064,10 +6052,6 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
     if (!Number.isInteger(orderId) || orderId <= 0) {
       continue;
     }
-    if (!forceResync && syncedOrderIdSet.has(orderId)) {
-      continue;
-    }
-
     const resolvedTabKey =
       normalizeSalesText(order?.sales_tab_key || '', 80) ||
       getSalesTabKeyForCategoryGroup(order?.category_group || '', groupConfigs);
@@ -6077,6 +6061,17 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
     }
 
     const scopeDate = resolveSalesWorkbookScopeDateFromOrder(order);
+    const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
+    const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
+    const snapshotOutdated = currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate;
+    const shouldEvaluate =
+      forceResync ||
+      !syncedOrderIdSet.has(orderId) ||
+      snapshotOutdated;
+    if (!shouldEvaluate) {
+      continue;
+    }
+
     const scope = ensureSalesDateScopeForOrderSync(tab, scopeDate, workbook.globals || {});
     if (!scope) {
       continue;
@@ -6102,9 +6097,7 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
         syncedOrderIdSet.add(orderId);
         syncedIdsChanged = true;
       }
-      const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
-      const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
-      if (currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate) {
+      if (snapshotOutdated) {
         db.prepare(
           `
             UPDATE orders
@@ -6120,7 +6113,7 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
       continue;
     }
 
-    if (forceResync && tokenScopes.length > 0) {
+    if ((forceResync || snapshotOutdated) && tokenScopes.length > 0) {
       let movedRowCount = 0;
       tokenScopes.forEach((candidateScope) => {
         if (!candidateScope || !Array.isArray(candidateScope.rows) || candidateScope === scope) {
@@ -6145,9 +6138,7 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
           syncedOrderIdSet.add(orderId);
           syncedIdsChanged = true;
         }
-        const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
-        const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
-        if (currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate) {
+        if (snapshotOutdated) {
           db.prepare(
             `
               UPDATE orders
@@ -6187,9 +6178,7 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
       syncedIdsChanged = true;
     }
 
-    const currentScopeDate = normalizeSalesDate(order?.sales_scope_date || '');
-    const currentTabKey = normalizeSalesText(order?.sales_tab_key || '', 80);
-    if (currentTabKey !== resolvedTabKey || currentScopeDate !== scopeDate) {
+    if (snapshotOutdated) {
       db.prepare(
         `
           UPDATE orders
@@ -15169,7 +15158,10 @@ app.get(
   '/admin/sales/data',
   requireAdmin,
   asyncRoute(async (req, res) => {
-    const workbook = getSalesWorkbook();
+    const syncResult = syncPaidOrdersToSalesWorkbookSafely({
+      forceResync: false
+    });
+    const workbook = syncResult?.workbook || getSalesWorkbook();
     const payload = buildSalesWorkbookPayload(workbook);
     return res.json({
       ok: true,
