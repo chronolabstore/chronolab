@@ -1194,12 +1194,25 @@ function getProductFilterLabelByLang(labelMap = {}, rawValue = '', lang = 'ko') 
   return lang === 'en' ? entry.labelEn || entry.labelKo || value : entry.labelKo || entry.labelEn || value;
 }
 
-function getProductFilterOptionItems(values = [], labelMap = {}, lang = 'ko') {
+function getProductFilterOptionItems(values = [], labelMap = {}, lang = 'ko', options = {}) {
   const normalizedValues = normalizeProductFilterOptionList(values);
-  return normalizedValues.map((value) => ({
+  const items = normalizedValues.map((value) => ({
     value,
     label: getProductFilterLabelByLang(labelMap, value, lang)
   }));
+  const sortByLabel =
+    options === true ||
+    (options && typeof options === 'object' && options.sortByLabel === true);
+  if (sortByLabel) {
+    items.sort((left, right) => {
+      const labelCompared = compareProductFilterOptionValues(left.label, right.label);
+      if (labelCompared !== 0) {
+        return labelCompared;
+      }
+      return compareProductFilterOptionValues(left.value, right.value);
+    });
+  }
+  return items;
 }
 
 function getGroupBrandOptions(groupConfig = null) {
@@ -9514,7 +9527,12 @@ app.get('/shop', (req, res) => {
       factory = factories.some((item) => item.toLowerCase() === selectedFactoryRaw.toLowerCase())
         ? selectedFactoryRaw
         : '';
-      factoryItems = getProductFilterOptionItems(factories, mergedFactoryLabels, res.locals.ctx.lang);
+      factoryItems = getProductFilterOptionItems(
+        factories,
+        mergedFactoryLabels,
+        res.locals.ctx.lang,
+        { sortByLabel: true }
+      );
     } else {
       factories = [];
       factory = '';
@@ -9634,7 +9652,12 @@ app.get('/shop', (req, res) => {
     brandItems = supportsBrandFilter
       ? getProductFilterOptionItems(brands, configuredBrandLabels, res.locals.ctx.lang)
       : [];
-    factoryItems = getProductFilterOptionItems(factories, configuredFactoryLabels, res.locals.ctx.lang);
+    factoryItems = getProductFilterOptionItems(
+      factories,
+      configuredFactoryLabels,
+      res.locals.ctx.lang,
+      { sortByLabel: true }
+    );
     modelItems = supportsModelFilter
       ? getProductFilterOptionItems(models, modelOptionLabels, res.locals.ctx.lang)
       : [];
