@@ -682,6 +682,15 @@ body.theme-night .flash.error {
   color: var(--muted);
 }
 
+body.theme-night .hero-image-pane h1 {
+  color: #0b1220;
+}
+
+body.theme-night .hero-image-pane p {
+  color: #334155;
+  font-weight: 500;
+}
+
 .hero-badge {
   display: inline-block;
   padding: 5px 10px;
