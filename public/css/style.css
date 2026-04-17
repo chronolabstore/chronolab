@@ -49,10 +49,10 @@
   --btn-secondary-text-hover: var(--color-navy);
   --focus-ring: rgba(59, 130, 246, 0.32);
   --error-text: #b91c1c;
-  --support-fab-bg: #0f172a;
+  --support-fab-bg: #0b1630;
   --support-fab-fg: #f8fafc;
-  --support-fab-ring: rgba(248, 250, 252, 0.94);
-  --support-fab-ring-outer: rgba(15, 23, 42, 0.3);
+  --support-fab-ring: rgba(255, 255, 255, 0.98);
+  --support-fab-ring-outer: rgba(11, 18, 32, 0.46);
   --radius-xl: 28px;
   --radius-lg: 20px;
   --radius-md: 14px;
@@ -134,10 +134,10 @@ body.theme-night {
   --btn-secondary-text-hover: #ffffff;
   --focus-ring: rgba(191, 219, 254, 0.45);
   --error-text: #fda4af;
-  --support-fab-bg: #dbe6fb;
+  --support-fab-bg: #f4f8ff;
   --support-fab-fg: #0b1220;
-  --support-fab-ring: rgba(11, 18, 32, 0.86);
-  --support-fab-ring-outer: rgba(226, 232, 240, 0.34);
+  --support-fab-ring: rgba(11, 18, 32, 0.96);
+  --support-fab-ring-outer: rgba(255, 255, 255, 0.7);
   --shadow: 0 18px 34px rgba(0, 0, 0, 0.5);
 }
 
@@ -2648,6 +2648,19 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
 }
 
+body.theme-day .floating-support-btn,
+body:not(.theme-night) .floating-support-btn {
+  background: #0b1630;
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.98);
+}
+
+body.theme-night .floating-support-btn {
+  background: #f4f8ff;
+  color: #0b1220;
+  border-color: rgba(11, 18, 32, 0.96);
+}
+
 .floating-support-btn:hover {
   transform: translateY(-1px);
   filter: brightness(1.04);
@@ -2694,7 +2707,7 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
 .floating-support-icon svg.floating-support-headset {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.85;
+  stroke-width: 1.95;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
