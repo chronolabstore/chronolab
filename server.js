@@ -1005,6 +1005,47 @@ function resolveRawProductFilterOptionValue(rawOption = '') {
   return rawOption;
 }
 
+const PRODUCT_FILTER_OPTION_EN_COLLATOR = new Intl.Collator('en', {
+  sensitivity: 'base',
+  numeric: true
+});
+const PRODUCT_FILTER_OPTION_KO_COLLATOR = new Intl.Collator('ko', {
+  sensitivity: 'base',
+  numeric: true
+});
+
+function getProductFilterOptionSortGroupRank(value = '') {
+  const text = String(value || '').trim();
+  if (!text) {
+    return 99;
+  }
+  const first = text.charAt(0);
+  if (/[A-Za-z0-9]/.test(first)) {
+    return 0;
+  }
+  if (/[가-힣]/.test(first)) {
+    return 2;
+  }
+  return 1;
+}
+
+function compareProductFilterOptionValues(left = '', right = '') {
+  const leftText = String(left || '');
+  const rightText = String(right || '');
+  const leftRank = getProductFilterOptionSortGroupRank(leftText);
+  const rightRank = getProductFilterOptionSortGroupRank(rightText);
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+
+  const collator = leftRank === 2 ? PRODUCT_FILTER_OPTION_KO_COLLATOR : PRODUCT_FILTER_OPTION_EN_COLLATOR;
+  const compared = collator.compare(leftText, rightText);
+  if (compared !== 0) {
+    return compared;
+  }
+  return leftText.localeCompare(rightText, leftRank === 2 ? 'ko' : 'en');
+}
+
 function normalizeProductFilterOptionList(rawList) {
   const source = Array.isArray(rawList) ? rawList : [];
   const normalized = [];
@@ -1023,14 +1064,7 @@ function normalizeProductFilterOptionList(rawList) {
     normalized.push(value);
   });
 
-  const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
-  normalized.sort((a, b) => {
-    const compared = collator.compare(a, b);
-    if (compared !== 0) {
-      return compared;
-    }
-    return String(a).localeCompare(String(b), 'en');
-  });
+  normalized.sort(compareProductFilterOptionValues);
 
   return normalized;
 }
@@ -1083,15 +1117,8 @@ function normalizeProductFilterOptionMap(rawMap, allowedKeys = []) {
     mapped[normalizedKey] = normalizedList;
   });
 
-  const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
   return Object.keys(mapped)
-    .sort((a, b) => {
-      const compared = collator.compare(a, b);
-      if (compared !== 0) {
-        return compared;
-      }
-      return String(a).localeCompare(String(b), 'en');
-    })
+    .sort(compareProductFilterOptionValues)
     .reduce((acc, key) => {
       acc[key] = mapped[key];
       return acc;
