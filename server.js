@@ -17,6 +17,7 @@ import {
   getDefaultMenus,
   getDefaultProductGroupConfigs,
   getPostCounts,
+  getProductCounts,
   getSetting,
   getVisitCounts,
   incrementFunnelEvent,
@@ -8998,6 +8999,7 @@ app.use((req, res, next) => {
     .all();
 
   const visitCounts = getVisitCounts(today);
+  const productCounts = getProductCounts(today);
   const postCounts = getPostCounts(today);
 
   res.locals.ctx = {
@@ -9068,6 +9070,8 @@ app.use((req, res, next) => {
     metrics: {
       visitToday: visitCounts.today,
       visitTotal: visitCounts.total,
+      productToday: productCounts.today,
+      productTotal: productCounts.total,
       postToday: postCounts.today,
       postTotal: postCounts.total
     },

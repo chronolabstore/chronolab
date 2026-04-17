@@ -2875,6 +2875,34 @@ export function getPostCounts(visitDate) {
   };
 }
 
+export function getProductCounts(visitDate) {
+  const todayProducts = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM products
+        WHERE is_active = 1
+          AND date(created_at, '+9 hours') = ?
+      `
+    )
+    .get(visitDate);
+
+  const totalProducts = db
+    .prepare(
+      `
+        SELECT COUNT(*) AS count
+        FROM products
+        WHERE is_active = 1
+      `
+    )
+    .get();
+
+  return {
+    today: Number(todayProducts?.count || 0),
+    total: Number(totalProducts?.count || 0)
+  };
+}
+
 export function getDefaultMenus() {
   return defaultMenus;
 }

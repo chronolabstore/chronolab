@@ -34,10 +34,14 @@
 
     <section class="footer-card">
       <h4><%= ctx.lang === 'en' ? 'Metrics' : '집계' %></h4>
-      <p class="footer-small"><%= ctx.t('footerVisitorsToday') %> : <strong><%= ctx.metrics.visitToday %></strong></p>
-      <p class="footer-small"><%= ctx.t('footerVisitorsTotal') %> : <strong><%= ctx.metrics.visitTotal %></strong></p>
-      <p class="footer-small"><%= ctx.t('footerPostsToday') %> : <strong><%= ctx.metrics.postToday %></strong></p>
-      <p class="footer-small"><%= ctx.t('footerPostsTotal') %> : <strong><%= ctx.metrics.postTotal %></strong></p>
+      <div class="footer-metrics-list">
+        <p class="footer-small"><%= ctx.t('footerVisitorsToday') %> : <strong><%= ctx.metrics.visitToday %></strong></p>
+        <p class="footer-small"><%= ctx.t('footerVisitorsTotal') %> : <strong><%= ctx.metrics.visitTotal %></strong></p>
+        <p class="footer-small"><%= ctx.t('footerProductsToday') %> : <strong><%= ctx.metrics.productToday || 0 %></strong></p>
+        <p class="footer-small"><%= ctx.t('footerProductsTotal') %> : <strong><%= ctx.metrics.productTotal || 0 %></strong></p>
+        <p class="footer-small"><%= ctx.t('footerPostsToday') %> : <strong><%= ctx.metrics.postToday %></strong></p>
+        <p class="footer-small"><%= ctx.t('footerPostsTotal') %> : <strong><%= ctx.metrics.postTotal %></strong></p>
+      </div>
     </section>
   </div>
 </footer>
