@@ -19,6 +19,92 @@
     }
   }
 
+  function ensureActionAlertPopup() {
+    var existing = document.getElementById('actionAlertPopup');
+    if (existing) {
+      return existing;
+    }
+    var popup = document.createElement('div');
+    popup.id = 'actionAlertPopup';
+    popup.className = 'popup-backdrop popup-alert-backdrop hidden';
+    popup.innerHTML =
+      '<div class="popup-card popup-alert-card success">' +
+      '  <h3 data-action-alert-title></h3>' +
+      '  <p data-action-alert-message></p>' +
+      '  <div class="popup-actions">' +
+      '    <button type="button" class="chip dark" data-action-alert-confirm>OK</button>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(popup);
+    return popup;
+  }
+
+  function showActionAlertPopup(options) {
+    var config = options || {};
+    var popup = ensureActionAlertPopup();
+    var titleNode = popup.querySelector('[data-action-alert-title]');
+    var messageNode = popup.querySelector('[data-action-alert-message]');
+    var confirmButton = popup.querySelector('[data-action-alert-confirm]');
+    var card = popup.querySelector('.popup-alert-card');
+    var popupType = config.type === 'error' ? 'error' : 'success';
+
+    if (card) {
+      card.classList.remove('success', 'error');
+      card.classList.add(popupType);
+    }
+    if (titleNode) {
+      titleNode.textContent = String(config.title || '');
+    }
+    if (messageNode) {
+      messageNode.textContent = String(config.message || '');
+    }
+    if (confirmButton) {
+      confirmButton.textContent = String(config.confirmLabel || 'OK');
+    }
+
+    return new Promise(function (resolve) {
+      function closePopup(confirmed) {
+        popup.classList.add('hidden');
+        popup.removeEventListener('click', onClick);
+        document.removeEventListener('keydown', onKeyDown);
+        window.setTimeout(initPrimaryInputAutofocus, 0);
+        resolve(Boolean(confirmed));
+      }
+
+      function onClick(event) {
+        var confirmTarget = event.target.closest('[data-action-alert-confirm]');
+        if (confirmTarget) {
+          closePopup(true);
+          return;
+        }
+        if (event.target === popup) {
+          closePopup(false);
+        }
+      }
+
+      function onKeyDown(event) {
+        if (popup.classList.contains('hidden')) {
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          closePopup(true);
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closePopup(false);
+        }
+      }
+
+      popup.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKeyDown);
+      popup.classList.remove('hidden');
+      if (confirmButton) {
+        confirmButton.focus();
+      }
+    });
+  }
+
   function isElementVisible(element) {
     if (!element || element.hidden) {
       return false;
@@ -1889,6 +1975,8 @@
     var htmlLang = String(document.documentElement.lang || 'ko').toLowerCase();
     var isEnglish = htmlLang.indexOf('en') === 0;
     var isChinese = htmlLang.indexOf('zh') === 0;
+    var loginRequiredTitle = isEnglish ? 'Login Required' : isChinese ? '需要登录' : '로그인 필요';
+    var infoTitle = isEnglish ? 'Information' : isChinese ? '通知' : '안내';
     var loginRequiredMessage = isEnglish
       ? 'Login is required. You will be redirected to the login page.'
       : isChinese
@@ -1903,15 +1991,28 @@
     loginRequiredButtons.forEach(function (button) {
       button.addEventListener('click', function (event) {
         event.preventDefault();
-        window.alert(loginRequiredMessage);
-        window.location.assign('/login');
+        showActionAlertPopup({
+          type: 'error',
+          title: loginRequiredTitle,
+          message: loginRequiredMessage,
+          confirmLabel: isEnglish ? 'OK' : isChinese ? '确定' : '확인'
+        }).then(function (confirmed) {
+          if (confirmed) {
+            window.location.assign('/login');
+          }
+        });
       });
     });
     var kakaoUnavailableButtons = document.querySelectorAll('[data-kakao-chat-unavailable]');
     kakaoUnavailableButtons.forEach(function (button) {
       button.addEventListener('click', function (event) {
         event.preventDefault();
-        window.alert(kakaoUnavailableMessage);
+        showActionAlertPopup({
+          type: 'success',
+          title: infoTitle,
+          message: kakaoUnavailableMessage,
+          confirmLabel: isEnglish ? 'OK' : isChinese ? '确定' : '확인'
+        });
       });
     });
   }
