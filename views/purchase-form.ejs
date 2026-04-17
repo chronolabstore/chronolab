@@ -263,7 +263,14 @@
     };
     const openAddressSearch = () => {
       if (!addressPopup || !addressEmbedHost) {
-        window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+        if (window.ChronoPopup && typeof window.ChronoPopup.alert === 'function') {
+          window.ChronoPopup.alert({
+            type: 'error',
+            title: isEn ? 'Notice' : '안내',
+            message: isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.',
+            confirmLabel: isEn ? 'OK' : '확인'
+          });
+        }
         return;
       }
       addressPopup.classList.remove('hidden');
@@ -349,13 +356,27 @@
         ensureDaumPostcodeLoaded(
           () => {
             if (!window.daum || !window.daum.Postcode) {
-              window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+              if (window.ChronoPopup && typeof window.ChronoPopup.alert === 'function') {
+                window.ChronoPopup.alert({
+                  type: 'error',
+                  title: isEn ? 'Notice' : '안내',
+                  message: isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.',
+                  confirmLabel: isEn ? 'OK' : '확인'
+                });
+              }
               return;
             }
             openAddressSearch();
           },
           () => {
-            window.alert(isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.');
+            if (window.ChronoPopup && typeof window.ChronoPopup.alert === 'function') {
+              window.ChronoPopup.alert({
+                type: 'error',
+                title: isEn ? 'Notice' : '안내',
+                message: isEn ? 'Address search is unavailable right now.' : '주소 검색 서비스를 불러올 수 없습니다.',
+                confirmLabel: isEn ? 'OK' : '확인'
+              });
+            }
           }
         );
       });

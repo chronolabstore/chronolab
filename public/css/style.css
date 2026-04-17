@@ -6083,6 +6083,22 @@ body.theme-night .review-policy-box p {
   flex-wrap: wrap;
 }
 
+.popup-prompt-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.popup-prompt-input:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.42);
+  outline-offset: 1px;
+}
+
 .popup-alert-backdrop {
   z-index: 25;
 }
