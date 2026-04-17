@@ -4231,7 +4231,7 @@
       <a href="/admin/sales?section=price<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'price' ? 'active' : '' %>"><%= isEn ? 'Price Table' : '가격표' %></a>
       <a href="/admin/sales?section=preorder<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'preorder' ? 'active' : '' %>"><%= isEn ? 'Pre-Order Settlement' : '선주문 정산' %></a>
       <a href="/admin/sales?section=editor<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'editor' ? 'active' : '' %>"><%= isEn ? 'Sales Sheets' : '매출 시트' %></a>
-      <a href="/admin/sales?section=daily<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'daily' ? 'active' : '' %>"><%= isEn ? 'Daily Summary' : '날짜별 전체 매출' %></a>
+      <a href="/admin/sales?section=daily<%= salesDateQuerySuffix %>" class="menu-pill <%= salesManageTab === 'daily' ? 'active' : '' %>"><%= isEn ? 'Daily Summary' : '전체매출' %></a>
     </div>
   </article>
 
@@ -6192,7 +6192,7 @@
   </script>
   <% } else { %>
   <article class="block-card sales-daily-card">
-    <h3><%= isEn ? 'Daily Total Sales' : '날짜별 전체 매출' %></h3>
+    <h3><%= isEn ? 'Daily Total Sales' : '전체매출' %></h3>
     <p class="muted-label">
       <%= isEn ? 'Automatically recorded from shop orders. Columns show sales/cost/margin/real margin by shop category and overall total.' : '쇼핑몰 주문건 기준으로 자동 기록됩니다. 쇼핑몰별 매출/원가/마진/실제마진과 전체 합계를 날짜별로 확인할 수 있습니다.' %>
     </p>

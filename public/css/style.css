@@ -3858,6 +3858,13 @@ body.admin-page select[size]:not([size='1']) {
 .sales-daily-table th,
 .sales-daily-table td {
   vertical-align: top;
+  text-align: center;
+}
+
+.sales-daily-table td > strong,
+.sales-daily-table td > .muted-label {
+  display: block;
+  text-align: center;
 }
 
 .sales-daily-metric-cell {
