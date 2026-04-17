@@ -2498,6 +2498,15 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   gap: 6px;
 }
 
+.footer-notice-card .footer-links {
+  gap: 4px;
+}
+
+.footer-notice-card .footer-links a {
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
 .footer-links li {
   overflow: hidden;
   white-space: nowrap;
