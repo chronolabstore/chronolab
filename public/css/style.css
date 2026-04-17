@@ -1699,6 +1699,13 @@ textarea {
   font-size: 0.75rem;
 }
 
+.mini-product .mini-product-group {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .inline-search {
   display: flex;
   gap: 8px;

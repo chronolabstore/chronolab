@@ -129,6 +129,7 @@
         <% } else { %>
           <div class="image-fallback">WATCH</div>
         <% } %>
+        <small class="mini-product-group"><%= item.category_group_label || item.category_group || '-' %></small>
         <strong><%= item.display_title || item.model %></strong>
         <span><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></span>
       </a>
