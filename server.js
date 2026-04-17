@@ -7304,6 +7304,80 @@ function sanitizePath(pathValue = '') {
   return sanitized.startsWith('/') ? sanitized : `/${sanitized}`;
 }
 
+function normalizeKakaoChannelPath(pathname = '') {
+  const rawPath = String(pathname || '').trim();
+  if (!rawPath) {
+    return '';
+  }
+  const normalized = rawPath.replace(/\/+/g, '/');
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return '';
+  }
+  const channelToken = String(segments[0] || '').trim();
+  if (!/^_[a-z0-9._-]{2,80}$/i.test(channelToken)) {
+    return '';
+  }
+  return `/${channelToken}/chat`;
+}
+
+function resolveKakaoChatUrl(contactInfo = '', explicitValue = '') {
+  const parseFromUrlText = (textValue = '') => {
+    const match = String(textValue || '').match(/https?:\/\/pf\.kakao\.com\/[^\s"'<>]+/iu);
+    if (!match) {
+      return '';
+    }
+    try {
+      const parsed = new URL(match[0]);
+      if (String(parsed.hostname || '').toLowerCase() !== 'pf.kakao.com') {
+        return '';
+      }
+      const pathValue = normalizeKakaoChannelPath(parsed.pathname || '');
+      if (!pathValue) {
+        return '';
+      }
+      return `https://pf.kakao.com${pathValue}`;
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const parseFromIdText = (textValue = '') => {
+    const text = String(textValue || '');
+    const atMatch = text.match(/@([a-z0-9._-]{2,80})/iu);
+    if (atMatch && atMatch[1]) {
+      return `https://pf.kakao.com/_${atMatch[1]}/chat`;
+    }
+
+    const namedMatch = text.match(/(?:카카오톡|kakaotalk|kakao)\s*[:：]\s*([a-z0-9._-]{2,80})/iu);
+    if (namedMatch && namedMatch[1]) {
+      const token = String(namedMatch[1] || '').trim();
+      if (token.startsWith('_')) {
+        return `https://pf.kakao.com/${token}/chat`;
+      }
+      return `https://pf.kakao.com/_${token}/chat`;
+    }
+
+    const underscoreTokenMatch = text.match(/(?:^|[\s,|/])(_[a-z0-9._-]{2,80})(?:$|[\s,|/])/iu);
+    if (underscoreTokenMatch && underscoreTokenMatch[1]) {
+      return `https://pf.kakao.com/${underscoreTokenMatch[1]}/chat`;
+    }
+    return '';
+  };
+
+  const explicitText = String(explicitValue || '').trim();
+  const contactText = String(contactInfo || '').trim();
+  const fromExplicitUrl = parseFromUrlText(explicitText);
+  if (fromExplicitUrl) {
+    return fromExplicitUrl;
+  }
+  const fromContactUrl = parseFromUrlText(contactText);
+  if (fromContactUrl) {
+    return fromContactUrl;
+  }
+  return parseFromIdText(`${explicitText} ${contactText}`.trim());
+}
+
 function normalizeHeroLeftBackgroundType(rawType = 'color') {
   return String(rawType || '').trim().toLowerCase() === 'image' ? 'image' : 'color';
 }
@@ -9001,6 +9075,8 @@ app.use((req, res, next) => {
   const visitCounts = getVisitCounts(today);
   const productCounts = getProductCounts(today);
   const postCounts = getPostCounts(today);
+  const contactInfoSetting = getSetting('contactInfo', '');
+  const kakaoChatUrl = resolveKakaoChatUrl(contactInfoSetting, getSetting('kakaoChatUrl', ''));
 
   res.locals.ctx = {
     assetVersion: ASSET_VERSION,
@@ -9011,6 +9087,7 @@ app.use((req, res, next) => {
     cartCount: memberCartCount,
     isAdmin: Boolean(req.user?.isAdmin),
     isPrimaryAdmin: Boolean(req.user?.isPrimaryAdmin),
+    isAdminRoute: req.path.startsWith('/admin'),
     isAdminPage: isAdminPage && Boolean(req.user?.isAdmin),
     csrfToken: req.session?.csrfToken || '',
     flash: getFlash(req),
@@ -9036,7 +9113,8 @@ app.use((req, res, next) => {
       signupBonusPoints: getSignupBonusPointsSetting(),
       reviewRewardPoints: getReviewRewardPointsSetting(),
       purchasePointRate: getLegacyPurchasePointRateSetting(),
-      contactInfo: getSetting('contactInfo', ''),
+      contactInfo: contactInfoSetting,
+      kakaoChatUrl,
       businessInfo: getSetting('businessInfo', ''),
       footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
       footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),
@@ -14051,6 +14129,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const dayThemeAssets = getThemeAssetConfig('day');
   const nightThemeAssets = getThemeAssetConfig('night');
   const heroSettings = getMainHeroSettings(lang);
+  const contactInfoSetting = getSetting('contactInfo', '');
+  const kakaoChatUrl = resolveKakaoChatUrl(contactInfoSetting, getSetting('kakaoChatUrl', ''));
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
     headerColor: dayThemeColors.headerColor,
@@ -14071,7 +14151,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     signupBonusPoints: getSignupBonusPointsSetting(),
     reviewRewardPoints: getReviewRewardPointsSetting(),
     purchasePointRate: getLegacyPurchasePointRateSetting(),
-    contactInfo: getSetting('contactInfo', ''),
+    contactInfo: contactInfoSetting,
+    kakaoChatUrl,
     businessInfo: getSetting('businessInfo', ''),
     footerBrandCopyKo: getSetting('footerBrandCopyKo', '심플하고 신뢰할 수 있는 시계 쇼핑.'),
     footerBrandCopyEn: getSetting('footerBrandCopyEn', 'Simple. Clean. Trusted watch shopping.'),

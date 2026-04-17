@@ -2547,6 +2547,80 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   text-overflow: ellipsis;
 }
 
+.floating-kakao-btn {
+  position: fixed;
+  right: clamp(12px, 2.2vw, 24px);
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  z-index: 1300;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(32, 32, 32, 0.18);
+  background: #fee500;
+  color: #1f1f1f;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.floating-kakao-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.99);
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.28);
+}
+
+.floating-kakao-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 7px 14px rgba(15, 23, 42, 0.22);
+}
+
+.floating-kakao-btn:focus-visible {
+  outline: 2px solid rgba(17, 24, 39, 0.55);
+  outline-offset: 2px;
+}
+
+.floating-kakao-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1f1f1f;
+  color: #fee500;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.floating-kakao-text {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .floating-kakao-btn {
+    width: 50px;
+    height: 50px;
+    padding: 0;
+    justify-content: center;
+    right: clamp(10px, 3.2vw, 16px);
+  }
+
+  .floating-kakao-btn .floating-kakao-text {
+    display: none;
+  }
+
+  .floating-kakao-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 0.78rem;
+  }
+}
+
 .footer-brand-visual {
   flex: 0 0 auto;
   min-height: 58px;

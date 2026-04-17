@@ -89,6 +89,19 @@
       </div>
     </div>
 
+    <% if (!ctx.isAdminRoute && ctx.settings.kakaoChatUrl) { %>
+      <a
+        href="<%= ctx.settings.kakaoChatUrl %>"
+        class="floating-kakao-btn"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="<%= ctx.lang === 'en' ? 'Open KakaoTalk chat' : '카카오톡 채팅 열기' %>"
+      >
+        <span class="floating-kakao-icon" aria-hidden="true">톡</span>
+        <span class="floating-kakao-text"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
+      </a>
+    <% } %>
+
     <script src="/assets/js/app.js?v=<%= encodeURIComponent(ctx.assetVersion) %>"></script>
   </body>
 </html>
