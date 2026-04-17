@@ -138,7 +138,16 @@
             </div>
           <% } %>
           <span><%= item.display_subtitle || '' %></span>
-          <small><%= item.display_meta || (item.case_material || '-') + ' / ' + (item.movement || '-') %></small>
+          <% const cardMetaText = String(
+            item.display_meta ||
+            [item.case_material, item.movement]
+              .map((value) => String(value || '').trim())
+              .filter(Boolean)
+              .join(' / ')
+          ).trim(); %>
+          <% if (cardMetaText) { %>
+            <small><%= cardMetaText %></small>
+          <% } %>
           <em><%= Number(item.price || 0) > 0 ? `₩${ctx.formatPrice(item.price)}` : (isEn ? 'Price on request' : '가격문의') %></em>
         </div>
       </a>
