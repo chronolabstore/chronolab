@@ -2881,16 +2881,6 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   padding: 0 5px;
 }
 
-.support-admin-thread-meta {
-  margin: 0;
-  font-size: 0.7rem;
-  color: var(--muted);
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .support-admin-thread-time {
   margin: 0;
   font-size: 0.66rem;

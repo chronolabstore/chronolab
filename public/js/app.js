@@ -2054,16 +2054,11 @@
         }
         button.appendChild(head);
 
-        var meta = document.createElement('p');
-        meta.className = 'support-admin-thread-meta';
-        meta.textContent = document.documentElement.lang === 'en'
-          ? 'Unread: ' + String(Math.max(0, Number(thread.unreadCount || 0)))
-          : '미확인: ' + String(Math.max(0, Number(thread.unreadCount || 0)));
-        button.appendChild(meta);
-
         var time = document.createElement('p');
         time.className = 'support-admin-thread-time';
-        time.textContent = formatTime(thread.lastMessageAt || thread.updatedAt || thread.createdAt);
+        time.textContent = formatTime(
+          thread.lastMemberMessageAt || thread.lastMessageAt || thread.updatedAt || thread.createdAt
+        );
         button.appendChild(time);
 
         threadListRoot.appendChild(button);
