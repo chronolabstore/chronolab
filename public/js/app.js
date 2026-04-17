@@ -1636,6 +1636,612 @@
     }
   }
 
+  function initMemberSupportChat() {
+    var openButton = document.querySelector('[data-member-chat-open]');
+    var panel = document.querySelector('[data-member-chat-panel]');
+    if (!openButton || !panel) {
+      return;
+    }
+
+    var closeButton = panel.querySelector('[data-member-chat-close]');
+    var messagesRoot = panel.querySelector('[data-member-chat-messages]');
+    var assignedAdminLabel = panel.querySelector('[data-member-chat-assigned]');
+    var form = panel.querySelector('[data-member-chat-form]');
+    var textarea = form ? form.querySelector('textarea[name="message"]') : null;
+    var submitButton = form ? form.querySelector('button[type="submit"]') : null;
+    var unreadBadge = openButton.querySelector('[data-member-chat-unread-badge]');
+    var threadId = 0;
+    var isPanelOpen = false;
+    var isSubmitInFlight = false;
+    var lastSubmittedSignature = '';
+    var lastSubmittedAt = 0;
+    var pollTimerId = null;
+    var unreadPollTimerId = null;
+    var isLoadingThread = false;
+
+    function formatTime(rawValue) {
+      var text = String(rawValue || '').trim();
+      if (!text) {
+        return '-';
+      }
+      return text.replace('T', ' ').replace(/Z$/i, '').slice(0, 16);
+    }
+
+    function setUnreadBadge(count) {
+      if (!unreadBadge) {
+        return;
+      }
+      var safeCount = Math.max(0, Number(count || 0));
+      unreadBadge.textContent = safeCount > 99 ? '99+' : String(safeCount);
+      unreadBadge.classList.toggle('hidden', safeCount <= 0);
+    }
+
+    function createMessageBubble(message) {
+      var role = String(message && message.senderRole ? message.senderRole : '').toLowerCase();
+      var isMember = role === 'member';
+      var item = document.createElement('article');
+      item.className = 'support-chat-msg ' + (isMember ? 'member' : 'admin');
+
+      var body = document.createElement('div');
+      body.textContent = String(message && message.messageText ? message.messageText : '');
+      item.appendChild(body);
+
+      var meta = document.createElement('small');
+      meta.className = 'support-chat-msg-meta';
+      meta.textContent = formatTime(message && message.createdAt ? message.createdAt : '');
+      item.appendChild(meta);
+
+      return item;
+    }
+
+    function renderMessages(messages) {
+      if (!messagesRoot) {
+        return;
+      }
+      messagesRoot.innerHTML = '';
+      var list = Array.isArray(messages) ? messages : [];
+      if (!list.length) {
+        var empty = document.createElement('p');
+        empty.className = 'support-chat-empty';
+        empty.textContent = document.documentElement.lang === 'en'
+          ? 'Start a chat with admin.'
+          : '관리자와 상담을 시작해보세요.';
+        messagesRoot.appendChild(empty);
+        return;
+      }
+      list.forEach(function (message) {
+        messagesRoot.appendChild(createMessageBubble(message));
+      });
+      messagesRoot.scrollTop = messagesRoot.scrollHeight;
+    }
+
+    function fetchJson(url, options) {
+      return window.fetch(
+        url,
+        Object.assign(
+          {
+            headers: {
+              Accept: 'application/json'
+            }
+          },
+          options || {}
+        )
+      ).then(function (response) {
+        return response
+          .json()
+          .catch(function () {
+            return { ok: false };
+          })
+          .then(function (payload) {
+            if (!response.ok || !payload || payload.ok === false) {
+              throw new Error((payload && payload.message) || 'request_failed');
+            }
+            return payload;
+          });
+      });
+    }
+
+    function refreshUnreadCount() {
+      fetchJson('/api/support-chat/unread-count')
+        .then(function (payload) {
+          setUnreadBadge(payload.unreadCount || 0);
+        })
+        .catch(function () {});
+    }
+
+    function loadThread() {
+      if (isLoadingThread) {
+        return Promise.resolve();
+      }
+      isLoadingThread = true;
+      return fetchJson('/api/support-chat/thread')
+        .then(function (payload) {
+          var nextThreadId = Number(payload && payload.thread ? payload.thread.id : 0);
+          threadId = Number.isFinite(nextThreadId) ? nextThreadId : 0;
+          if (assignedAdminLabel) {
+            assignedAdminLabel.textContent = document.documentElement.lang === 'en'
+              ? 'Assigned: Chrono Lab Admin'
+              : '담당: Chrono Lab 관리자';
+          }
+          renderMessages(payload.messages || []);
+          setUnreadBadge(payload.unreadCount || 0);
+        })
+        .catch(function () {})
+        .finally(function () {
+          isLoadingThread = false;
+        });
+    }
+
+    function stopPanelPolling() {
+      if (pollTimerId) {
+        window.clearInterval(pollTimerId);
+        pollTimerId = null;
+      }
+    }
+
+    function startPanelPolling() {
+      stopPanelPolling();
+      pollTimerId = window.setInterval(function () {
+        if (!isPanelOpen) {
+          return;
+        }
+        loadThread();
+      }, 5000);
+    }
+
+    function openPanel() {
+      isPanelOpen = true;
+      panel.classList.remove('hidden');
+      loadThread().then(function () {
+        if (textarea) {
+          textarea.focus();
+        }
+      });
+      startPanelPolling();
+    }
+
+    function closePanel() {
+      isPanelOpen = false;
+      panel.classList.add('hidden');
+      stopPanelPolling();
+    }
+
+    openButton.addEventListener('click', function () {
+      if (isPanelOpen) {
+        closePanel();
+        return;
+      }
+      openPanel();
+    });
+
+    if (closeButton) {
+      closeButton.addEventListener('click', closePanel);
+    }
+
+    if (form && textarea) {
+      textarea.addEventListener('keydown', function (event) {
+        if (event.isComposing || Number(event.keyCode) === 229 || event.repeat) {
+          return;
+        }
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          if (isSubmitInFlight) {
+            return;
+          }
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+      });
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (isSubmitInFlight) {
+          return;
+        }
+        var messageText = String(textarea.value || '').trim();
+        if (!messageText) {
+          return;
+        }
+        var submitSignature = String(threadId || 0) + '::' + messageText;
+        var now = Date.now();
+        if (submitSignature === lastSubmittedSignature && now - lastSubmittedAt < 1200) {
+          return;
+        }
+        lastSubmittedSignature = submitSignature;
+        lastSubmittedAt = now;
+        isSubmitInFlight = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+        }
+        fetchJson('/api/support-chat/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ message: messageText })
+        })
+          .then(function () {
+            textarea.value = '';
+            return loadThread();
+          })
+          .catch(function () {})
+          .finally(function () {
+            isSubmitInFlight = false;
+            if (submitButton) {
+              submitButton.disabled = false;
+            }
+          });
+      });
+    }
+
+    unreadPollTimerId = window.setInterval(function () {
+      if (isPanelOpen) {
+        return;
+      }
+      refreshUnreadCount();
+    }, 8000);
+
+    refreshUnreadCount();
+  }
+
+  function initAdminSupportChat() {
+    var openButtons = Array.prototype.slice.call(document.querySelectorAll('[data-admin-chat-open]'));
+    var panel = document.querySelector('[data-admin-chat-panel]');
+    if (!openButtons.length || !panel) {
+      return;
+    }
+
+    var closeButton = panel.querySelector('[data-admin-chat-close]');
+    var threadListRoot = panel.querySelector('[data-admin-chat-thread-list]');
+    var threadTitleRoot = panel.querySelector('[data-admin-chat-thread-title]');
+    var messagesRoot = panel.querySelector('[data-admin-chat-messages]');
+    var form = panel.querySelector('[data-admin-chat-form]');
+    var textarea = form ? form.querySelector('textarea[name="message"]') : null;
+    var submitButton = form ? form.querySelector('button[type="submit"]') : null;
+    var floatingUnreadBadge = document.querySelector('[data-admin-chat-unread-badge]');
+
+    var threads = [];
+    var selectedThreadId = 0;
+    var isPanelOpen = false;
+    var isSubmitInFlight = false;
+    var lastSubmittedSignature = '';
+    var lastSubmittedAt = 0;
+    var threadPollTimerId = null;
+    var unreadPollTimerId = null;
+
+    function formatTime(rawValue) {
+      var text = String(rawValue || '').trim();
+      if (!text) {
+        return '-';
+      }
+      return text.replace('T', ' ').replace(/Z$/i, '').slice(0, 16);
+    }
+
+    function setUnreadBadges(count) {
+      var safeCount = Math.max(0, Number(count || 0));
+      var textValue = safeCount > 99 ? '99+' : String(safeCount);
+      [floatingUnreadBadge].forEach(function (badge) {
+        if (!badge) {
+          return;
+        }
+        badge.textContent = textValue;
+        badge.classList.toggle('hidden', safeCount <= 0);
+      });
+    }
+
+    function fetchJson(url, options) {
+      return window.fetch(
+        url,
+        Object.assign(
+          {
+            headers: {
+              Accept: 'application/json'
+            }
+          },
+          options || {}
+        )
+      ).then(function (response) {
+        return response
+          .json()
+          .catch(function () {
+            return { ok: false };
+          })
+          .then(function (payload) {
+            if (!response.ok || !payload || payload.ok === false) {
+              throw new Error((payload && payload.message) || 'request_failed');
+            }
+            return payload;
+          });
+      });
+    }
+
+    function renderThreadTitle(thread) {
+      if (!threadTitleRoot) {
+        return;
+      }
+      threadTitleRoot.innerHTML = '';
+      if (!thread || !thread.id) {
+        var emptyTitle = document.createElement('strong');
+        emptyTitle.textContent = document.documentElement.lang === 'en'
+          ? 'Select a member chat'
+          : '회원 채팅을 선택하세요';
+        threadTitleRoot.appendChild(emptyTitle);
+        return;
+      }
+
+      var titleStrong = document.createElement('strong');
+      var name = thread.memberNickname || thread.memberFullName || thread.memberUsername || '-';
+      titleStrong.textContent = name;
+      var subtitle = document.createElement('small');
+      subtitle.textContent = (document.documentElement.lang === 'en' ? 'Account' : '계정') + ': ' + (thread.memberUsername || '-');
+      threadTitleRoot.appendChild(titleStrong);
+      threadTitleRoot.appendChild(subtitle);
+    }
+
+    function renderMessages(messages) {
+      if (!messagesRoot) {
+        return;
+      }
+      messagesRoot.innerHTML = '';
+      var list = Array.isArray(messages) ? messages : [];
+      if (!list.length) {
+        var empty = document.createElement('p');
+        empty.className = 'support-chat-empty';
+        empty.textContent = document.documentElement.lang === 'en'
+          ? 'No messages yet.'
+          : '아직 메시지가 없습니다.';
+        messagesRoot.appendChild(empty);
+        return;
+      }
+      list.forEach(function (message) {
+        var role = String(message && message.senderRole ? message.senderRole : '').toLowerCase();
+        var item = document.createElement('article');
+        item.className = 'support-chat-msg ' + (role === 'admin' ? 'member' : 'admin');
+        var body = document.createElement('div');
+        body.textContent = String(message && message.messageText ? message.messageText : '');
+        item.appendChild(body);
+        var meta = document.createElement('small');
+        meta.className = 'support-chat-msg-meta';
+        meta.textContent = formatTime(message && message.createdAt ? message.createdAt : '');
+        item.appendChild(meta);
+        messagesRoot.appendChild(item);
+      });
+      messagesRoot.scrollTop = messagesRoot.scrollHeight;
+    }
+
+    function setComposerEnabled(enabled) {
+      var canUse = Boolean(enabled && selectedThreadId > 0);
+      if (textarea) {
+        textarea.disabled = !canUse;
+      }
+      if (submitButton) {
+        submitButton.disabled = !canUse;
+      }
+    }
+
+    function renderThreadList() {
+      if (!threadListRoot) {
+        return;
+      }
+      threadListRoot.innerHTML = '';
+      if (!threads.length) {
+        var empty = document.createElement('p');
+        empty.className = 'support-chat-empty';
+        empty.textContent = document.documentElement.lang === 'en'
+          ? 'No member chats yet.'
+          : '아직 회원 채팅이 없습니다.';
+        threadListRoot.appendChild(empty);
+        return;
+      }
+      threads.forEach(function (thread) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'support-admin-thread-item' + (thread.id === selectedThreadId ? ' active' : '');
+        button.setAttribute('data-thread-id', String(thread.id));
+
+        var head = document.createElement('div');
+        head.className = 'support-admin-thread-item-head';
+        var strong = document.createElement('strong');
+        strong.textContent = thread.memberUsername || '-';
+        head.appendChild(strong);
+        if (Number(thread.unreadCount || 0) > 0) {
+          var badge = document.createElement('span');
+          badge.className = 'support-admin-thread-unread';
+          badge.textContent = Number(thread.unreadCount) > 99 ? '99+' : String(thread.unreadCount);
+          head.appendChild(badge);
+        }
+        button.appendChild(head);
+
+        var time = document.createElement('p');
+        time.className = 'support-admin-thread-time';
+        time.textContent = formatTime(
+          thread.lastMemberMessageAt || thread.lastMessageAt || thread.updatedAt || thread.createdAt
+        );
+        button.appendChild(time);
+
+        threadListRoot.appendChild(button);
+      });
+    }
+
+    function refreshThreads() {
+      return fetchJson('/api/admin/support-chat/threads')
+        .then(function (payload) {
+          threads = Array.isArray(payload.threads) ? payload.threads : [];
+          setUnreadBadges(payload.unreadCount || 0);
+          if (!threads.some(function (item) { return item.id === selectedThreadId; })) {
+            selectedThreadId = threads.length ? Number(threads[0].id || 0) : 0;
+          }
+          renderThreadList();
+          if (selectedThreadId > 0) {
+            return loadThreadMessages(selectedThreadId);
+          }
+          renderThreadTitle(null);
+          renderMessages([]);
+          setComposerEnabled(false);
+          return null;
+        })
+        .catch(function () {
+          return null;
+        });
+    }
+
+    function loadThreadMessages(threadId) {
+      var safeId = Number(threadId || 0);
+      if (!safeId) {
+        return Promise.resolve();
+      }
+      return fetchJson('/api/admin/support-chat/thread/' + encodeURIComponent(String(safeId)) + '/messages')
+        .then(function (payload) {
+          var thread = payload.thread || null;
+          renderThreadTitle(thread);
+          renderMessages(payload.messages || []);
+          setUnreadBadges(payload.unreadCount || 0);
+          setComposerEnabled(true);
+        })
+        .catch(function () {});
+    }
+
+    function refreshUnreadOnly() {
+      fetchJson('/api/admin/support-chat/unread-count')
+        .then(function (payload) {
+          setUnreadBadges(payload.unreadCount || 0);
+        })
+        .catch(function () {});
+    }
+
+    function stopPanelPolling() {
+      if (threadPollTimerId) {
+        window.clearInterval(threadPollTimerId);
+        threadPollTimerId = null;
+      }
+    }
+
+    function startPanelPolling() {
+      stopPanelPolling();
+      threadPollTimerId = window.setInterval(function () {
+        if (!isPanelOpen) {
+          return;
+        }
+        refreshThreads();
+      }, 5000);
+    }
+
+    function openPanel() {
+      isPanelOpen = true;
+      panel.classList.remove('hidden');
+      refreshThreads().then(function () {
+        if (textarea && !textarea.disabled) {
+          textarea.focus();
+        }
+      });
+      startPanelPolling();
+    }
+
+    function closePanel() {
+      isPanelOpen = false;
+      panel.classList.add('hidden');
+      stopPanelPolling();
+    }
+
+    openButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (isPanelOpen) {
+          closePanel();
+          return;
+        }
+        openPanel();
+      });
+    });
+
+    if (closeButton) {
+      closeButton.addEventListener('click', closePanel);
+    }
+
+    if (threadListRoot) {
+      threadListRoot.addEventListener('click', function (event) {
+        var target = event.target.closest('[data-thread-id]');
+        if (!target) {
+          return;
+        }
+        var nextThreadId = Number(target.getAttribute('data-thread-id') || 0);
+        if (!nextThreadId || nextThreadId === selectedThreadId) {
+          return;
+        }
+        selectedThreadId = nextThreadId;
+        renderThreadList();
+        loadThreadMessages(selectedThreadId);
+      });
+    }
+
+    if (form && textarea) {
+      textarea.addEventListener('keydown', function (event) {
+        if (event.isComposing || Number(event.keyCode) === 229 || event.repeat) {
+          return;
+        }
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          if (isSubmitInFlight) {
+            return;
+          }
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+      });
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (isSubmitInFlight) {
+          return;
+        }
+        var messageText = String(textarea.value || '').trim();
+        if (!messageText || !selectedThreadId) {
+          return;
+        }
+        var submitSignature = String(selectedThreadId || 0) + '::' + messageText;
+        var now = Date.now();
+        if (submitSignature === lastSubmittedSignature && now - lastSubmittedAt < 1200) {
+          return;
+        }
+        lastSubmittedSignature = submitSignature;
+        lastSubmittedAt = now;
+        isSubmitInFlight = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+        }
+        fetchJson('/api/admin/support-chat/thread/' + encodeURIComponent(String(selectedThreadId)) + '/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ message: messageText })
+        })
+          .then(function () {
+            textarea.value = '';
+            return loadThreadMessages(selectedThreadId).then(function () {
+              return refreshThreads();
+            });
+          })
+          .catch(function () {})
+          .finally(function () {
+            isSubmitInFlight = false;
+            if (submitButton) {
+              submitButton.disabled = false;
+            }
+          });
+      });
+    }
+
+    unreadPollTimerId = window.setInterval(function () {
+      if (isPanelOpen) {
+        return;
+      }
+      refreshUnreadOnly();
+    }, 8000);
+    refreshUnreadOnly();
+  }
+
   function initApp() {
     initCsrfRequestProtection();
     initDetailsFieldAutofocus();
@@ -1645,6 +2251,8 @@
     initInlineImagePreviews();
     initImageLightbox();
     initPasswordVisibilityToggles();
+    initMemberSupportChat();
+    initAdminSupportChat();
     initPrimaryInputAutofocus();
   }
 
