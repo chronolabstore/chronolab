@@ -3528,6 +3528,20 @@ body.admin-page select[size]:not([size='1']) {
   margin: 0;
 }
 
+.admin-order-info-lines {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-order-info-lines small {
+  color: var(--muted);
+}
+
+.admin-order-status-date-list {
+  justify-items: start;
+  text-align: left;
+}
+
 .mypage-tab-row {
   margin-top: 2px;
 }

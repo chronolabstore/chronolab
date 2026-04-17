@@ -320,6 +320,17 @@
   const activeSalesDateFrom = String(salesDateFrom || salesDaily.filters?.dateFrom || '');
   const activeSalesDateTo = String(salesDateTo || salesDaily.filters?.dateTo || '');
   const salesDateQuerySuffix = `${activeSalesGroupFilter && activeSalesGroupFilter !== 'all' ? `&salesGroup=${encodeURIComponent(activeSalesGroupFilter)}` : ''}${activeSalesDateFrom ? `&salesDateFrom=${encodeURIComponent(activeSalesDateFrom)}` : ''}${activeSalesDateTo ? `&salesDateTo=${encodeURIComponent(activeSalesDateTo)}` : ''}`;
+  const formatDateTimeToMinute = (value) => {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    const normalized = text.replace('T', ' ').replace(/Z$/u, '').replace(/\.\d+$/u, '');
+    const matched = normalized.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/u);
+    if (matched) return `${matched[1]} ${matched[2]}`;
+    if (normalized.length >= 16) return normalized.slice(0, 16);
+    return normalized;
+  };
+  const formatKrw = (value) => `₩${Number(value || 0).toLocaleString('ko-KR')}`;
+  const formatPoint = (value) => `${Number(value || 0).toLocaleString('ko-KR')}P`;
 %>
 
 <section class="admin-grid single <%= tab === 'sales' ? 'admin-grid-sales' : '' %>">
@@ -4130,13 +4141,17 @@
             <tr>
               <td><%= item.order_no %></td>
               <td>
-                <small><%= item.category_group_label || item.category_group %></small><br />
-                <strong><%= item.brand %> <%= item.model %> <%= item.sub_model %></strong><br />
-                <strong><%= item.buyer_name %></strong><br />
-                <small><%= item.buyer_contact %></small><br />
-                <small><%= isEn ? 'Customs No.' : '통관번호' %>: <%= item.customs_clearance_no || '-' %></small><br />
-                <small><%= item.buyer_address %></small><br />
-                <small><%= isEn ? 'Depositor' : '입금자명' %>: <%= item.bank_depositor_name %></small>
+                <% const usedPoints = Math.max(0, Number(item.used_points || 0)); %>
+                <% const payablePrice = Math.max(0, Number(item.total_price || 0)); %>
+                <% const salePrice = Math.max(0, payablePrice + usedPoints); %>
+                <div class="admin-order-info-lines">
+                  <small><%= isEn ? 'Shop Category' : '쇼핑몰 분류' %>: <%= item.category_group_label || item.category_group || '-' %></small>
+                  <small><%= isEn ? 'Post Title' : '쇼핑몰 게시글 타이틀' %>: <%= item.product_title || `${item.brand || ''} ${item.model || ''} ${item.sub_model || ''}`.trim() || '-' %></small>
+                  <small><%= isEn ? 'Sale / Used Points / Payable' : '판매가격 / 사용 포인트 / 결제 가격' %>: <%= formatKrw(salePrice) %> / <%= formatPoint(usedPoints) %> / <%= formatKrw(payablePrice) %></small>
+                  <small><%= isEn ? 'Phone / Customs No.' : '전화번호 / 통관번호' %>: <%= item.buyer_contact || '-' %> / <%= item.customs_clearance_no || '-' %></small>
+                  <small><%= isEn ? 'Address' : '주소' %>: <%= item.buyer_address || '-' %></small>
+                  <small><%= isEn ? 'Depositor' : '입금자명' %>: <%= item.bank_depositor_name || '-' %></small>
+                </div>
               </td>
               <td>
                 <strong><%= item.status_label %></strong>
@@ -4144,37 +4159,12 @@
                   <br />
                   <small><%= item.status_detail %></small>
                 <% } %>
-                <% if (item.checked_at || item.ready_to_ship_at || item.shipping_started_at || item.delivered_at) { %>
-                  <br />
-                  <small><%= isEn ? 'Timeline' : '타임라인' %>:</small>
-                  <ul class="status-mini-list">
-                    <% if (item.checked_at) { %>
-                      <li><small><%= isEn ? 'Payment Confirmed' : '입금확인' %> · <%= item.checked_at.slice(0, 16) %></small></li>
-                    <% } %>
-                    <% if (item.ready_to_ship_at) { %>
-                      <li><small><%= isEn ? 'Shipment Complete' : '출고완료' %> · <%= item.ready_to_ship_at.slice(0, 16) %></small></li>
-                    <% } %>
-                    <% if (item.shipping_started_at) { %>
-                      <li><small><%= isEn ? 'Shipping Started' : '배송시작' %> · <%= item.shipping_started_at.slice(0, 16) %></small></li>
-                    <% } %>
-                    <% if (item.delivered_at) { %>
-                      <li><small><%= isEn ? 'Delivered' : '배송완료' %> · <%= item.delivered_at.slice(0, 16) %></small></li>
-                    <% } %>
-                  </ul>
-                <% } %>
-                <% if (item.status_logs && item.status_logs.length > 0) { %>
-                  <small><%= isEn ? 'Latest events' : '최근 이력' %>:</small>
-                  <ul class="status-mini-list">
-                    <% item.status_logs.forEach((log) => { %>
-                      <li>
-                        <small>
-                          <%= log.created_at ? log.created_at.slice(0, 16) : '-' %> ·
-                          <%= log.from_status_label ? `${log.from_status_label} → ` : '' %><%= log.to_status_label || log.to_status %>
-                        </small>
-                      </li>
-                    <% }) %>
-                  </ul>
-                <% } %>
+                <ul class="status-mini-list admin-order-status-date-list">
+                  <li><small><%= isEn ? 'Requested At' : '신청 날짜' %> · <%= formatDateTimeToMinute(item.created_at) %></small></li>
+                  <li><small><%= isEn ? 'Payment Confirmed At' : '입금확인 날짜' %> · <%= formatDateTimeToMinute(item.checked_at) %></small></li>
+                  <li><small><%= isEn ? 'Shipped At' : '출고 날짜' %> · <%= formatDateTimeToMinute(item.ready_to_ship_at || item.shipping_started_at) %></small></li>
+                  <li><small><%= isEn ? 'Delivered At' : '수령 날짜' %> · <%= formatDateTimeToMinute(item.delivered_at) %></small></li>
+                </ul>
               </td>
               <td>
                 <% if (item.tracking_number) { %>
