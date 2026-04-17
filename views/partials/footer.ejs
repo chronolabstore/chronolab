@@ -1,46 +1,54 @@
 <footer class="site-footer">
   <% const footerBrandCopyKo = String(ctx.settings.footerBrandCopyKo || '').trim() || '심플하고 신뢰할 수 있는 시계 쇼핑.'; %>
   <% const footerBrandCopyEn = String(ctx.settings.footerBrandCopyEn || '').trim() || 'Simple. Clean. Trusted watch shopping.'; %>
+  <% const footerNoticeRows = Array.from({ length: 6 }, (_, index) => ctx.footerNotices[index] || null); %>
   <div class="footer-grid">
     <section class="footer-card footer-brand-card">
       <h4>Brand</h4>
-      <div class="footer-brand-visual">
-        <% if (ctx.settings.footerLogoPath) { %>
-          <img src="<%= ctx.settings.footerLogoPath %>" alt="footer logo" class="footer-logo" />
-        <% } else { %>
-          <div class="footer-logo-fallback">Chrono Lab</div>
-        <% } %>
+      <div class="footer-brand-card-body">
+        <div class="footer-brand-visual">
+          <% if (ctx.settings.footerLogoPath) { %>
+            <img src="<%= ctx.settings.footerLogoPath %>" alt="footer logo" class="footer-logo" />
+          <% } else { %>
+            <div class="footer-logo-fallback">Chrono Lab</div>
+          <% } %>
+        </div>
+        <p class="footer-small footer-brand-copy"><%= ctx.lang === 'en' ? footerBrandCopyEn : footerBrandCopyKo %></p>
       </div>
-      <p class="footer-small footer-brand-copy"><%= ctx.lang === 'en' ? footerBrandCopyEn : footerBrandCopyKo %></p>
     </section>
 
-    <section class="footer-card">
+    <section class="footer-card footer-site-info-card">
       <h4><%= ctx.lang === 'en' ? 'Site Info' : '사이트 정보' %></h4>
-      <p class="footer-small"><%= ctx.settings.businessInfo %></p>
-      <p class="footer-small"><%= ctx.settings.contactInfo %></p>
+      <div class="footer-site-info-body">
+        <p class="footer-small"><%= ctx.settings.businessInfo %></p>
+        <p class="footer-small"><%= ctx.settings.contactInfo %></p>
+      </div>
     </section>
 
     <section class="footer-card footer-notice-card">
       <h4><%= ctx.lang === 'en' ? 'Notice' : '공지사항' %></h4>
-      <% if (ctx.footerNotices.length === 0) { %>
-        <p class="footer-small"><%= ctx.lang === 'en' ? 'No notices yet.' : '등록된 공지가 없습니다.' %></p>
-      <% } %>
-      <ul class="footer-links">
-        <% ctx.footerNotices.forEach((notice) => { %>
-          <li><a href="/notice/<%= notice.id %>"><%= notice.title %></a></li>
+      <ul class="footer-notice-list">
+        <% footerNoticeRows.forEach((notice) => { %>
+          <li class="footer-notice-row">
+            <% if (notice) { %>
+              <a href="/notice/<%= notice.id %>" class="footer-data-row"><%= notice.title %></a>
+            <% } else { %>
+              <span class="footer-data-row footer-data-placeholder">-</span>
+            <% } %>
+          </li>
         <% }) %>
       </ul>
     </section>
 
-    <section class="footer-card">
+    <section class="footer-card footer-metrics-card">
       <h4><%= ctx.lang === 'en' ? 'Metrics' : '집계' %></h4>
       <div class="footer-metrics-list">
-        <p class="footer-small"><%= ctx.t('footerVisitorsToday') %> : <strong><%= ctx.metrics.visitToday %></strong></p>
-        <p class="footer-small"><%= ctx.t('footerVisitorsTotal') %> : <strong><%= ctx.metrics.visitTotal %></strong></p>
-        <p class="footer-small"><%= ctx.t('footerProductsToday') %> : <strong><%= ctx.metrics.productToday || 0 %></strong></p>
-        <p class="footer-small"><%= ctx.t('footerProductsTotal') %> : <strong><%= ctx.metrics.productTotal || 0 %></strong></p>
-        <p class="footer-small"><%= ctx.t('footerPostsToday') %> : <strong><%= ctx.metrics.postToday %></strong></p>
-        <p class="footer-small"><%= ctx.t('footerPostsTotal') %> : <strong><%= ctx.metrics.postTotal %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerVisitorsToday') %> : <strong><%= ctx.metrics.visitToday %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerVisitorsTotal') %> : <strong><%= ctx.metrics.visitTotal %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerProductsToday') %> : <strong><%= ctx.metrics.productToday || 0 %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerProductsTotal') %> : <strong><%= ctx.metrics.productTotal || 0 %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerPostsToday') %> : <strong><%= ctx.metrics.postToday %></strong></p>
+        <p class="footer-data-row"><%= ctx.t('footerPostsTotal') %> : <strong><%= ctx.metrics.postTotal %></strong></p>
       </div>
     </section>
   </div>
