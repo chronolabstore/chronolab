@@ -97,8 +97,15 @@
         rel="noopener noreferrer"
         aria-label="<%= ctx.lang === 'en' ? 'Open KakaoTalk chat' : '카카오톡 채팅 열기' %>"
       >
-        <span class="floating-kakao-icon" aria-hidden="true">톡</span>
-        <span class="floating-kakao-text"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
+        <span class="floating-kakao-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 3C7.03 3 3 6.41 3 10.62c0 2.63 1.56 4.95 3.96 6.33L6.08 21l4.24-2.32c.55.09 1.11.14 1.68.14 4.97 0 9-3.41 9-7.62S16.97 3 12 3Z" />
+            <circle cx="9.1" cy="10.9" r="1.1" />
+            <circle cx="12" cy="10.9" r="1.1" />
+            <circle cx="14.9" cy="10.9" r="1.1" />
+          </svg>
+        </span>
+        <span class="floating-kakao-label"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
       </a>
     <% } %>
 
