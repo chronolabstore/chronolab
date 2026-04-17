@@ -1758,11 +1758,10 @@
         .then(function (payload) {
           var nextThreadId = Number(payload && payload.thread ? payload.thread.id : 0);
           threadId = Number.isFinite(nextThreadId) ? nextThreadId : 0;
-          if (assignedAdminLabel && payload && payload.thread) {
-            var assignedName = String(payload.thread.assignedAdminUsername || payload.thread.assignedAdminName || 'admin1');
+          if (assignedAdminLabel) {
             assignedAdminLabel.textContent = document.documentElement.lang === 'en'
-              ? 'Connected: ' + assignedName
-              : '담당: ' + assignedName;
+              ? 'Assigned: Chrono Lab Admin'
+              : '담당: Chrono Lab 관리자';
           }
           renderMessages(payload.messages || []);
           setUnreadBadge(payload.unreadCount || 0);

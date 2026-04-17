@@ -2677,6 +2677,14 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   fill: currentColor;
 }
 
+.floating-support-icon svg.floating-support-headset {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .floating-support-label {
   position: absolute;
   width: 1px;
