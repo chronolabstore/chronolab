@@ -89,11 +89,13 @@
       </div>
     </div>
 
-    <% if (ctx.currentUser && !ctx.currentUser.isAdmin) { %>
+    <% const canUseMemberSupportChat = Boolean(ctx.currentUser && !ctx.currentUser.isAdmin); %>
+    <% if (!ctx.isAdminRoute && (!ctx.currentUser || !ctx.currentUser.isAdmin)) { %>
       <button
         type="button"
         class="floating-support-btn floating-support-btn-member"
         data-member-chat-open
+        <% if (!canUseMemberSupportChat) { %>data-login-required-action="member-support-chat"<% } %>
         aria-label="<%= ctx.lang === 'en' ? 'Open support chat' : '상담 채팅 열기' %>"
       >
         <span class="floating-support-icon" aria-hidden="true">
@@ -105,31 +107,33 @@
           </svg>
         </span>
         <span class="floating-support-label"><%= ctx.lang === 'en' ? 'Support Chat' : '상담 채팅' %></span>
-        <span class="floating-support-badge <%= Number(ctx.supportChatMemberUnreadCount || 0) > 0 ? '' : 'hidden' %>" data-member-chat-unread-badge>
-          <%= Number(ctx.supportChatMemberUnreadCount || 0) > 99 ? '99+' : Number(ctx.supportChatMemberUnreadCount || 0) %>
+        <span class="floating-support-badge <%= canUseMemberSupportChat && Number(ctx.supportChatMemberUnreadCount || 0) > 0 ? '' : 'hidden' %>" data-member-chat-unread-badge>
+          <%= canUseMemberSupportChat && Number(ctx.supportChatMemberUnreadCount || 0) > 99 ? '99+' : Number(ctx.supportChatMemberUnreadCount || 0) %>
         </span>
       </button>
 
-      <section class="support-chat-panel support-chat-panel-member hidden" data-member-chat-panel>
-        <header class="support-chat-header">
-          <div class="support-chat-header-text">
-            <strong><%= ctx.lang === 'en' ? '1:1 Support Chat' : '1:1 상담 채팅' %></strong>
-            <small data-member-chat-assigned><%= ctx.lang === 'en' ? 'Assigned: Chrono Lab Admin' : '담당: Chrono Lab 관리자' %></small>
-          </div>
-          <button type="button" class="chip" data-member-chat-close><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
-        </header>
-        <div class="support-chat-body" data-member-chat-messages></div>
-        <form class="support-chat-composer" data-member-chat-form>
-          <textarea
-            name="message"
-            rows="1"
-            maxlength="1000"
-            placeholder="<%= ctx.lang === 'en' ? 'Type your message...' : '메시지를 입력하세요...' %>"
-            required
-          ></textarea>
-          <button type="submit" class="chip dark"><%= ctx.lang === 'en' ? 'Send' : '전송' %></button>
-        </form>
-      </section>
+      <% if (canUseMemberSupportChat) { %>
+        <section class="support-chat-panel support-chat-panel-member hidden" data-member-chat-panel>
+          <header class="support-chat-header">
+            <div class="support-chat-header-text">
+              <strong><%= ctx.lang === 'en' ? '1:1 Support Chat' : '1:1 상담 채팅' %></strong>
+              <small data-member-chat-assigned><%= ctx.lang === 'en' ? 'Assigned: Chrono Lab Admin' : '담당: Chrono Lab 관리자' %></small>
+            </div>
+            <button type="button" class="chip" data-member-chat-close><%= ctx.lang === 'en' ? 'Close' : '닫기' %></button>
+          </header>
+          <div class="support-chat-body" data-member-chat-messages></div>
+          <form class="support-chat-composer" data-member-chat-form>
+            <textarea
+              name="message"
+              rows="1"
+              maxlength="1000"
+              placeholder="<%= ctx.lang === 'en' ? 'Type your message...' : '메시지를 입력하세요...' %>"
+              required
+            ></textarea>
+            <button type="submit" class="chip dark"><%= ctx.lang === 'en' ? 'Send' : '전송' %></button>
+          </form>
+        </section>
+      <% } %>
     <% } %>
 
     <% if (ctx.isAdminRoute && ctx.currentUser && ctx.currentUser.isAdmin) { %>
@@ -184,24 +188,61 @@
       </section>
     <% } %>
 
-    <% if (!ctx.isAdminRoute && ctx.settings.kakaoChatUrl) { %>
-      <a
-        href="<%= ctx.settings.kakaoChatUrl %>"
-        class="floating-kakao-btn"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="<%= ctx.lang === 'en' ? 'Open KakaoTalk chat' : '카카오톡 채팅 열기' %>"
-      >
-        <span class="floating-kakao-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <path d="M12 3C7.03 3 3 6.41 3 10.62c0 2.63 1.56 4.95 3.96 6.33L6.08 21l4.24-2.32c.55.09 1.11.14 1.68.14 4.97 0 9-3.41 9-7.62S16.97 3 12 3Z" />
-            <circle cx="9.1" cy="10.9" r="1.1" />
-            <circle cx="12" cy="10.9" r="1.1" />
-            <circle cx="14.9" cy="10.9" r="1.1" />
-          </svg>
-        </span>
-        <span class="floating-kakao-label"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
-      </a>
+    <% if (!ctx.isAdminRoute) { %>
+      <% const kakaoChatUrl = String(ctx.settings.kakaoChatUrl || '').trim(); %>
+      <% if (!ctx.currentUser) { %>
+        <button
+          type="button"
+          class="floating-kakao-btn"
+          data-login-required-action="kakao-chat"
+          aria-label="<%= ctx.lang === 'en' ? 'Open KakaoTalk chat' : '카카오톡 채팅 열기' %>"
+        >
+          <span class="floating-kakao-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 3C7.03 3 3 6.41 3 10.62c0 2.63 1.56 4.95 3.96 6.33L6.08 21l4.24-2.32c.55.09 1.11.14 1.68.14 4.97 0 9-3.41 9-7.62S16.97 3 12 3Z" />
+              <circle cx="9.1" cy="10.9" r="1.1" />
+              <circle cx="12" cy="10.9" r="1.1" />
+              <circle cx="14.9" cy="10.9" r="1.1" />
+            </svg>
+          </span>
+          <span class="floating-kakao-label"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
+        </button>
+      <% } else if (kakaoChatUrl) { %>
+        <a
+          href="<%= kakaoChatUrl %>"
+          class="floating-kakao-btn"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="<%= ctx.lang === 'en' ? 'Open KakaoTalk chat' : '카카오톡 채팅 열기' %>"
+        >
+          <span class="floating-kakao-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 3C7.03 3 3 6.41 3 10.62c0 2.63 1.56 4.95 3.96 6.33L6.08 21l4.24-2.32c.55.09 1.11.14 1.68.14 4.97 0 9-3.41 9-7.62S16.97 3 12 3Z" />
+              <circle cx="9.1" cy="10.9" r="1.1" />
+              <circle cx="12" cy="10.9" r="1.1" />
+              <circle cx="14.9" cy="10.9" r="1.1" />
+            </svg>
+          </span>
+          <span class="floating-kakao-label"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
+        </a>
+      <% } else { %>
+        <button
+          type="button"
+          class="floating-kakao-btn"
+          data-kakao-chat-unavailable
+          aria-label="<%= ctx.lang === 'en' ? 'KakaoTalk channel unavailable' : '카카오톡 채널 준비중' %>"
+        >
+          <span class="floating-kakao-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 3C7.03 3 3 6.41 3 10.62c0 2.63 1.56 4.95 3.96 6.33L6.08 21l4.24-2.32c.55.09 1.11.14 1.68.14 4.97 0 9-3.41 9-7.62S16.97 3 12 3Z" />
+              <circle cx="9.1" cy="10.9" r="1.1" />
+              <circle cx="12" cy="10.9" r="1.1" />
+              <circle cx="14.9" cy="10.9" r="1.1" />
+            </svg>
+          </span>
+          <span class="floating-kakao-label"><%= ctx.lang === 'en' ? 'Kakao Chat' : '카카오톡 상담' %></span>
+        </button>
+      <% } %>
     <% } %>
 
     <script src="/assets/js/app.js?v=<%= encodeURIComponent(ctx.assetVersion) %>"></script>
