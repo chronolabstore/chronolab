@@ -9945,16 +9945,17 @@ app.get('/shop/item/:id', (req, res) => {
   }
 
   const badgeMap = getProductBadgeMapByProductIds([product.id, ...similarRows.map((row) => row.id)]);
+  const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
   const productWithBadges = {
     ...product,
     product_badges: badgeMap.get(Number(product.id)) || []
   };
   const similar = similarRows.map((row) => ({
     ...decorateProductForView(row, productGroupMap.get(row.category_group)),
+    category_group_label: groupLabelMap[row.category_group] || row.category_group,
     product_badges: badgeMap.get(Number(row.id)) || []
   }));
   const productDisplay = buildProductDisplayData(productWithBadges, productGroupConfig);
-  const groupLabelMap = getProductGroupLabels(productGroupConfigs, res.locals.ctx.lang);
 
   res.render('product-detail', {
     title: 'Product',
