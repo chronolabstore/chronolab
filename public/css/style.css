@@ -2586,6 +2586,10 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   border: 1px solid rgba(32, 32, 32, 0.18);
   background: #fee500;
   color: #1f1f1f;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   text-decoration: none;
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.24);
   transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;

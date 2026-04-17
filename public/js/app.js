@@ -1885,6 +1885,37 @@
     refreshUnreadCount();
   }
 
+  function initLoginRequiredActions() {
+    var htmlLang = String(document.documentElement.lang || 'ko').toLowerCase();
+    var isEnglish = htmlLang.indexOf('en') === 0;
+    var isChinese = htmlLang.indexOf('zh') === 0;
+    var loginRequiredMessage = isEnglish
+      ? 'Login is required. You will be redirected to the login page.'
+      : isChinese
+      ? '此功能需要登录。将跳转到登录页面。'
+      : '로그인이 필요한 기능입니다. 로그인 페이지로 이동합니다.';
+    var kakaoUnavailableMessage = isEnglish
+      ? 'Kakao channel is not configured yet.'
+      : isChinese
+      ? 'Kakao 频道地址尚未设置。'
+      : '카카오톡 채널 주소가 아직 설정되지 않았습니다.';
+    var loginRequiredButtons = document.querySelectorAll('[data-login-required-action]');
+    loginRequiredButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        window.alert(loginRequiredMessage);
+        window.location.assign('/login');
+      });
+    });
+    var kakaoUnavailableButtons = document.querySelectorAll('[data-kakao-chat-unavailable]');
+    kakaoUnavailableButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        window.alert(kakaoUnavailableMessage);
+      });
+    });
+  }
+
   function initAdminSupportChat() {
     var openButtons = Array.prototype.slice.call(document.querySelectorAll('[data-admin-chat-open]'));
     var panel = document.querySelector('[data-admin-chat-panel]');
@@ -2251,6 +2282,7 @@
     initInlineImagePreviews();
     initImageLightbox();
     initPasswordVisibilityToggles();
+    initLoginRequiredActions();
     initMemberSupportChat();
     initAdminSupportChat();
     initPrimaryInputAutofocus();
