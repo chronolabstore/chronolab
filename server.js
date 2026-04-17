@@ -14752,7 +14752,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     }
   }
   const ordersQuery = [
-    'SELECT o.*, p.category_group, p.title AS product_title, p.brand, p.model, p.sub_model',
+    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
     'FROM orders o',
     'JOIN products p ON p.id = o.product_id'
   ];

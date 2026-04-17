@@ -2807,19 +2807,21 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   padding: 10px;
   border-top: 1px solid var(--line);
   background: var(--card);
 }
 
 .support-chat-composer textarea {
-  min-height: 68px;
-  max-height: 130px;
+  min-height: 44px;
+  max-height: 88px;
+  line-height: 1.35;
   resize: vertical;
 }
 
 .support-chat-composer button {
-  align-self: end;
+  align-self: center;
   min-height: 40px;
 }
 

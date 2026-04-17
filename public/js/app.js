@@ -1817,6 +1817,17 @@
     }
 
     if (form && textarea) {
+      textarea.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+      });
+
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         var messageText = String(textarea.value || '').trim();
@@ -2146,6 +2157,17 @@
     }
 
     if (form && textarea) {
+      textarea.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
+      });
+
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         var messageText = String(textarea.value || '').trim();
