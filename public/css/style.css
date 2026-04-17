@@ -2440,14 +2440,30 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   color: var(--muted);
 }
 
-.footer-metrics-list {
-  display: grid;
-  gap: 3px;
+.footer-data-row {
+  display: block;
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.22;
+  color: var(--muted);
 }
 
-.footer-metrics-list .footer-small {
+.footer-data-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.footer-data-placeholder {
+  opacity: 0.55;
+}
+
+.footer-metrics-list,
+.footer-notice-list {
+  list-style: none;
   margin: 0;
-  line-height: 1.2;
+  padding: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .footer-logo {
@@ -2473,44 +2489,45 @@ body.theme-night .signup-form-grid .check-row.field-invalid-row {
   margin-bottom: 11px;
 }
 
+.footer-brand-card-body,
+.footer-site-info-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+}
+
 .footer-brand-visual {
   flex: 0 0 auto;
   min-height: 58px;
-  margin-bottom: 10px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .footer-brand-card .footer-small {
-  margin: 2px 0 0;
+  margin: 0;
 }
 
 .footer-brand-copy {
   white-space: pre-line;
 }
 
-.footer-links {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-}
-
-.footer-notice-card .footer-links {
-  gap: 4px;
-}
-
-.footer-notice-card .footer-links a {
-  font-size: 0.74rem;
-  line-height: 1.2;
-}
-
-.footer-links li {
+.footer-notice-row {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.footer-notice-row .footer-data-row {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.footer-site-info-body .footer-small {
+  margin: 0;
 }
 
 .admin-grid {

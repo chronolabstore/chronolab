@@ -8993,7 +8993,7 @@ app.use((req, res, next) => {
         FROM notices
         WHERE COALESCE(is_hidden, 0) = 0
         ORDER BY id DESC
-        LIMIT 5
+        LIMIT 6
       `
     )
     .all();
