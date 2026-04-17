@@ -7459,34 +7459,12 @@ function getSupportChatMessagesByThreadId(threadId, limit = 120) {
 }
 
 function canAdminAccessSupportThread(adminUser = null, thread = null) {
-  if (!adminUser || !adminUser.isAdmin || !thread) {
-    return false;
-  }
-  if (adminUser.isPrimaryAdmin) {
-    return true;
-  }
-  const assignedAdminUserId = Number.parseInt(String(thread.assigned_admin_user_id || ''), 10);
-  return Number.isInteger(assignedAdminUserId) && assignedAdminUserId > 0 && assignedAdminUserId === Number(adminUser.id || 0);
+  return Boolean(adminUser && adminUser.isAdmin && thread);
 }
 
 function getAdminSupportChatUnreadCount(adminUser = null) {
   if (!adminUser || !adminUser.isAdmin) {
     return 0;
-  }
-
-  if (adminUser.isPrimaryAdmin) {
-    const row = db
-      .prepare(
-        `
-          SELECT COUNT(*) AS count
-          FROM support_chat_messages m
-          JOIN support_chat_threads t ON t.id = m.thread_id
-          WHERE m.sender_role = 'member'
-            AND m.admin_read_at IS NULL
-        `
-      )
-      .get();
-    return Number(row?.count || 0);
   }
 
   const row = db
@@ -7497,10 +7475,9 @@ function getAdminSupportChatUnreadCount(adminUser = null) {
         JOIN support_chat_threads t ON t.id = m.thread_id
         WHERE m.sender_role = 'member'
           AND m.admin_read_at IS NULL
-          AND t.assigned_admin_user_id = ?
       `
     )
-    .get(Number(adminUser.id || 0));
+    .get();
   return Number(row?.count || 0);
 }
 
@@ -9589,7 +9566,6 @@ app.get('/api/admin/support-chat/unread-count', requireAdmin, (req, res) =>
 );
 
 app.get('/api/admin/support-chat/threads', requireAdmin, (req, res) => {
-  const isPrimary = req.user?.isPrimaryAdmin ? 1 : 0;
   const rows = db
     .prepare(
       `
@@ -9630,12 +9606,11 @@ app.get('/api/admin/support-chat/threads', requireAdmin, (req, res) => {
         FROM support_chat_threads t
         JOIN users u ON u.id = t.member_user_id
         LEFT JOIN users a ON a.id = t.assigned_admin_user_id
-        WHERE (? = 1 OR t.assigned_admin_user_id = ?)
         ORDER BY COALESCE(last_message_at, t.updated_at, t.created_at) DESC, t.id DESC
         LIMIT 200
       `
     )
-    .all(isPrimary, Number(req.user?.id || 0));
+    .all();
 
   return res.json({
     ok: true,

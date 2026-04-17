@@ -1869,7 +1869,6 @@
     var textarea = form ? form.querySelector('textarea[name="message"]') : null;
     var submitButton = form ? form.querySelector('button[type="submit"]') : null;
     var floatingUnreadBadge = document.querySelector('[data-admin-chat-unread-badge]');
-    var headerUnreadBadge = document.querySelector('[data-admin-chat-badge]');
 
     var threads = [];
     var selectedThreadId = 0;
@@ -1888,7 +1887,7 @@
     function setUnreadBadges(count) {
       var safeCount = Math.max(0, Number(count || 0));
       var textValue = safeCount > 99 ? '99+' : String(safeCount);
-      [floatingUnreadBadge, headerUnreadBadge].forEach(function (badge) {
+      [floatingUnreadBadge].forEach(function (badge) {
         if (!badge) {
           return;
         }
@@ -2010,7 +2009,7 @@
         var head = document.createElement('div');
         head.className = 'support-admin-thread-item-head';
         var strong = document.createElement('strong');
-        strong.textContent = thread.memberNickname || thread.memberFullName || thread.memberUsername || '-';
+        strong.textContent = thread.memberUsername || '-';
         head.appendChild(strong);
         if (Number(thread.unreadCount || 0) > 0) {
           var badge = document.createElement('span');
@@ -2020,10 +2019,12 @@
         }
         button.appendChild(head);
 
-        var preview = document.createElement('p');
-        preview.className = 'support-admin-thread-preview';
-        preview.textContent = thread.lastMessageText || (document.documentElement.lang === 'en' ? 'No messages' : '메시지 없음');
-        button.appendChild(preview);
+        var meta = document.createElement('p');
+        meta.className = 'support-admin-thread-meta';
+        meta.textContent = document.documentElement.lang === 'en'
+          ? 'Unread: ' + String(Math.max(0, Number(thread.unreadCount || 0)))
+          : '미확인: ' + String(Math.max(0, Number(thread.unreadCount || 0)));
+        button.appendChild(meta);
 
         var time = document.createElement('p');
         time.className = 'support-admin-thread-time';

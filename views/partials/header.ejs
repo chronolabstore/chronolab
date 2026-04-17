@@ -53,21 +53,6 @@
       <% if (ctx.currentUser) { %>
         <% if (ctx.currentUser.isAdmin) { %>
           <% if (ctx.isAdminPage) { %>
-            <% const adminChatUnread = Math.max(0, Number(ctx.supportChatAdminUnreadCount || 0)); %>
-            <button
-              type="button"
-              class="icon-circle-action admin-chat-header-toggle"
-              data-admin-chat-open
-              aria-label="<%= ctx.lang === 'en' ? 'Open support chats' : '상담 채팅 열기' %>"
-              title="<%= ctx.lang === 'en' ? 'Support Chats' : '상담 채팅' %>"
-            >
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5h-6.6l-3.9 3V16H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
-              </svg>
-              <span class="header-icon-badge admin-chat-badge <%= adminChatUnread > 0 ? '' : 'hidden' %>" data-admin-chat-badge>
-                <%= adminChatUnread > 99 ? '99+' : adminChatUnread %>
-              </span>
-            </button>
             <% if (!ctx.currentUser.isAdminOtpEnabled) { %>
               <a href="/admin/otp" class="chip"><%= ctx.lang === 'en' ? 'OTP' : 'OTP 설정' %></a>
             <% } %>
