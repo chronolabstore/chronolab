@@ -2032,6 +2032,8 @@
     var pollTimerId = null;
     var unreadPollTimerId = null;
     var isLoadingThread = false;
+    var PANEL_POLL_MS = 1200;
+    var UNREAD_POLL_MS = 2500;
 
     function formatTime(rawValue) {
       var text = String(rawValue || '').trim();
@@ -2160,7 +2162,7 @@
           return;
         }
         loadThread();
-      }, 5000);
+      }, PANEL_POLL_MS);
     }
 
     function openPanel() {
@@ -2254,7 +2256,26 @@
         return;
       }
       refreshUnreadCount();
-    }, 8000);
+    }, UNREAD_POLL_MS);
+
+    window.addEventListener('focus', function () {
+      if (isPanelOpen) {
+        loadThread();
+        return;
+      }
+      refreshUnreadCount();
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      if (isPanelOpen) {
+        loadThread();
+        return;
+      }
+      refreshUnreadCount();
+    });
 
     refreshUnreadCount();
   }
@@ -2329,6 +2350,9 @@
     var lastSubmittedAt = 0;
     var threadPollTimerId = null;
     var unreadPollTimerId = null;
+    var isRefreshingThreads = false;
+    var PANEL_POLL_MS = 1200;
+    var UNREAD_POLL_MS = 2500;
 
     function formatTime(rawValue) {
       var text = String(rawValue || '').trim();
@@ -2485,6 +2509,10 @@
     }
 
     function refreshThreads() {
+      if (isRefreshingThreads) {
+        return Promise.resolve();
+      }
+      isRefreshingThreads = true;
       return fetchJson('/api/admin/support-chat/threads')
         .then(function (payload) {
           threads = Array.isArray(payload.threads) ? payload.threads : [];
@@ -2503,6 +2531,9 @@
         })
         .catch(function () {
           return null;
+        })
+        .finally(function () {
+          isRefreshingThreads = false;
         });
     }
 
@@ -2544,7 +2575,7 @@
           return;
         }
         refreshThreads();
-      }, 5000);
+      }, PANEL_POLL_MS);
     }
 
     function openPanel() {
@@ -2658,7 +2689,26 @@
         return;
       }
       refreshUnreadOnly();
-    }, 8000);
+    }, UNREAD_POLL_MS);
+
+    window.addEventListener('focus', function () {
+      if (isPanelOpen) {
+        refreshThreads();
+        return;
+      }
+      refreshUnreadOnly();
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      if (isPanelOpen) {
+        refreshThreads();
+        return;
+      }
+      refreshUnreadOnly();
+    });
     refreshUnreadOnly();
   }
 
