@@ -53,6 +53,29 @@ const BRANDING_WATERMARK_URL = `/assets/media/branding/${BRANDING_WATERMARK_FILE
 const app = express();
 const PORT = Number(process.env.PORT || 3100);
 const isProduction = process.env.NODE_ENV === 'production';
+function parseEnvFlag(value, fallback = false) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) {
+    return Boolean(fallback);
+  }
+  if (['1', 'true', 'yes', 'on'].includes(raw)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(raw)) {
+    return false;
+  }
+  return Boolean(fallback);
+}
+const isHostedEnvironment = Boolean(
+  String(
+    process.env.RENDER_EXTERNAL_URL ||
+      process.env.RAILWAY_STATIC_URL ||
+      process.env.FLY_APP_NAME ||
+      process.env.HEROKU_APP_NAME ||
+      ''
+  ).trim()
+);
+const mustEnforceSecurity = isProduction || isHostedEnvironment || parseEnvFlag(process.env.ENFORCE_PROD_SECURITY, false);
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || `${Date.now()}`;
 const execFileAsync = promisify(execFile);
 function normalizeOriginValue(origin = '') {
@@ -76,8 +99,8 @@ function resolveSessionSecret() {
   if (configured) {
     return configured;
   }
-  if (isProduction) {
-    throw new Error('SESSION_SECRET environment variable is required in production.');
+  if (mustEnforceSecurity) {
+    throw new Error('SESSION_SECRET environment variable is required in hosted/production mode.');
   }
   return `chronolab-dev-${crypto.randomBytes(32).toString('hex')}`;
 }
@@ -115,6 +138,7 @@ const CSRF_TOKEN_REGEX = /^[a-f0-9]{64}$/i;
 const ORDER_COMPLETE_VIEW_TTL_MS = 1000 * 60 * 60;
 const SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME = 'admin1';
 const SUPPORT_CHAT_MAX_MESSAGE_LENGTH = 1000;
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('ChronoLab.Auth.Dummy.Password.2026', 10);
 
 function resolveIdleTimeoutMs({
   envKey = '',
@@ -346,7 +370,7 @@ function clearPersistAuthCookie(res) {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProduction
+    secure: mustEnforceSecurity
   });
 }
 
@@ -364,7 +388,7 @@ function setPersistAuthCookie(res, userId, options = {}) {
     maxAge: AUTH_PERSIST_COOKIE_MAX_AGE_MS,
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProduction
+    secure: mustEnforceSecurity
   });
 }
 
@@ -690,7 +714,48 @@ const HERO_DEFAULT_QUICK_MENUS = Object.freeze([
 
 const AUTH_ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_AUTH_MAX_ATTEMPTS = 15;
-const authAttemptStore = new Map();
+const AUTH_ATTEMPT_BLOCK_MS = 15 * 60 * 1000;
+const AUTH_ATTEMPT_IDENTIFIER_MAX_LENGTH = 120;
+const AUTH_ATTEMPT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+let lastAuthAttemptCleanupAt = 0;
+const authAttemptSelectStmt = db.prepare(
+  `
+    SELECT attempt_count, window_started_at, blocked_until
+    FROM auth_rate_limits
+    WHERE bucket_key = ?
+    LIMIT 1
+  `
+);
+const authAttemptUpsertStmt = db.prepare(
+  `
+    INSERT INTO auth_rate_limits (
+      bucket_key,
+      scope_key,
+      identifier,
+      ip_address,
+      attempt_count,
+      window_started_at,
+      blocked_until,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(bucket_key)
+    DO UPDATE SET
+      scope_key = excluded.scope_key,
+      identifier = excluded.identifier,
+      ip_address = excluded.ip_address,
+      attempt_count = excluded.attempt_count,
+      window_started_at = excluded.window_started_at,
+      blocked_until = excluded.blocked_until,
+      updated_at = excluded.updated_at
+  `
+);
+const authAttemptDeleteStmt = db.prepare('DELETE FROM auth_rate_limits WHERE bucket_key = ?');
+const authAttemptCleanupStmt = db.prepare(
+  `
+    DELETE FROM auth_rate_limits
+    WHERE updated_at < ?
+  `
+);
 const EMAIL_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
 const EMAIL_VERIFICATION_MAX_ATTEMPTS = 6;
@@ -833,7 +898,7 @@ app.use(
       maxAge: SESSION_DEFAULT_MAX_AGE_MS,
       httpOnly: true,
       sameSite: 'lax',
-      secure: isProduction
+      secure: mustEnforceSecurity
     }
   })
 );
@@ -853,7 +918,7 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self' 'unsafe-inline' https://t1.daumcdn.net https://*.daumcdn.net https://*.daum.net https://*.kakao.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: blob: https: http:",
+  "img-src 'self' data: blob: https:",
   "child-src 'self' https://*.daum.net https://*.kakao.com",
   "frame-src 'self' https://*.daum.net https://*.kakao.com",
   "connect-src 'self' https://*.daum.net https://*.kakao.com",
@@ -865,8 +930,12 @@ app.use((req, res, next) => {
   res.setHeader('x-frame-options', 'SAMEORIGIN');
   res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
   res.setHeader('permissions-policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('cross-origin-opener-policy', 'same-origin');
+  res.setHeader('cross-origin-resource-policy', 'same-origin');
+  res.setHeader('origin-agent-cluster', '?1');
+  res.setHeader('x-permitted-cross-domain-policies', 'none');
   res.setHeader('content-security-policy', CONTENT_SECURITY_POLICY);
-  if (isProduction) {
+  if (mustEnforceSecurity) {
     res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   }
   return next();
@@ -2551,6 +2620,9 @@ function normalizeRemoteImageUrl(imageUrl = '') {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return '';
     }
+    if (mustEnforceSecurity && parsed.protocol !== 'https:') {
+      return '';
+    }
     return parsed.toString();
   } catch {
     return '';
@@ -3088,6 +3160,9 @@ function pickSignupDuplicateField(state = {}) {
 }
 
 function getSignupDuplicateMessage(field, isEn = false) {
+  if (mustEnforceSecurity) {
+    return isEn ? 'This signup information cannot be used.' : '입력하신 회원 정보로 가입할 수 없습니다.';
+  }
   if (field === 'account') {
     return isEn ? 'This account is already in use.' : '이미 사용중인 계정입니다.';
   }
@@ -3601,7 +3676,7 @@ function serializeImagePaths(imagePaths = []) {
   return JSON.stringify(uniqueImagePathList(imagePaths));
 }
 
-function collectUploadedImageUrls(req) {
+function collectUploadedFileObjects(req) {
   const files = [];
 
   if (Array.isArray(req?.files)) {
@@ -3618,7 +3693,116 @@ function collectUploadedImageUrls(req) {
     files.push(req.file);
   }
 
+  return files.filter((file) => file && typeof file === 'object');
+}
+
+function collectUploadedImageUrls(req) {
+  const files = collectUploadedFileObjects(req);
   return uniqueImagePathList(files.map((file) => fileUrl(file)).filter(Boolean));
+}
+
+async function cleanupUploadedFiles(files = []) {
+  const targets = Array.isArray(files) ? files : [];
+  for (const file of targets) {
+    const targetPath = String(file?.path || '').trim();
+    if (!targetPath) {
+      continue;
+    }
+    try {
+      await fs.unlink(targetPath);
+    } catch {
+      // ignore cleanup failures
+    }
+  }
+}
+
+function normalizeDetectedUploadMime(format = '') {
+  const normalized = String(format || '').trim().toLowerCase();
+  if (normalized === 'jpeg' || normalized === 'jpg') {
+    return 'image/jpeg';
+  }
+  if (normalized === 'png') {
+    return 'image/png';
+  }
+  if (normalized === 'webp') {
+    return 'image/webp';
+  }
+  if (normalized === 'gif') {
+    return 'image/gif';
+  }
+  if (normalized === 'avif' || normalized === 'heif') {
+    return 'image/avif';
+  }
+  return '';
+}
+
+async function detectInvalidUploadedFiles(files = []) {
+  const invalidFiles = [];
+
+  for (const file of files) {
+    const targetPath = String(file?.path || '').trim();
+    const mimeType = String(file?.mimetype || '').trim().toLowerCase();
+    const filename = String(file?.filename || '');
+    const ext = path.extname(filename).toLowerCase();
+
+    if (!targetPath || !mimeType || !ALLOWED_UPLOAD_MIME.has(mimeType)) {
+      invalidFiles.push(file);
+      continue;
+    }
+    if (ext && !ALLOWED_UPLOAD_EXTENSIONS.has(ext)) {
+      invalidFiles.push(file);
+      continue;
+    }
+
+    try {
+      const metadata = await sharp(targetPath).metadata();
+      const detectedMime = normalizeDetectedUploadMime(metadata?.format || '');
+      const expectedExt = UPLOAD_MIME_EXTENSION_MAP[mimeType] || '';
+      if (!detectedMime || !ALLOWED_UPLOAD_MIME.has(detectedMime)) {
+        invalidFiles.push(file);
+        continue;
+      }
+      if (detectedMime !== mimeType) {
+        invalidFiles.push(file);
+        continue;
+      }
+      if (!expectedExt || ext !== expectedExt) {
+        invalidFiles.push(file);
+        continue;
+      }
+      if (Number(metadata?.width || 0) <= 0 || Number(metadata?.height || 0) <= 0) {
+        invalidFiles.push(file);
+        continue;
+      }
+    } catch {
+      invalidFiles.push(file);
+    }
+  }
+
+  return { invalidFiles };
+}
+
+async function rejectInvalidUploadedFiles(req, res) {
+  const message = '업로드 이미지 검증에 실패했습니다. 이미지 파일(JPG/PNG/WEBP/GIF/AVIF)만 업로드해 주세요.';
+  const acceptHeader = String(req.get('accept') || '').toLowerCase();
+  if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
+    return res.status(400).json({ ok: false, error: 'invalid_upload_image', message });
+  }
+  setFlash(req, 'error', message);
+  return res.redirect(safeBackPath(req, '/main'));
+}
+
+async function validateUploadedImagePayload(req, res, next) {
+  const uploadedFiles = collectUploadedFileObjects(req);
+  if (uploadedFiles.length === 0) {
+    return next();
+  }
+  const { invalidFiles } = await detectInvalidUploadedFiles(uploadedFiles);
+  if (invalidFiles.length === 0) {
+    return next();
+  }
+  await cleanupUploadedFiles(uploadedFiles);
+  return rejectInvalidUploadedFiles(req, res);
 }
 
 function formatPrice(value) {
@@ -8976,51 +9160,128 @@ function requireAuthenticatedMultipartCsrf(req, res, next) {
   const expectedToken = ensureSessionCsrfToken(req);
   const providedToken = readCsrfTokenFromRequest(req);
   if (isCsrfTokenEqual(expectedToken, providedToken)) {
-    return next();
+    return validateUploadedImagePayload(req, res, next).catch((error) => next(error));
   }
+  void cleanupUploadedFiles(collectUploadedFileObjects(req));
   return rejectInvalidCsrfTokenRequest(req, res);
 }
 
-function cleanupAuthAttemptStore(nowMs) {
-  if (authAttemptStore.size <= 1000) {
-    return;
+function normalizeClientIp(req) {
+  const forwarded = String(req?.headers?.['x-forwarded-for'] || '')
+    .split(',')
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)[0];
+  const candidate = String(req?.ip || forwarded || '').trim().toLowerCase();
+  if (!candidate) {
+    return 'unknown';
   }
-  for (const [key, row] of authAttemptStore.entries()) {
-    if (nowMs - row.windowStart > AUTH_ATTEMPT_WINDOW_MS) {
-      authAttemptStore.delete(key);
-    }
-  }
+  return candidate.slice(0, 120);
 }
 
-function consumeAuthAttempt(req, key, limit = DEFAULT_AUTH_MAX_ATTEMPTS, windowMs = AUTH_ATTEMPT_WINDOW_MS) {
+function normalizeAuthAttemptIdentifier(rawValue = '') {
+  const text = String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, '');
+  if (!text) {
+    return '';
+  }
+  return text.slice(0, AUTH_ATTEMPT_IDENTIFIER_MAX_LENGTH);
+}
+
+function buildAuthAttemptBucketKey(scopeKey = '', ipAddress = '', identifier = '') {
+  const source = `${String(scopeKey || '').trim().toLowerCase()}|${String(ipAddress || '').trim().toLowerCase()}|${String(identifier || '').trim().toLowerCase()}`;
+  return crypto.createHash('sha256').update(source).digest('hex');
+}
+
+function cleanupAuthAttemptStore(nowMs) {
+  if (nowMs - lastAuthAttemptCleanupAt < AUTH_ATTEMPT_CLEANUP_INTERVAL_MS) {
+    return;
+  }
+  const retentionMs = Math.max(windowMsSafeFloor(AUTH_ATTEMPT_WINDOW_MS), windowMsSafeFloor(AUTH_ATTEMPT_BLOCK_MS)) * 3;
+  authAttemptCleanupStmt.run(nowMs - retentionMs);
+  lastAuthAttemptCleanupAt = nowMs;
+}
+
+function windowMsSafeFloor(value) {
+  const parsed = Number.parseInt(String(value || 0), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return 60 * 1000;
+  }
+  return Math.max(60 * 1000, parsed);
+}
+
+function consumeAuthAttempt(req, key, limit = DEFAULT_AUTH_MAX_ATTEMPTS, windowMs = AUTH_ATTEMPT_WINDOW_MS, options = {}) {
   const nowMs = Date.now();
   cleanupAuthAttemptStore(nowMs);
 
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-  const storeKey = `${key}:${ip}`;
-  const found = authAttemptStore.get(storeKey);
+  const scopeKey = String(key || 'auth').trim().slice(0, 80) || 'auth';
+  const ipAddress = normalizeClientIp(req);
+  const identifier = normalizeAuthAttemptIdentifier(options?.identifier || '');
+  const bucketKey = buildAuthAttemptBucketKey(scopeKey, ipAddress, identifier);
+  const safeLimit = Math.max(1, Number.parseInt(String(limit || DEFAULT_AUTH_MAX_ATTEMPTS), 10) || DEFAULT_AUTH_MAX_ATTEMPTS);
+  const safeWindowMs = windowMsSafeFloor(windowMs);
+  const found = authAttemptSelectStmt.get(bucketKey);
 
-  if (!found || nowMs - found.windowStart > windowMs) {
-    authAttemptStore.set(storeKey, { count: 1, windowStart: nowMs });
-    return { allowed: true };
+  if (found && Number(found.blocked_until || 0) > nowMs) {
+    return {
+      allowed: false,
+      retryAfterMs: Math.max(1000, Number(found.blocked_until || 0) - nowMs)
+    };
   }
 
-  found.count += 1;
-  authAttemptStore.set(storeKey, found);
+  const foundWindowStartedAt = Number(found?.window_started_at || 0);
+  const isExpiredWindow = !found || foundWindowStartedAt <= 0 || nowMs - foundWindowStartedAt > safeWindowMs;
+  const nextAttemptCount = isExpiredWindow ? 1 : Number(found.attempt_count || 0) + 1;
+  const blockedUntil = nextAttemptCount > safeLimit ? nowMs + AUTH_ATTEMPT_BLOCK_MS : 0;
 
-  return { allowed: found.count <= limit };
+  authAttemptUpsertStmt.run(
+    bucketKey,
+    scopeKey,
+    identifier,
+    ipAddress,
+    nextAttemptCount,
+    isExpiredWindow ? nowMs : foundWindowStartedAt,
+    blockedUntil,
+    nowMs
+  );
+
+  if (blockedUntil > 0) {
+    return {
+      allowed: false,
+      retryAfterMs: Math.max(1000, blockedUntil - nowMs)
+    };
+  }
+  return { allowed: true, retryAfterMs: 0 };
 }
 
-function resetAuthAttempt(req, key) {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-  authAttemptStore.delete(`${key}:${ip}`);
+function resetAuthAttempt(req, key, options = {}) {
+  const scopeKey = String(key || 'auth').trim().slice(0, 80) || 'auth';
+  const ipAddress = normalizeClientIp(req);
+  const identifier = normalizeAuthAttemptIdentifier(options?.identifier || '');
+  const bucketKey = buildAuthAttemptBucketKey(scopeKey, ipAddress, identifier);
+  authAttemptDeleteStmt.run(bucketKey);
 }
 
-function authAttemptGuard({ key, redirectPath, limit = DEFAULT_AUTH_MAX_ATTEMPTS }) {
+function authAttemptGuard({
+  key,
+  redirectPath,
+  limit = DEFAULT_AUTH_MAX_ATTEMPTS,
+  windowMs = AUTH_ATTEMPT_WINDOW_MS,
+  identifierResolver = null
+}) {
   return (req, res, next) => {
-    const result = consumeAuthAttempt(req, key, limit);
+    const identifier = typeof identifierResolver === 'function' ? identifierResolver(req) : '';
+    const result = consumeAuthAttempt(req, key, limit, windowMs, { identifier });
     if (!result.allowed) {
-      setFlash(req, 'error', '시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+      const waitSeconds = Math.max(1, Math.ceil(Number(result.retryAfterMs || 0) / 1000));
+      const message = `시도가 너무 많습니다. ${waitSeconds}초 후 다시 시도해 주세요.`;
+      const acceptHeader = String(req.get('accept') || '').toLowerCase();
+      if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
+        return res.status(429).json({ ok: false, error: 'too_many_attempts', message, retryAfterSeconds: waitSeconds });
+      }
+      setFlash(req, 'error', message);
       return res.redirect(redirectPath);
     }
     return next();
@@ -12483,62 +12744,93 @@ app.get('/signup', (req, res) => {
   });
 });
 
-app.get('/api/signup/availability', (req, res) => {
-  try {
-    const account = normalizeAccountName(req.query.account || '').toLowerCase();
-    const nickname = String(req.query.nickname || '').trim();
-    const email = normalizeEmailAddress(req.query.email || '');
-
-    const shouldCheckAccount = Boolean(account) && USERNAME_REGEX.test(account);
-    const shouldCheckNickname = Boolean(nickname) && nickname.length >= 2 && nickname.length <= 40;
-    const shouldCheckEmail = Boolean(email) && EMAIL_REGEX.test(email);
-
-    const duplicateState = getSignupDuplicateState({
-      account: shouldCheckAccount ? account : '',
-      nickname: shouldCheckNickname ? nickname : '',
-      email: shouldCheckEmail ? email : ''
-    });
-
-    const checks = {};
-    if (account) {
-      checks.account = {
-        value: account,
-        valid: shouldCheckAccount,
-        exists: shouldCheckAccount ? Boolean(duplicateState.accountExists) : false
-      };
+app.get(
+  '/api/signup/availability',
+  authAttemptGuard({
+    key: 'signup-availability',
+    redirectPath: '/signup',
+    limit: 40,
+    windowMs: 10 * 60 * 1000,
+    identifierResolver: (req) => {
+      const account = normalizeAccountName(req.query?.account || '').toLowerCase();
+      const nickname = String(req.query?.nickname || '').trim().toLowerCase();
+      const email = normalizeEmailAddress(req.query?.email || '');
+      return `${account}|${nickname}|${email}`;
     }
-    if (nickname) {
-      checks.nickname = {
-        value: nickname,
-        valid: shouldCheckNickname,
-        exists: shouldCheckNickname ? Boolean(duplicateState.nicknameExists) : false
-      };
-    }
-    if (email) {
-      checks.email = {
-        value: email,
-        valid: shouldCheckEmail,
-        exists: shouldCheckEmail ? Boolean(duplicateState.emailExists) : false
-      };
-    }
+  }),
+  (req, res) => {
+    try {
+      const account = normalizeAccountName(req.query.account || '').toLowerCase();
+      const nickname = String(req.query.nickname || '').trim();
+      const email = normalizeEmailAddress(req.query.email || '');
 
-    res.setHeader('Cache-Control', 'no-store');
-    return res.json({ ok: true, checks });
-  } catch (error) {
-    logDetailedError('signup-availability-failed', error, {
-      request: buildRequestLogContext(req)
-    });
-    return res.status(500).json({
-      ok: false,
-      error: 'availability_check_failed',
-      message: '중복 확인 중 오류가 발생했습니다.'
-    });
+      const shouldCheckAccount = Boolean(account) && USERNAME_REGEX.test(account);
+      const shouldCheckNickname = Boolean(nickname) && nickname.length >= 2 && nickname.length <= 40;
+      const shouldCheckEmail = Boolean(email) && EMAIL_REGEX.test(email);
+
+      const checks = {};
+      if (account) {
+        checks.account = {
+          value: account,
+          valid: shouldCheckAccount,
+          exists: false
+        };
+      }
+      if (nickname) {
+        checks.nickname = {
+          value: nickname,
+          valid: shouldCheckNickname,
+          exists: false
+        };
+      }
+      if (email) {
+        checks.email = {
+          value: email,
+          valid: shouldCheckEmail,
+          exists: false
+        };
+      }
+
+      if (!mustEnforceSecurity) {
+        const duplicateState = getSignupDuplicateState({
+          account: shouldCheckAccount ? account : '',
+          nickname: shouldCheckNickname ? nickname : '',
+          email: shouldCheckEmail ? email : ''
+        });
+        if (checks.account) {
+          checks.account.exists = shouldCheckAccount ? Boolean(duplicateState.accountExists) : false;
+        }
+        if (checks.nickname) {
+          checks.nickname.exists = shouldCheckNickname ? Boolean(duplicateState.nicknameExists) : false;
+        }
+        if (checks.email) {
+          checks.email.exists = shouldCheckEmail ? Boolean(duplicateState.emailExists) : false;
+        }
+      }
+
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json({ ok: true, checks });
+    } catch (error) {
+      logDetailedError('signup-availability-failed', error, {
+        request: buildRequestLogContext(req)
+      });
+      return res.status(500).json({
+        ok: false,
+        error: 'availability_check_failed',
+        message: '중복 확인 중 오류가 발생했습니다.'
+      });
+    }
   }
-});
+);
 
 app.post(
   '/signup',
-  authAttemptGuard({ key: 'signup', redirectPath: '/signup', limit: 12 }),
+  authAttemptGuard({
+    key: 'signup',
+    redirectPath: '/signup',
+    limit: 12,
+    identifierResolver: (req) => `${String(req.body?.account || req.body?.username || '').trim().toLowerCase()}|${normalizeEmailAddress(req.body?.email || '')}`
+  }),
   asyncRoute(async (req, res) => {
   const email = normalizeEmailAddress(req.body.email || '');
   const account = normalizeAccountName(req.body.account || req.body.username || '').toLowerCase();
@@ -12642,7 +12934,9 @@ app.post(
       lastActivityAt: req.session.lastActivityAt
     });
     clearSignupCaptcha(req);
-    resetAuthAttempt(req, 'signup');
+    resetAuthAttempt(req, 'signup', {
+      identifier: `${account}|${email}`
+    });
 
     const isEn = res.locals.ctx.lang === 'en';
     const successMessage =
@@ -12704,7 +12998,12 @@ app.get('/account/find', (req, res) => {
 
 app.post(
   '/account/find/send-code',
-  authAttemptGuard({ key: 'account-find-send', redirectPath: '/account/find', limit: 8 }),
+  authAttemptGuard({
+    key: 'account-find-send',
+    redirectPath: '/account/find',
+    limit: 8,
+    identifierResolver: (req) => normalizeEmailAddress(req.body?.email || '')
+  }),
   asyncRoute(async (req, res) => {
     if (req.session.accountFindResult) {
       delete req.session.accountFindResult;
@@ -12728,52 +13027,45 @@ app.post(
       )
       .get(email);
 
-    if (!target) {
-      setFlash(req, 'error', '가입된 계정을 찾을 수 없습니다.');
-      return res.redirect('/account/find');
-    }
-
-    const issued = issueEmailVerificationCode({
-      purpose: 'account-find',
-      email: target.email,
-      account: target.username,
-      userId: target.id
-    });
-
-    if (!issued.ok && issued.reason === 'cooldown') {
-      setFlash(req, 'error', `인증번호 재전송은 ${issued.waitSeconds}초 후에 가능합니다.`);
-      return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
-    }
-    if (!issued.ok) {
-      setFlash(req, 'error', '인증번호 발급 중 오류가 발생했습니다.');
-      return res.redirect('/account/find');
-    }
-
-    const sent = await sendEmailVerificationCode({
-      to: target.email,
-      code: issued.code,
-      purpose: 'account-find',
-      lang: res.locals.ctx.lang
-    });
-
-    if (!sent.ok) {
-      if (!isProduction && sent.reason === 'smtp_not_configured') {
-        setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
-      } else {
-        setFlash(req, 'error', '인증번호 메일 발송에 실패했습니다. 관리자에게 문의해 주세요.');
-        return res.redirect('/account/find');
+    let debugCode = '';
+    if (target) {
+      const issued = issueEmailVerificationCode({
+        purpose: 'account-find',
+        email: target.email,
+        account: target.username,
+        userId: target.id
+      });
+      if (issued.ok) {
+        debugCode = issued.code;
+        const sent = await sendEmailVerificationCode({
+          to: target.email,
+          code: issued.code,
+          purpose: 'account-find',
+          lang: res.locals.ctx.lang
+        });
+        if (!mustEnforceSecurity && !isProduction && !sent.ok && sent.reason === 'smtp_not_configured') {
+          setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
+        }
       }
-    } else {
-      setFlash(req, 'success', '인증번호를 이메일로 전송했습니다.');
     }
-
+    if (mustEnforceSecurity) {
+      await waitForMs(250);
+    }
+    if (!(!mustEnforceSecurity && !isProduction && debugCode)) {
+      setFlash(req, 'success', '입력하신 정보가 맞으면 인증번호를 이메일로 전송했습니다.');
+    }
     return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
   })
 );
 
 app.post(
   '/account/find/verify-code',
-  authAttemptGuard({ key: 'account-find-verify', redirectPath: '/account/find', limit: 12 }),
+  authAttemptGuard({
+    key: 'account-find-verify',
+    redirectPath: '/account/find',
+    limit: 12,
+    identifierResolver: (req) => normalizeEmailAddress(req.body?.email || '')
+  }),
   asyncRoute(async (req, res) => {
     const email = normalizeEmailAddress(req.body.email || '');
     const code = String(req.body.code || '').trim();
@@ -12799,7 +13091,10 @@ app.post(
       .get(email);
 
     if (!target) {
-      setFlash(req, 'error', '가입된 계정을 찾을 수 없습니다.');
+      if (mustEnforceSecurity) {
+        await waitForMs(250);
+      }
+      setFlash(req, 'error', mustEnforceSecurity ? '인증번호가 올바르지 않거나 만료되었습니다.' : '가입된 계정을 찾을 수 없습니다.');
       return res.redirect('/account/find');
     }
 
@@ -12811,12 +13106,17 @@ app.post(
     });
 
     if (!verified.ok) {
+      if (mustEnforceSecurity) {
+        await waitForMs(250);
+      }
       const reasonMessage =
-        verified.reason === 'expired'
-          ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
-          : verified.reason === 'too_many_attempts'
-            ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
-            : '인증번호가 올바르지 않습니다.';
+        mustEnforceSecurity
+          ? '인증번호가 올바르지 않거나 만료되었습니다.'
+          : verified.reason === 'expired'
+            ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
+            : verified.reason === 'too_many_attempts'
+              ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
+              : '인증번호가 올바르지 않습니다.';
       setFlash(req, 'error', reasonMessage);
       return res.redirect(`/account/find?step=verify&email=${encodeURIComponent(email)}`);
     }
@@ -12838,8 +13138,8 @@ app.post(
       resetTicket,
       expiresAt: Date.now() + PASSWORD_RESET_TICKET_TTL_MS
     };
-    resetAuthAttempt(req, 'account-find-send');
-    resetAuthAttempt(req, 'account-find-verify');
+    resetAuthAttempt(req, 'account-find-send', { identifier: normalizeEmailAddress(email) });
+    resetAuthAttempt(req, 'account-find-verify', { identifier: normalizeEmailAddress(email) });
     setFlash(req, 'success', '인증이 완료되었습니다.');
     return res.redirect('/account/find?result=1');
   })
@@ -12879,7 +13179,12 @@ app.get('/password/reset', (req, res) => {
 
 app.post(
   '/password/reset/send-code',
-  authAttemptGuard({ key: 'password-reset-send', redirectPath: '/password/reset', limit: 10 }),
+  authAttemptGuard({
+    key: 'password-reset-send',
+    redirectPath: '/password/reset',
+    limit: 10,
+    identifierResolver: (req) => `${normalizeAccountName(req.body?.account || '').toLowerCase()}|${normalizeEmailAddress(req.body?.email || '')}`
+  }),
   asyncRoute(async (req, res) => {
     const account = normalizeAccountName(req.body.account || '');
     const email = normalizeEmailAddress(req.body.email || '');
@@ -12912,44 +13217,33 @@ app.post(
       )
       .get(account, email);
 
-    if (!target) {
-      setFlash(req, 'error', '입력한 계정/이메일 정보와 일치하는 회원이 없습니다.');
-      return res.redirect('/password/reset');
-    }
-
-    const issued = issueEmailVerificationCode({
-      purpose: 'password-reset',
-      email: target.email,
-      account: target.username,
-      userId: target.id
-    });
-    if (!issued.ok && issued.reason === 'cooldown') {
-      setFlash(req, 'error', `인증번호 재전송은 ${issued.waitSeconds}초 후에 가능합니다.`);
-      return res.redirect(
-        `/password/reset?step=verify&account=${encodeURIComponent(account)}&email=${encodeURIComponent(email)}`
-      );
-    }
-    if (!issued.ok) {
-      setFlash(req, 'error', '인증번호 발급 중 오류가 발생했습니다.');
-      return res.redirect('/password/reset');
-    }
-
-    const sent = await sendEmailVerificationCode({
-      to: target.email,
-      code: issued.code,
-      purpose: 'password-reset',
-      lang: res.locals.ctx.lang
-    });
-
-    if (!sent.ok) {
-      if (!isProduction && sent.reason === 'smtp_not_configured') {
-        setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
-      } else {
-        setFlash(req, 'error', '인증번호 메일 발송에 실패했습니다. 관리자에게 문의해 주세요.');
-        return res.redirect('/password/reset');
+    let debugCode = '';
+    if (target) {
+      const issued = issueEmailVerificationCode({
+        purpose: 'password-reset',
+        email: target.email,
+        account: target.username,
+        userId: target.id
+      });
+      if (issued.ok) {
+        debugCode = issued.code;
+        const sent = await sendEmailVerificationCode({
+          to: target.email,
+          code: issued.code,
+          purpose: 'password-reset',
+          lang: res.locals.ctx.lang
+        });
+        if (!mustEnforceSecurity && !isProduction && !sent.ok && sent.reason === 'smtp_not_configured') {
+          setFlash(req, 'success', `[개발모드] 인증번호: ${issued.code}`);
+        }
       }
-    } else {
-      setFlash(req, 'success', '인증번호를 이메일로 전송했습니다.');
+    }
+    if (mustEnforceSecurity) {
+      await waitForMs(250);
+    }
+
+    if (!(!mustEnforceSecurity && !isProduction && debugCode)) {
+      setFlash(req, 'success', '입력하신 정보가 맞으면 인증번호를 이메일로 전송했습니다.');
     }
 
     return res.redirect(
@@ -12960,7 +13254,12 @@ app.post(
 
 app.post(
   '/password/reset/verify-code',
-  authAttemptGuard({ key: 'password-reset-verify', redirectPath: '/password/reset', limit: 14 }),
+  authAttemptGuard({
+    key: 'password-reset-verify',
+    redirectPath: '/password/reset',
+    limit: 14,
+    identifierResolver: (req) => `${normalizeAccountName(req.body?.account || '').toLowerCase()}|${normalizeEmailAddress(req.body?.email || '')}`
+  }),
   asyncRoute(async (req, res) => {
     const account = normalizeAccountName(req.body.account || '');
     const email = normalizeEmailAddress(req.body.email || '');
@@ -12985,7 +13284,10 @@ app.post(
       .get(account, email);
 
     if (!target) {
-      setFlash(req, 'error', '입력한 계정/이메일 정보와 일치하는 회원이 없습니다.');
+      if (mustEnforceSecurity) {
+        await waitForMs(250);
+      }
+      setFlash(req, 'error', mustEnforceSecurity ? '인증번호가 올바르지 않거나 만료되었습니다.' : '입력한 계정/이메일 정보와 일치하는 회원이 없습니다.');
       return res.redirect('/password/reset');
     }
 
@@ -12997,12 +13299,17 @@ app.post(
     });
 
     if (!verified.ok) {
+      if (mustEnforceSecurity) {
+        await waitForMs(250);
+      }
       const reasonMessage =
-        verified.reason === 'expired'
-          ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
-          : verified.reason === 'too_many_attempts'
-            ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
-            : '인증번호가 올바르지 않습니다.';
+        mustEnforceSecurity
+          ? '인증번호가 올바르지 않거나 만료되었습니다.'
+          : verified.reason === 'expired'
+            ? '인증번호가 만료되었습니다. 다시 발급해 주세요.'
+            : verified.reason === 'too_many_attempts'
+              ? '인증 시도 횟수를 초과했습니다. 다시 인증번호를 발급해 주세요.'
+              : '인증번호가 올바르지 않습니다.';
       setFlash(req, 'error', reasonMessage);
       return res.redirect(
         `/password/reset?step=verify&account=${encodeURIComponent(account)}&email=${encodeURIComponent(email)}`
@@ -13020,8 +13327,8 @@ app.post(
       return res.redirect('/password/reset');
     }
 
-    resetAuthAttempt(req, 'password-reset-send');
-    resetAuthAttempt(req, 'password-reset-verify');
+    resetAuthAttempt(req, 'password-reset-send', { identifier: `${account.toLowerCase()}|${email}` });
+    resetAuthAttempt(req, 'password-reset-verify', { identifier: `${account.toLowerCase()}|${email}` });
     setFlash(req, 'success', '이메일 인증이 완료되었습니다. 새 비밀번호를 입력해 주세요.');
     return res.redirect(`/password/reset?ticket=${encodeURIComponent(ticket)}`);
   })
@@ -13029,7 +13336,12 @@ app.post(
 
 app.post(
   '/password/reset/update',
-  authAttemptGuard({ key: 'password-reset-update', redirectPath: '/password/reset', limit: 18 }),
+  authAttemptGuard({
+    key: 'password-reset-update',
+    redirectPath: '/password/reset',
+    limit: 18,
+    identifierResolver: (req) => String(req.body?.ticket || '').trim().slice(0, 120)
+  }),
   asyncRoute(async (req, res) => {
     const ticket = String(req.body.ticket || '').trim();
     const newPassword = String(req.body.password || '');
@@ -13069,7 +13381,13 @@ app.post(
 
     if (!user || Number(user.is_admin || 0) === 1) {
       consumePasswordResetTicket(ticket);
-      setFlash(req, 'error', '비밀번호를 변경할 계정을 찾을 수 없습니다.');
+      setFlash(
+        req,
+        'error',
+        mustEnforceSecurity
+          ? '비밀번호 재설정 요청이 유효하지 않습니다. 다시 시도해 주세요.'
+          : '비밀번호를 변경할 계정을 찾을 수 없습니다.'
+      );
       return res.redirect('/password/reset');
     }
 
@@ -13081,7 +13399,9 @@ app.post(
       delete req.session.accountFindResult;
     }
 
-    resetAuthAttempt(req, 'password-reset-update');
+    resetAuthAttempt(req, 'password-reset-update', {
+      identifier: String(ticket || '').trim().slice(0, 120)
+    });
     setFlash(req, 'success', '비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요.');
     return res.redirect(`/login?account=${encodeURIComponent(user.username)}`);
   })
@@ -13094,7 +13414,12 @@ app.get('/login', (req, res) => {
 
 app.post(
   '/login',
-  authAttemptGuard({ key: 'login', redirectPath: '/login', limit: 15 }),
+  authAttemptGuard({
+    key: 'login',
+    redirectPath: '/login',
+    limit: 15,
+    identifierResolver: (req) => String(req.body?.account || req.body?.username || '').trim().toLowerCase()
+  }),
   asyncRoute(async (req, res) => {
   const account = String(req.body.account || req.body.username || '').trim();
   const password = String(req.body.password || '');
@@ -13110,24 +13435,23 @@ app.post(
     )
     .get(account);
 
-  if (!user) {
+  const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+  if (!user || !valid) {
     setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
     return res.redirect('/login');
   }
 
   if (Number(user.is_admin) === 1) {
+    if (mustEnforceSecurity) {
+      setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
+      return res.redirect('/login');
+    }
     setFlash(req, 'error', '관리자 계정은 어드민 로그인 페이지를 이용해 주세요.');
     return res.redirect('/admin/login');
   }
 
   if (Number(user.is_blocked) === 1) {
     setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
-    return res.redirect('/login');
-  }
-
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) {
-    setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
     return res.redirect('/login');
   }
 
@@ -13140,7 +13464,7 @@ app.post(
     isAdmin: req.session.isAdmin === true,
     lastActivityAt: req.session.lastActivityAt
   });
-  resetAuthAttempt(req, 'login');
+  resetAuthAttempt(req, 'login', { identifier: account.toLowerCase() });
 
   res.redirect('/main');
   })
@@ -13165,7 +13489,12 @@ app.get('/admin/login', (req, res) => {
 
 app.post(
   '/admin/login',
-  authAttemptGuard({ key: 'admin-login', redirectPath: '/admin/login', limit: 10 }),
+  authAttemptGuard({
+    key: 'admin-login',
+    redirectPath: '/admin/login',
+    limit: 10,
+    identifierResolver: (req) => String(req.body?.account || req.body?.username || '').trim().toLowerCase()
+  }),
   asyncRoute(async (req, res) => {
   const account = String(req.body.account || req.body.username || '').trim();
   const password = String(req.body.password || '');
@@ -13191,19 +13520,14 @@ app.post(
     )
     .get(account);
 
-  if (!user || Number(user.is_admin) !== 1) {
-    setFlash(req, 'error', '어드민 계정이 아닙니다.');
+  const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
+  if (!user || Number(user.is_admin) !== 1 || !valid) {
+    setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
     return res.redirect('/admin/login');
   }
 
   if (Number(user.is_blocked) === 1) {
     setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
-    return res.redirect('/admin/login');
-  }
-
-  const valid = await bcrypt.compare(password, user.password_hash);
-  if (!valid) {
-    setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
     return res.redirect('/admin/login');
   }
 
@@ -13218,7 +13542,7 @@ app.post(
   }
 
   await setAdminAuthSession(req, res, user);
-  resetAuthAttempt(req, 'admin-login');
+  resetAuthAttempt(req, 'admin-login', { identifier: account.toLowerCase() });
 
   logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success');
 
@@ -13245,7 +13569,15 @@ app.get('/admin/otp/verify', (req, res) => {
 
 app.post(
   '/admin/otp/verify',
-  authAttemptGuard({ key: 'admin-otp-verify', redirectPath: '/admin/otp/verify', limit: 12 }),
+  authAttemptGuard({
+    key: 'admin-otp-verify',
+    redirectPath: '/admin/otp/verify',
+    limit: 12,
+    identifierResolver: (req) => {
+      const pending = readAdminOtpPending(req);
+      return pending ? `uid:${pending.userId}` : '';
+    }
+  }),
   asyncRoute(async (req, res) => {
     const pending = readAdminOtpPending(req);
     if (!pending) {
@@ -13305,8 +13637,8 @@ app.post(
     }
 
     await setAdminAuthSession(req, res, user);
-    resetAuthAttempt(req, 'admin-login');
-    resetAuthAttempt(req, 'admin-otp-verify');
+    resetAuthAttempt(req, 'admin-login', { identifier: String(user.username || '').trim().toLowerCase() });
+    resetAuthAttempt(req, 'admin-otp-verify', { identifier: `uid:${user.id}` });
     logAdminActivityByUser(user, req, 'LOGIN_SUCCESS', 'admin login success via otp');
     setFlash(req, 'success', '관리자 로그인되었습니다.');
     return res.redirect('/admin/dashboard');

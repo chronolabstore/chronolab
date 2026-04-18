@@ -1,6 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import crypto from 'crypto';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import { PRODUCT_SEED_ITEMS } from './product-seeds.js';
@@ -47,6 +48,21 @@ const shouldRunStartupDataMaintenance = parseEnvFlag(
   process.env.ENABLE_STARTUP_DATA_MAINTENANCE,
   defaultMaintenanceEnabled
 );
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{12,}$/;
+const MEMBER_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/;
+
+function isStrongPassword(value = '') {
+  return STRONG_PASSWORD_REGEX.test(String(value || '').trim());
+}
+
+function isMemberPassword(value = '') {
+  return MEMBER_PASSWORD_REGEX.test(String(value || '').trim());
+}
+
+function generateFallbackPassword(prefix = 'ChronoLab') {
+  return `${String(prefix || 'ChronoLab')}!${crypto.randomBytes(12).toString('hex')}`;
+}
 
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
@@ -1207,6 +1223,40 @@ function ensureAdminSecurityTables() {
   ).run();
 }
 
+function ensureAuthRateLimitTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      bucket_key TEXT PRIMARY KEY,
+      scope_key TEXT NOT NULL DEFAULT '',
+      identifier TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      window_started_at INTEGER NOT NULL DEFAULT 0,
+      blocked_until INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_updated_at
+      ON auth_rate_limits (updated_at DESC)
+    `
+  ).run();
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_scope_identifier
+      ON auth_rate_limits (scope_key, identifier, updated_at DESC)
+    `
+  ).run();
+  db.prepare(
+    `
+      CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_ip_scope
+      ON auth_rate_limits (ip_address, scope_key, updated_at DESC)
+    `
+  ).run();
+}
+
 function ensureSupportChatTables() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS support_chat_threads (
@@ -1337,13 +1387,23 @@ function resetStagingMainAdminPasswordOnce() {
     return;
   }
 
-  const markerKey = 'stagingMainAdminCredentialResetV20260414V6';
-  if (String(getSetting(markerKey, '0') || '0') === '1') {
+  const configuredPassword = String(process.env.STAGING_ADMIN_PASSWORD || '').trim();
+  if (!configuredPassword) {
+    return;
+  }
+  if (!isStrongPassword(configuredPassword)) {
+    console.warn('[chronolab:staging] STAGING_ADMIN_PASSWORD does not meet minimum complexity requirements.');
+    return;
+  }
+
+  const markerKey = 'stagingMainAdminCredentialResetHashV20260419';
+  const markerValue = crypto.createHash('sha256').update(configuredPassword).digest('hex').slice(0, 32);
+  if (String(getSetting(markerKey, '') || '') === markerValue) {
     return;
   }
 
   const targetUsername = 'admin';
-  const nextPassword = 'Admin!234';
+  const nextPassword = configuredPassword;
   const adminNamedUser = db
     .prepare(
       `
@@ -1429,7 +1489,7 @@ function resetStagingMainAdminPasswordOnce() {
       WHERE id = ?
     `
   ).run(passwordHash, targetAdmin.id);
-  setSetting(markerKey, '1');
+  setSetting(markerKey, markerValue);
 }
 
 function normalizeAdminRoles() {
@@ -1467,7 +1527,14 @@ function ensureDemoMemberUser() {
     return Number(existing.id);
   }
 
-  const passwordHash = bcrypt.hashSync('Demo1234', 10);
+  const configuredPassword = String(process.env.SEED_DEMO_MEMBER_PASSWORD || '').trim();
+  const nextPassword = configuredPassword && isMemberPassword(configuredPassword)
+    ? configuredPassword
+    : generateFallbackPassword('SeedDemo');
+  if (configuredPassword && !isMemberPassword(configuredPassword)) {
+    console.warn('[chronolab:seed] SEED_DEMO_MEMBER_PASSWORD does not meet minimum complexity requirements.');
+  }
+  const passwordHash = bcrypt.hashSync(nextPassword, 10);
   const inserted = db
     .prepare(
       `
@@ -1699,7 +1766,15 @@ function buildStagingDemoProductSeed(groupConfig, index, groupIndex) {
 function ensureStagingDemoMemberAccount() {
   const username = 'demo';
   const email = 'demo@chronolab.local';
-  const passwordHash = bcrypt.hashSync('Demo!234', 10);
+  const configuredPassword = String(process.env.STAGING_DEMO_MEMBER_PASSWORD || '').trim();
+  const hasValidConfiguredPassword = configuredPassword && isMemberPassword(configuredPassword);
+  if (configuredPassword && !hasValidConfiguredPassword) {
+    console.warn('[chronolab:staging] STAGING_DEMO_MEMBER_PASSWORD does not meet minimum complexity requirements.');
+  }
+  const passwordHash = bcrypt.hashSync(
+    hasValidConfiguredPassword ? configuredPassword : generateFallbackPassword('StagingDemo'),
+    10
+  );
   const existing = db
     .prepare(
       `
@@ -1712,25 +1787,46 @@ function ensureStagingDemoMemberAccount() {
     .get(username);
 
   if (existing) {
-    db.prepare(
-      `
-        UPDATE users
-        SET
-          email = ?,
-          username = ?,
-          nickname = ?,
-          full_name = ?,
-          phone = ?,
-          password_hash = ?,
-          agreed_terms = 1,
-          is_admin = 0,
-          is_blocked = 0,
-          blocked_reason = '',
-          blocked_at = NULL,
-          reward_points = CASE WHEN reward_points < 0 THEN 0 ELSE reward_points END
-        WHERE id = ?
-      `
-    ).run(email, username, username, 'Demo Member', '01000000000', passwordHash, Number(existing.id));
+    if (hasValidConfiguredPassword) {
+      db.prepare(
+        `
+          UPDATE users
+          SET
+            email = ?,
+            username = ?,
+            nickname = ?,
+            full_name = ?,
+            phone = ?,
+            password_hash = ?,
+            agreed_terms = 1,
+            is_admin = 0,
+            is_blocked = 0,
+            blocked_reason = '',
+            blocked_at = NULL,
+            reward_points = CASE WHEN reward_points < 0 THEN 0 ELSE reward_points END
+          WHERE id = ?
+        `
+      ).run(email, username, username, 'Demo Member', '01000000000', passwordHash, Number(existing.id));
+    } else {
+      db.prepare(
+        `
+          UPDATE users
+          SET
+            email = ?,
+            username = ?,
+            nickname = ?,
+            full_name = ?,
+            phone = ?,
+            agreed_terms = 1,
+            is_admin = 0,
+            is_blocked = 0,
+            blocked_reason = '',
+            blocked_at = NULL,
+            reward_points = CASE WHEN reward_points < 0 THEN 0 ELSE reward_points END
+          WHERE id = ?
+        `
+      ).run(email, username, username, 'Demo Member', '01000000000', Number(existing.id));
+    }
     return Number(existing.id);
   }
 
@@ -2769,6 +2865,7 @@ export function initDb() {
   ensureContentImagePathsJsonColumns();
   ensureDailyFunnelEventsTable();
   ensureAdminSecurityTables();
+  ensureAuthRateLimitTable();
   ensureSupportChatTables();
   normalizeOrderStatuses();
 
