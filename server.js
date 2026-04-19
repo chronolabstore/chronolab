@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import dns from 'dns/promises';
+import net from 'net';
 import express from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -1000,6 +1002,8 @@ const WATERMARK_REMOTE_FETCH_BASE_DELAY_MS = 1500;
 const WATERMARK_REMOTE_FETCH_MAX_DELAY_MS = 8000;
 const WATERMARK_REMOTE_FETCH_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 const WATERMARK_REMOTE_CURL_MAX_BUFFER_BYTES = 45 * 1024 * 1024;
+const REMOTE_IMAGE_HOST_VALIDATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const remoteImageHostValidationCache = new Map();
 
 let mailTransporter = null;
 
@@ -1018,7 +1022,10 @@ app.get('/health', (req, res) => {
 
 const upload = multer({
   storage: uploadStorage,
-  limits: { fileSize: MAX_UPLOAD_FILE_SIZE_BYTES },
+  limits: {
+    fileSize: MAX_UPLOAD_FILE_SIZE_BYTES,
+    files: MAX_UPLOAD_IMAGE_COUNT
+  },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_UPLOAD_MIME.has(file.mimetype)) {
       cb(new Error('지원되지 않는 파일 형식입니다. JPG/PNG/WEBP/GIF/AVIF만 업로드할 수 있습니다.'));
@@ -1086,6 +1093,28 @@ app.use((req, res, next) => {
   req.requestId = requestId;
   res.setHeader('x-request-id', requestId);
   return next();
+});
+
+app.use((req, res, next) => {
+  if (!mustEnforceSecurity) {
+    return next();
+  }
+  if (req.path === '/health') {
+    return next();
+  }
+  const forwardedProto = String(req.get('x-forwarded-proto') || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  if (req.secure || forwardedProto === 'https') {
+    return next();
+  }
+  const host = String(req.get('host') || '').trim();
+  if (!host) {
+    return next();
+  }
+  const targetPath = String(req.originalUrl || req.url || '/');
+  return res.redirect(308, `https://${host}${targetPath}`);
 });
 
 const CONTENT_SECURITY_POLICY = [
@@ -2798,6 +2827,13 @@ function normalizeRemoteImageUrl(imageUrl = '') {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return '';
     }
+    if (parsed.username || parsed.password) {
+      return '';
+    }
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    if (!isAllowedRemoteImageHostname(hostname)) {
+      return '';
+    }
     if (mustEnforceSecurity && parsed.protocol !== 'https:') {
       return '';
     }
@@ -2829,6 +2865,157 @@ function parseRetryAfterMs(retryAfter = '') {
 
 function isRemoteImageUrl(imageUrl = '') {
   return Boolean(normalizeRemoteImageUrl(imageUrl));
+}
+
+function isPrivateOrReservedIpv4Address(ipv4Address = '') {
+  const parts = String(ipv4Address || '')
+    .trim()
+    .split('.')
+    .map((value) => Number.parseInt(value, 10));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+  const [a, b] = parts;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function isPrivateOrReservedIpv6Address(ipv6Address = '') {
+  const normalized = String(ipv6Address || '')
+    .trim()
+    .toLowerCase()
+    .split('%')[0];
+  if (!normalized) {
+    return true;
+  }
+  if (normalized === '::' || normalized === '::1') {
+    return true;
+  }
+  if (normalized.startsWith('::ffff:')) {
+    const mappedIpv4 = normalized.slice('::ffff:'.length);
+    if (net.isIP(mappedIpv4) === 4) {
+      return isPrivateOrReservedIpv4Address(mappedIpv4);
+    }
+    return true;
+  }
+  if (normalized.startsWith('fc') || normalized.startsWith('fd')) {
+    return true;
+  }
+  if (
+    normalized.startsWith('fe8') ||
+    normalized.startsWith('fe9') ||
+    normalized.startsWith('fea') ||
+    normalized.startsWith('feb')
+  ) {
+    return true;
+  }
+  if (normalized.startsWith('ff')) {
+    return true;
+  }
+  return false;
+}
+
+function isPrivateOrReservedIpAddress(address = '') {
+  const normalized = String(address || '').trim().toLowerCase();
+  const ipVersion = net.isIP(normalized);
+  if (ipVersion === 4) {
+    return isPrivateOrReservedIpv4Address(normalized);
+  }
+  if (ipVersion === 6) {
+    return isPrivateOrReservedIpv6Address(normalized);
+  }
+  return true;
+}
+
+function isAllowedRemoteImageHostname(hostname = '') {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized === 'localhost' || normalized.endsWith('.localhost')) {
+    return false;
+  }
+  if (
+    normalized.endsWith('.local') ||
+    normalized.endsWith('.internal') ||
+    normalized.endsWith('.home') ||
+    normalized.endsWith('.lan') ||
+    normalized.endsWith('.corp')
+  ) {
+    return false;
+  }
+  const ipVersion = net.isIP(normalized);
+  if (ipVersion > 0 && isPrivateOrReservedIpAddress(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function readRemoteImageHostValidationCache(hostname = '') {
+  const key = String(hostname || '').trim().toLowerCase();
+  if (!key) {
+    return null;
+  }
+  const cached = remoteImageHostValidationCache.get(key);
+  if (!cached) {
+    return null;
+  }
+  if (Date.now() - Number(cached.checkedAt || 0) > REMOTE_IMAGE_HOST_VALIDATION_CACHE_TTL_MS) {
+    remoteImageHostValidationCache.delete(key);
+    return null;
+  }
+  return Boolean(cached.allowed);
+}
+
+function writeRemoteImageHostValidationCache(hostname = '', allowed = false) {
+  const key = String(hostname || '').trim().toLowerCase();
+  if (!key) {
+    return;
+  }
+  remoteImageHostValidationCache.set(key, {
+    allowed: allowed === true,
+    checkedAt: Date.now()
+  });
+}
+
+async function isPublicRemoteImageHost(hostname = '') {
+  const normalized = String(hostname || '').trim().toLowerCase();
+  if (!isAllowedRemoteImageHostname(normalized)) {
+    return false;
+  }
+  const ipVersion = net.isIP(normalized);
+  if (ipVersion > 0) {
+    return !isPrivateOrReservedIpAddress(normalized);
+  }
+
+  const cached = readRemoteImageHostValidationCache(normalized);
+  if (cached !== null) {
+    return cached;
+  }
+
+  try {
+    const records = await dns.lookup(normalized, { all: true, verbatim: true });
+    const addresses = Array.isArray(records)
+      ? records.map((record) => String(record?.address || '').trim()).filter(Boolean)
+      : [];
+    if (addresses.length === 0) {
+      writeRemoteImageHostValidationCache(normalized, false);
+      return false;
+    }
+    const hasPrivateAddress = addresses.some((address) => isPrivateOrReservedIpAddress(address));
+    const allowed = !hasPrivateAddress;
+    writeRemoteImageHostValidationCache(normalized, allowed);
+    return allowed;
+  } catch {
+    writeRemoteImageHostValidationCache(normalized, false);
+    return false;
+  }
 }
 
 function buildUploadFilenameForFormat(format = '') {
@@ -2953,6 +3140,16 @@ async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
   if (!src) {
     return { ok: false, reason: 'unsupported-url' };
   }
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(src);
+  } catch {
+    return { ok: false, reason: 'unsupported-url' };
+  }
+  const hasPublicHost = await isPublicRemoteImageHost(parsedUrl.hostname);
+  if (!hasPublicHost) {
+    return { ok: false, reason: 'blocked-private-host' };
+  }
 
   const canUseFetch = typeof fetch === 'function';
   let reason = 'download-error';
@@ -2963,7 +3160,6 @@ async function downloadRemoteImageAsWatermarkedUpload(imageUrl = '') {
       const timeout = setTimeout(() => controller.abort(), WATERMARK_REMOTE_FETCH_TIMEOUT_MS);
 
       try {
-        const parsedUrl = new URL(src);
         const response = await fetch(src, {
           method: 'GET',
           redirect: 'follow',
@@ -9374,6 +9570,14 @@ function shouldEnforceOriginValidation(req) {
   return true;
 }
 
+function hasAuthenticatedRequestSession(req) {
+  if (Number(req?.user?.id || 0) > 0) {
+    return true;
+  }
+  const authScope = resolveAuthScopeFromRequest(req);
+  return getScopedSessionUserId(req?.session, authScope) > 0;
+}
+
 function shouldEnforceCsrfTokenValidation(req) {
   if (!shouldEnforceOriginValidation(req)) {
     return false;
@@ -9382,7 +9586,7 @@ function shouldEnforceCsrfTokenValidation(req) {
   if (contentType.startsWith('multipart/form-data')) {
     return false;
   }
-  return Number(req?.session?.userId || 0) > 0;
+  return hasAuthenticatedRequestSession(req);
 }
 
 function rejectInvalidOriginRequest(req, res) {
@@ -9410,7 +9614,7 @@ function requireAuthenticatedMultipartCsrf(req, res, next) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     return next();
   }
-  if (Number(req?.session?.userId || 0) <= 0) {
+  if (!hasAuthenticatedRequestSession(req)) {
     return next();
   }
   const contentType = String(req.get('content-type') || '').toLowerCase();
@@ -19484,6 +19688,8 @@ app.use((error, req, res, next) => {
 
   const isUnsupportedType = Boolean(error?.message?.includes('지원되지 않는 파일 형식'));
   const isFileTooLarge = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
+  const isFileCountExceeded = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_COUNT';
+  const isUnexpectedUploadField = error instanceof multer.MulterError && error.code === 'LIMIT_UNEXPECTED_FILE';
   const acceptHeader = String(req.get('accept') || '').toLowerCase();
   const contentTypeHeader = String(req.get('content-type') || '').toLowerCase();
   const wantsJsonResponse = (
@@ -19497,11 +19703,21 @@ app.use((error, req, res, next) => {
     ? error.message
     : isFileTooLarge
       ? `업로드 파일은 최대 ${MAX_UPLOAD_FILE_SIZE_MB}MB까지 가능합니다. 파일 크기를 줄여 다시 시도해 주세요.`
+      : isFileCountExceeded
+        ? `이미지는 한 번에 최대 ${MAX_UPLOAD_IMAGE_COUNT}장까지 업로드할 수 있습니다.`
+        : isUnexpectedUploadField
+          ? '지원되지 않는 업로드 항목이 포함되어 요청이 차단되었습니다.'
       : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 
   if (wantsJsonResponse) {
     if (isFileTooLarge) {
       return res.status(413).json({ ok: false, error: 'file_too_large', message, maxMb: MAX_UPLOAD_FILE_SIZE_MB });
+    }
+    if (isFileCountExceeded) {
+      return res.status(400).json({ ok: false, error: 'file_count_exceeded', message, maxCount: MAX_UPLOAD_IMAGE_COUNT });
+    }
+    if (isUnexpectedUploadField) {
+      return res.status(400).json({ ok: false, error: 'unexpected_upload_field', message });
     }
     if (isUnsupportedType) {
       return res.status(400).json({ ok: false, error: 'unsupported_file_type', message });
