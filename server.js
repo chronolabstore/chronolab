@@ -5725,7 +5725,12 @@ function rejectAdminAccessShield(req, res, reason = 'policy_blocked') {
   if (requestPath.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
     return res.status(403).json({ ok: false, error: 'admin_access_blocked', reason, message });
   }
-  return res.status(403).render('simple-error', { title: 'Forbidden', message });
+  return res
+    .status(403)
+    .type('text/html; charset=utf-8')
+    .send(
+      `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Forbidden</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f7fb;color:#0f172a;padding:40px;"><main style="max-width:560px;margin:8vh auto;background:#fff;border:1px solid #d7deec;border-radius:14px;padding:28px;"><h1 style="margin:0 0 12px;font-size:28px;">Forbidden</h1><p style="line-height:1.6;margin:0;">${message}</p></main></body></html>`
+    );
 }
 
 function detectSuspiciousAdminRequest(req) {
