@@ -61,6 +61,11 @@ ADMIN_WAF_IP_ALLOWLIST=
 SECURITY_ALERT_NOTIFY_ENABLED=1
 SECURITY_ALERT_NOTIFY_WEBHOOK_URL=
 SECURITY_ALERT_NOTIFY_EMAIL_TO=
+SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED=0
+SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN=
+SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS=
+SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID=
+SECURITY_ALERT_NOTIFY_TELEGRAM_SILENT=0
 ENV
 
 sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chronolab/.env
@@ -229,6 +234,24 @@ cd /var/www/chronolab
 - 실시간 수신이 필요하면 아래 중 하나 이상 설정:
   - `SECURITY_ALERT_NOTIFY_WEBHOOK_URL` (Slack/Discord/사내 Webhook)
   - `SECURITY_ALERT_NOTIFY_EMAIL_TO` (쉼표 구분 이메일)
+  - `SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED=1` + Telegram Bot 설정
+
+Telegram 설정(권장):
+1. 텔레그램 `@BotFather`에서 봇 생성 후 Bot Token 발급
+2. 알림 받을 개인/그룹/채널에 봇 추가
+3. 봇에게 대상 채팅에서 메시지 1개 이상 전송
+4. 아래 호출로 `chat.id` 확인:
+```bash
+curl -s "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates"
+```
+5. `.env` 반영:
+```bash
+SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED=1
+SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN>
+SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS=<CHAT_ID>
+```
+- 여러 곳으로 받으려면 `SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS`에 쉼표로 다중 입력
+- 포럼 토픽(스레드)으로 받을 때만 `SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID` 추가
 
 ## 9) Render 종료 체크리스트
 1. Render Dashboard -> 해당 서비스 선택

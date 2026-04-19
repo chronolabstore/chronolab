@@ -232,6 +232,38 @@ const SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS = Array.from(
 )
   .map((email) => normalizeEmailAddress(email))
   .filter(Boolean);
+const SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED = parseEnvFlag(
+  process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED,
+  false
+);
+const SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN = String(
+  process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || ''
+).trim();
+const SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS = Array.from(
+  parseCsvStringSet(
+    process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS ||
+      process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_ID ||
+      process.env.TELEGRAM_CHAT_ID ||
+      ''
+  )
+)
+  .map((value) => String(value || '').trim())
+  .filter((value) => /^-?[0-9]{3,20}$/.test(value));
+const SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID = (() => {
+  const parsed = Number.parseInt(
+    String(
+      process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID ||
+        process.env.TELEGRAM_THREAD_ID ||
+        ''
+    ),
+    10
+  );
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+})();
+const SECURITY_ALERT_NOTIFY_TELEGRAM_SILENT = parseEnvFlag(
+  process.env.SECURITY_ALERT_NOTIFY_TELEGRAM_SILENT,
+  false
+);
 const SECURITY_ALERT_NOTIFY_THROTTLE_MS = Math.max(
   10 * 1000,
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_THROTTLE_MS || ''), 10) || 60 * 1000
@@ -4186,7 +4218,15 @@ function canNotifySecurityAlert(payload = {}) {
   if (!SECURITY_ALERT_NOTIFY_ENABLED) {
     return false;
   }
-  if (!SECURITY_ALERT_NOTIFY_WEBHOOK_URL && SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS.length === 0) {
+  const hasTelegramTarget =
+    SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED &&
+    Boolean(SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN) &&
+    SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS.length > 0;
+  if (
+    !SECURITY_ALERT_NOTIFY_WEBHOOK_URL &&
+    SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS.length === 0 &&
+    !hasTelegramTarget
+  ) {
     return false;
   }
   const dedupeKey = [
@@ -4278,6 +4318,78 @@ async function dispatchSecurityAlertEmail(payload = {}) {
   }
 }
 
+async function dispatchSecurityAlertTelegram(payload = {}) {
+  if (!SECURITY_ALERT_NOTIFY_TELEGRAM_ENABLED) {
+    return { ok: false, reason: 'telegram_disabled' };
+  }
+  if (!SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN) {
+    return { ok: false, reason: 'telegram_token_missing' };
+  }
+  if (SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS.length === 0) {
+    return { ok: false, reason: 'telegram_chat_id_missing' };
+  }
+
+  const endpoint = `https://api.telegram.org/bot${SECURITY_ALERT_NOTIFY_TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const baseMessage = buildSecurityAlertMessage(payload).slice(0, 3800);
+  const sendResults = await Promise.allSettled(
+    SECURITY_ALERT_NOTIFY_TELEGRAM_CHAT_IDS.map(async (chatId) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), SECURITY_ALERT_NOTIFY_TIMEOUT_MS);
+      try {
+        const bodyPayload = {
+          chat_id: chatId,
+          text: baseMessage,
+          disable_web_page_preview: true,
+          disable_notification: SECURITY_ALERT_NOTIFY_TELEGRAM_SILENT
+        };
+        if (Number.isInteger(SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID) && SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID > 0) {
+          bodyPayload.message_thread_id = SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID;
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(bodyPayload),
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          return { ok: false, reason: `telegram_status_${response.status}` };
+        }
+        const responseBody = await response.json().catch(() => ({}));
+        if (responseBody && responseBody.ok === false) {
+          return { ok: false, reason: `telegram_api_error_${String(responseBody.error_code || 'unknown')}` };
+        }
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error?.name === 'AbortError' ? 'telegram_timeout' : 'telegram_failed'
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    })
+  );
+
+  const successCount = sendResults.filter(
+    (entry) => entry.status === 'fulfilled' && entry.value && entry.value.ok
+  ).length;
+  if (successCount > 0) {
+    return { ok: true, delivered: successCount };
+  }
+
+  const firstFailure = sendResults.find(
+    (entry) => entry.status === 'fulfilled' && entry.value && !entry.value.ok
+  );
+  if (firstFailure && firstFailure.status === 'fulfilled') {
+    return { ok: false, reason: firstFailure.value.reason || 'telegram_failed' };
+  }
+  return { ok: false, reason: 'telegram_failed' };
+}
+
 function queueSecurityAlertNotification(payload = {}) {
   if (!canNotifySecurityAlert(payload)) {
     return;
@@ -4285,7 +4397,8 @@ function queueSecurityAlertNotification(payload = {}) {
   setImmediate(() => {
     Promise.allSettled([
       dispatchSecurityAlertWebhook(payload),
-      dispatchSecurityAlertEmail(payload)
+      dispatchSecurityAlertEmail(payload),
+      dispatchSecurityAlertTelegram(payload)
     ]).catch(() => {});
   });
 }
