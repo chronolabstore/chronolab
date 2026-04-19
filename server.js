@@ -17979,6 +17979,7 @@ app.post(
       const siteName = String(req.body.siteName || getSetting('siteName', 'Chrono Lab')).trim();
       const bankAccountInfo = String(req.body.bankAccountInfo || '').trim();
       const contactInfo = String(req.body.contactInfo || '').trim();
+      const kakaoChatUrlInput = String(req.body.kakaoChatUrl || '').trim();
       const businessInfo = String(req.body.businessInfo || '').trim();
       const footerBrandCopyKo = String(req.body.footerBrandCopyKo || '').trim().slice(0, 300);
       const footerBrandCopyEn = String(req.body.footerBrandCopyEn || '').trim().slice(0, 300);
@@ -18022,10 +18023,20 @@ app.post(
         String(req.body[`heroQuickMenuPath${index + 1}`] || '')
       );
       const heroQuickMenuPaths = normalizeHeroQuickMenuPathList(heroQuickMenuRawValues);
+      const resolvedKakaoChatUrl = resolveKakaoChatUrl('', kakaoChatUrlInput);
+      if (kakaoChatUrlInput && !resolvedKakaoChatUrl) {
+        setFlash(
+          req,
+          'error',
+          '카카오톡 채널 주소 형식이 올바르지 않습니다. pf.kakao.com 주소 또는 @채널아이디를 입력해 주세요.'
+        );
+        return res.redirect(backPath);
+      }
 
       setSetting('siteName', siteName || 'Chrono Lab');
       setSetting('bankAccountInfo', bankAccountInfo);
       setSetting('contactInfo', contactInfo);
+      setSetting('kakaoChatUrl', resolvedKakaoChatUrl);
       setSetting('businessInfo', businessInfo);
       setSetting('footerBrandCopyKo', footerBrandCopyKo);
       setSetting('footerBrandCopyEn', footerBrandCopyEn);

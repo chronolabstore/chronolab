@@ -1679,6 +1679,16 @@
         <textarea name="contactInfo" rows="2"><%= settings.contactInfo %></textarea>
       </label>
 
+      <label><%= isEn ? 'Kakao Channel URL' : '카카오톡 채널 주소' %>
+        <input
+          type="text"
+          name="kakaoChatUrl"
+          value="<%= settings.kakaoChatUrl || '' %>"
+          placeholder="https://pf.kakao.com/_channel/chat or @channelId"
+          autocomplete="off"
+        />
+      </label>
+
       <label><%= isEn ? 'Footer Brand Copy (KR)' : '푸터 Brand 문구 (KR)' %>
         <textarea name="footerBrandCopyKo" rows="2"><%= settings.footerBrandCopyKo || '' %></textarea>
       </label>
