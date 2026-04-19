@@ -348,6 +348,7 @@ const defaultSettings = {
   memberLevelIncludedGroups: JSON.stringify(SHOP_PRODUCT_GROUPS),
   memberLevelRules: JSON.stringify(DEFAULT_MEMBER_LEVEL_RULES),
   memberLevelPointRates: JSON.stringify(DEFAULT_MEMBER_LEVEL_POINT_RATES),
+  kakaoChatUrl: 'https://pf.kakao.com/_SvmCX/chat',
   contactInfo: '고객센터: 010-0000-0000 / 카카오톡: @chronolab',
   businessInfo: '상호: Chrono Lab | 대표: Chrono Team | 사업자번호: 000-00-00000',
   footerBrandCopyKo: '심플하고 신뢰할 수 있는 시계 쇼핑.',
@@ -403,6 +404,17 @@ function ensureSignupBonusBaseline() {
   if (!Number.isInteger(parsed) || parsed <= 0) {
     setSetting('signupBonusPoints', '10000');
   }
+}
+
+function ensureKakaoChatUrlBaselineV20260419() {
+  if (!shouldRunStartupDataMaintenance) {
+    return;
+  }
+  const currentValue = String(getSetting('kakaoChatUrl', '') || '').trim();
+  if (currentValue) {
+    return;
+  }
+  setSetting('kakaoChatUrl', 'https://pf.kakao.com/_SvmCX/chat');
 }
 
 function applyMemberLevelThemeBaselineV20260415() {
@@ -2873,6 +2885,7 @@ export function initDb() {
     upsertDefaultSetting(key, value);
   }
   ensureSignupBonusBaseline();
+  ensureKakaoChatUrlBaselineV20260419();
   applyMemberLevelThemeBaselineV20260415();
   if (shouldRunStartupDataMaintenance) {
     seedDefaultProductBadgesOnce();

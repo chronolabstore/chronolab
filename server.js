@@ -9534,7 +9534,10 @@ app.use((req, res, next) => {
   const productCounts = getProductCounts(today);
   const postCounts = getPostCounts(today);
   const contactInfoSetting = getSetting('contactInfo', '');
-  const kakaoChatUrl = String(getSetting('kakaoChatUrl', '') || '').trim();
+  const kakaoChatUrl = resolveKakaoChatUrl(
+    contactInfoSetting,
+    String(getSetting('kakaoChatUrl', '') || '').trim()
+  );
   const supportChatAdminUnreadCount = req.user?.isAdmin ? getAdminSupportChatUnreadCount(req.user) : 0;
   const supportChatMemberUnreadCount =
     req.user && !req.user.isAdmin ? getMemberSupportChatUnreadCount(req.user.id) : 0;
@@ -14977,7 +14980,10 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const nightThemeAssets = getThemeAssetConfig('night');
   const heroSettings = getMainHeroSettings(lang);
   const contactInfoSetting = getSetting('contactInfo', '');
-  const kakaoChatUrl = String(getSetting('kakaoChatUrl', '') || '').trim();
+  const kakaoChatUrl = resolveKakaoChatUrl(
+    contactInfoSetting,
+    String(getSetting('kakaoChatUrl', '') || '').trim()
+  );
   const settings = {
     siteName: getSetting('siteName', 'Chrono Lab'),
     headerColor: dayThemeColors.headerColor,
