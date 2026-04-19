@@ -51,6 +51,16 @@ SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
 ADMIN_OTP_ISSUER=Chrono LAB
+ADMIN_WAF_ENABLED=1
+ADMIN_WAF_BOT_BLOCK_ENABLED=1
+ADMIN_WAF_GEO_BLOCK_ENABLED=1
+ADMIN_WAF_ALLOWED_COUNTRY_CODES=KR
+ADMIN_WAF_ASN_BLOCK_ENABLED=0
+ADMIN_WAF_BLOCKED_ASNS=
+ADMIN_WAF_IP_ALLOWLIST=
+SECURITY_ALERT_NOTIFY_ENABLED=1
+SECURITY_ALERT_NOTIFY_WEBHOOK_URL=
+SECURITY_ALERT_NOTIFY_EMAIL_TO=
 ENV
 
 sed -i "s/CHANGE_ME_LONG_RANDOM_SECRET/$(openssl rand -hex 32)/" /var/www/chronolab/.env
@@ -204,6 +214,21 @@ cd /var/www/chronolab
   - `59398`은 사용하지 않음
 
 이동 환경(카페/테더링 등)에서 작업 시에는 Cafe24 방화벽에서 SSH를 특정 IP로 묶지 말고, 서버 내부는 `key-only + fail2ban`으로 방어하는 방식을 권장합니다.
+
+## 8-2) 어드민 접근 보안 권장값
+- `/admin` 경로는 서버에서 Bot 시그니처/Geo/ASN 정책을 함께 검사합니다.
+- 기본 권장:
+  - `ADMIN_WAF_ENABLED=1`
+  - `ADMIN_WAF_BOT_BLOCK_ENABLED=1`
+  - `ADMIN_WAF_GEO_BLOCK_ENABLED=1`
+  - `ADMIN_WAF_ALLOWED_COUNTRY_CODES=KR`
+- 운영자가 해외에서 접속해야 하면, 임시로 `ADMIN_WAF_ALLOWED_COUNTRY_CODES`에 국가코드를 추가하거나 `ADMIN_WAF_IP_ALLOWLIST`에 본인 공인IP를 등록합니다.
+
+## 8-3) 실시간 보안 알림 권장값
+- 보안 이벤트(`로그인 실패/권한 차단/WAF 차단`)는 DB에 기록됩니다.
+- 실시간 수신이 필요하면 아래 중 하나 이상 설정:
+  - `SECURITY_ALERT_NOTIFY_WEBHOOK_URL` (Slack/Discord/사내 Webhook)
+  - `SECURITY_ALERT_NOTIFY_EMAIL_TO` (쉼표 구분 이메일)
 
 ## 9) Render 종료 체크리스트
 1. Render Dashboard -> 해당 서비스 선택

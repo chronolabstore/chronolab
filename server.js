@@ -68,6 +68,48 @@ function parseEnvFlag(value, fallback = false) {
   }
   return Boolean(fallback);
 }
+
+function parseCsvStringSet(value = '') {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  );
+}
+
+function parseCsvCountryCodeSet(value = '') {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => String(item || '').trim().toUpperCase())
+      .filter((item) => /^[A-Z]{2}$/.test(item))
+  );
+}
+
+function parseCsvAsnSet(value = '') {
+  const parsed = new Set();
+  String(value || '')
+    .split(',')
+    .map((item) => String(item || '').trim().toUpperCase())
+    .filter(Boolean)
+    .forEach((item) => {
+      const normalized = item.startsWith('AS') ? item.slice(2) : item;
+      if (/^[0-9]{1,10}$/.test(normalized)) {
+        parsed.add(Number(normalized));
+      }
+    });
+  return parsed;
+}
+
+function parseCsvIpSet(value = '') {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((item) => normalizeIpAddress(item))
+      .filter(Boolean)
+  );
+}
 const isHostedEnvironment = Boolean(
   String(
     process.env.RENDER_EXTERNAL_URL ||
@@ -143,6 +185,83 @@ const ORDER_COMPLETE_VIEW_TTL_MS = 1000 * 60 * 60;
 const SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME = 'admin1';
 const SUPPORT_CHAT_MAX_MESSAGE_LENGTH = 1000;
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('ChronoLab.Auth.Dummy.Password.2026', 10);
+const ADMIN_WAF_ENABLED = parseEnvFlag(process.env.ADMIN_WAF_ENABLED, mustEnforceSecurity);
+const ADMIN_WAF_BOT_BLOCK_ENABLED = parseEnvFlag(
+  process.env.ADMIN_WAF_BOT_BLOCK_ENABLED,
+  ADMIN_WAF_ENABLED
+);
+const ADMIN_WAF_GEO_BLOCK_ENABLED = parseEnvFlag(
+  process.env.ADMIN_WAF_GEO_BLOCK_ENABLED,
+  ADMIN_WAF_ENABLED
+);
+const ADMIN_WAF_ASN_BLOCK_ENABLED = parseEnvFlag(
+  process.env.ADMIN_WAF_ASN_BLOCK_ENABLED,
+  ADMIN_WAF_ENABLED
+);
+const ADMIN_WAF_FAIL_CLOSED_ON_LOOKUP_ERROR = parseEnvFlag(
+  process.env.ADMIN_WAF_FAIL_CLOSED_ON_LOOKUP_ERROR,
+  false
+);
+const ADMIN_WAF_ALLOWED_COUNTRY_CODES = parseCsvCountryCodeSet(
+  process.env.ADMIN_WAF_ALLOWED_COUNTRY_CODES ||
+    (mustEnforceSecurity ? 'KR' : '')
+);
+const ADMIN_WAF_BLOCKED_ASNS = parseCsvAsnSet(process.env.ADMIN_WAF_BLOCKED_ASNS || '');
+const ADMIN_WAF_IP_ALLOWLIST = parseCsvIpSet(
+  process.env.ADMIN_WAF_IP_ALLOWLIST || process.env.ADMIN_ALLOWLIST_IPS || ''
+);
+const ADMIN_WAF_PROFILE_CACHE_TTL_MS = Math.max(
+  5 * 60 * 1000,
+  Number.parseInt(String(process.env.ADMIN_WAF_PROFILE_CACHE_TTL_MS || ''), 10) || 6 * 60 * 60 * 1000
+);
+const ADMIN_WAF_LOOKUP_TIMEOUT_MS = Math.max(
+  1200,
+  Number.parseInt(String(process.env.ADMIN_WAF_LOOKUP_TIMEOUT_MS || ''), 10) || 4000
+);
+const adminWafProfileCache = new Map();
+const SECURITY_ALERT_NOTIFY_ENABLED = parseEnvFlag(
+  process.env.SECURITY_ALERT_NOTIFY_ENABLED,
+  mustEnforceSecurity
+);
+const SECURITY_ALERT_NOTIFY_WEBHOOK_URL = String(
+  process.env.SECURITY_ALERT_NOTIFY_WEBHOOK_URL || process.env.SECURITY_ALERT_WEBHOOK_URL || ''
+)
+  .trim();
+const SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS = Array.from(
+  parseCsvStringSet(process.env.SECURITY_ALERT_NOTIFY_EMAIL_TO || process.env.SECURITY_ALERT_EMAIL_TO || '')
+)
+  .map((email) => normalizeEmailAddress(email))
+  .filter(Boolean);
+const SECURITY_ALERT_NOTIFY_THROTTLE_MS = Math.max(
+  10 * 1000,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_THROTTLE_MS || ''), 10) || 60 * 1000
+);
+const SECURITY_ALERT_NOTIFY_TIMEOUT_MS = Math.max(
+  1000,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_TIMEOUT_MS || ''), 10) || 5000
+);
+const securityAlertNotifyState = new Map();
+const ADMIN_WAF_BLOCKED_USER_AGENT_PATTERNS = [
+  /sqlmap/i,
+  /acunetix/i,
+  /masscan/i,
+  /nmap/i,
+  /nikto/i,
+  /dirbuster/i,
+  /gobuster/i,
+  /wpscan/i,
+  /python-requests/i,
+  /httpclient/i,
+  /libwww-perl/i,
+  /go-http-client/i,
+  /node-fetch/i,
+  /curl\//i,
+  /wget\//i,
+  /headless/i,
+  /\bbot\b/i,
+  /\bcrawler\b/i,
+  /\bspider\b/i
+];
 
 function resolveIdleTimeoutMs({
   envKey = '',
@@ -1117,12 +1236,11 @@ app.use((req, res, next) => {
   return res.redirect(308, `https://${host}${targetPath}`);
 });
 
-const CONTENT_SECURITY_POLICY = [
+const CONTENT_SECURITY_POLICY_BASE_DIRECTIVES = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'self'",
-  "script-src 'self' 'unsafe-inline' https://t1.daumcdn.net https://*.daumcdn.net https://*.daum.net https://*.kakao.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https:",
@@ -1130,9 +1248,49 @@ const CONTENT_SECURITY_POLICY = [
   "frame-src 'self' https://*.daum.net https://*.kakao.com",
   "connect-src 'self' https://*.daum.net https://*.kakao.com",
   "form-action 'self'"
-].join('; ');
+];
+
+function injectNonceIntoScriptTags(html, nonce) {
+  const source = typeof html === 'string' ? html : '';
+  if (!source || !nonce || !source.includes('<script')) {
+    return html;
+  }
+
+  return source.replace(/<script\b(?![^>]*\bnonce=)([^>]*)>/gi, (match, attrs = '') => {
+    return `<script${attrs} nonce="${nonce}">`;
+  });
+}
 
 app.use((req, res, next) => {
+  const cspNonce = crypto.randomBytes(16).toString('base64');
+  res.locals.cspNonce = cspNonce;
+
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    try {
+      if (typeof body !== 'string') {
+        return originalSend(body);
+      }
+      const contentType = String(res.getHeader('content-type') || '').toLowerCase();
+      const isHtmlResponse = contentType.includes('text/html') || body.trimStart().startsWith('<!DOCTYPE html');
+      if (!isHtmlResponse) {
+        return originalSend(body);
+      }
+      return originalSend(injectNonceIntoScriptTags(body, cspNonce));
+    } catch {
+      return originalSend(body);
+    }
+  };
+  return next();
+});
+
+app.use((req, res, next) => {
+  const cspNonce = String(res.locals?.cspNonce || '').trim();
+  const scriptSrc = cspNonce
+    ? `script-src 'self' 'nonce-${cspNonce}' https://t1.daumcdn.net https://*.daumcdn.net https://*.daum.net https://*.kakao.com`
+    : "script-src 'self' https://t1.daumcdn.net https://*.daumcdn.net https://*.daum.net https://*.kakao.com";
+  const contentSecurityPolicy = [...CONTENT_SECURITY_POLICY_BASE_DIRECTIVES, scriptSrc].join('; ');
+
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-frame-options', 'SAMEORIGIN');
   res.setHeader('referrer-policy', 'strict-origin-when-cross-origin');
@@ -1141,7 +1299,7 @@ app.use((req, res, next) => {
   res.setHeader('cross-origin-resource-policy', 'same-origin');
   res.setHeader('origin-agent-cluster', '?1');
   res.setHeader('x-permitted-cross-domain-policies', 'none');
-  res.setHeader('content-security-policy', CONTENT_SECURITY_POLICY);
+  res.setHeader('content-security-policy', contentSecurityPolicy);
   if (mustEnforceSecurity) {
     res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   }
@@ -4013,6 +4171,125 @@ function getMailTransporter() {
   return mailTransporter;
 }
 
+function cleanupSecurityAlertNotifyState(nowMs = Date.now()) {
+  if (securityAlertNotifyState.size <= 5000) {
+    return;
+  }
+  for (const [key, timestamp] of securityAlertNotifyState.entries()) {
+    if (nowMs - Number(timestamp || 0) > SECURITY_ALERT_NOTIFY_THROTTLE_MS * 10) {
+      securityAlertNotifyState.delete(key);
+    }
+  }
+}
+
+function canNotifySecurityAlert(payload = {}) {
+  if (!SECURITY_ALERT_NOTIFY_ENABLED) {
+    return false;
+  }
+  if (!SECURITY_ALERT_NOTIFY_WEBHOOK_URL && SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS.length === 0) {
+    return false;
+  }
+  const dedupeKey = [
+    String(payload.reason || '').trim().toLowerCase(),
+    String(payload.ipAddress || '').trim().toLowerCase(),
+    String(payload.path || '').trim().toLowerCase()
+  ].join('|');
+  const nowMs = Date.now();
+  cleanupSecurityAlertNotifyState(nowMs);
+  const lastNotifiedAt = Number(securityAlertNotifyState.get(dedupeKey) || 0);
+  if (lastNotifiedAt > 0 && nowMs - lastNotifiedAt < SECURITY_ALERT_NOTIFY_THROTTLE_MS) {
+    return false;
+  }
+  securityAlertNotifyState.set(dedupeKey, nowMs);
+  return true;
+}
+
+function buildSecurityAlertMessage(payload = {}) {
+  const lines = [
+    '[Chrono Lab] Security Alert',
+    `time: ${new Date().toISOString()}`,
+    `reason: ${String(payload.reason || '').trim()}`,
+    `detail: ${String(payload.detail || '').trim()}`,
+    `ip: ${String(payload.ipAddress || '').trim() || 'unknown'}`,
+    `method: ${String(payload.method || '').trim() || 'unknown'}`,
+    `path: ${String(payload.path || '').trim() || 'unknown'}`,
+    `actor: ${String(payload.actor || '').trim() || 'unknown'}`,
+    `role: ${String(payload.role || '').trim() || 'unknown'}`,
+    `requestId: ${String(payload.requestId || '').trim() || 'unknown'}`
+  ];
+  return lines.join('\n');
+}
+
+async function dispatchSecurityAlertWebhook(payload = {}) {
+  if (!SECURITY_ALERT_NOTIFY_WEBHOOK_URL) {
+    return { ok: false, reason: 'webhook_not_configured' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SECURITY_ALERT_NOTIFY_TIMEOUT_MS);
+  try {
+    const response = await fetch(SECURITY_ALERT_NOTIFY_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        source: 'chronolab',
+        type: 'security_alert',
+        at: new Date().toISOString(),
+        ...payload
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return { ok: false, reason: `webhook_status_${response.status}` };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error?.name === 'AbortError' ? 'webhook_timeout' : 'webhook_failed'
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function dispatchSecurityAlertEmail(payload = {}) {
+  if (SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS.length === 0) {
+    return { ok: false, reason: 'email_not_configured' };
+  }
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    return { ok: false, reason: 'smtp_not_configured' };
+  }
+
+  const subject = `[Chrono Lab][SECURITY] ${String(payload.reason || 'alert').slice(0, 120)}`;
+  try {
+    await transporter.sendMail({
+      from: String(process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@chronolab.local').trim(),
+      to: SECURITY_ALERT_NOTIFY_EMAIL_RECIPIENTS.join(', '),
+      subject,
+      text: buildSecurityAlertMessage(payload)
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: 'smtp_send_failed' };
+  }
+}
+
+function queueSecurityAlertNotification(payload = {}) {
+  if (!canNotifySecurityAlert(payload)) {
+    return;
+  }
+  setImmediate(() => {
+    Promise.allSettled([
+      dispatchSecurityAlertWebhook(payload),
+      dispatchSecurityAlertEmail(payload)
+    ]).catch(() => {});
+  });
+}
+
 async function sendEmailVerificationCode({ to, code, purpose, lang = 'ko' } = {}) {
   const email = normalizeEmailAddress(to);
   const verificationCode = String(code || '').trim();
@@ -5324,6 +5601,236 @@ function getClientIp(req) {
   return normalizeIpAddress(rawIp) || 'unknown';
 }
 
+function normalizeCountryCode(value = '') {
+  const normalized = String(value || '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : '';
+}
+
+function normalizeAsnNumber(rawValue) {
+  if (Number.isInteger(rawValue) && rawValue > 0) {
+    return rawValue;
+  }
+  const normalized = String(rawValue || '')
+    .trim()
+    .toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+  const extracted = normalized.match(/AS\s*([0-9]{1,10})/) || normalized.match(/^([0-9]{1,10})$/);
+  if (!extracted) {
+    return null;
+  }
+  const parsed = Number.parseInt(extracted[1], 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isAdminIpAllowlisted(ipAddress = '') {
+  const normalized = normalizeIpAddress(ipAddress);
+  if (!normalized) {
+    return false;
+  }
+  return ADMIN_WAF_IP_ALLOWLIST.has(normalized);
+}
+
+function isSuspiciousAdminUserAgent(userAgent = '') {
+  const normalized = String(userAgent || '').trim();
+  if (!normalized) {
+    return true;
+  }
+  return ADMIN_WAF_BLOCKED_USER_AGENT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+async function lookupAdminNetworkProfileFromIpApi(ipAddress = '') {
+  const url =
+    `http://ip-api.com/json/${encodeURIComponent(ipAddress)}` +
+    '?fields=status,message,countryCode,as,query';
+  const payload = await fetchJsonWithTimeout(url, ADMIN_WAF_LOOKUP_TIMEOUT_MS);
+  if (!payload || String(payload.status || '').toLowerCase() !== 'success') {
+    return null;
+  }
+  return {
+    countryCode: normalizeCountryCode(payload.countryCode || ''),
+    asn: normalizeAsnNumber(payload.as || ''),
+    source: 'ip-api'
+  };
+}
+
+async function lookupAdminNetworkProfileFromIpWhoIs(ipAddress = '') {
+  const url = `https://ipwho.is/${encodeURIComponent(ipAddress)}`;
+  const payload = await fetchJsonWithTimeout(url, ADMIN_WAF_LOOKUP_TIMEOUT_MS);
+  if (!payload || payload.success !== true) {
+    return null;
+  }
+  return {
+    countryCode: normalizeCountryCode(payload.country_code || ''),
+    asn: normalizeAsnNumber(payload?.connection?.asn),
+    source: 'ipwho.is'
+  };
+}
+
+async function resolveAdminNetworkProfile(ipAddress = '') {
+  const normalizedIp = normalizeIpAddress(ipAddress);
+  if (!isPublicIpAddress(normalizedIp)) {
+    return {
+      ipAddress: normalizedIp,
+      countryCode: '',
+      asn: null,
+      source: 'private'
+    };
+  }
+
+  const cached = adminWafProfileCache.get(normalizedIp);
+  if (cached && Number(cached.expiresAt || 0) > Date.now()) {
+    return cached.profile;
+  }
+
+  const providers = [lookupAdminNetworkProfileFromIpApi, lookupAdminNetworkProfileFromIpWhoIs];
+  for (const provider of providers) {
+    try {
+      const profile = await provider(normalizedIp);
+      if (!profile) {
+        continue;
+      }
+      const normalizedProfile = {
+        ipAddress: normalizedIp,
+        countryCode: normalizeCountryCode(profile.countryCode || ''),
+        asn: normalizeAsnNumber(profile.asn),
+        source: String(profile.source || '').trim() || 'unknown'
+      };
+      adminWafProfileCache.set(normalizedIp, {
+        profile: normalizedProfile,
+        expiresAt: Date.now() + ADMIN_WAF_PROFILE_CACHE_TTL_MS
+      });
+      return normalizedProfile;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function getAdminShieldDenyMessage(req) {
+  const lang = resolveLanguage(req?.query?.lang || req?.cookies?.lang, getSetting('languageDefault', 'ko'));
+  if (lang === 'en') {
+    return 'Access to the admin area is blocked by security policy.';
+  }
+  return '보안 정책에 따라 관리자 영역 접근이 차단되었습니다.';
+}
+
+function rejectAdminAccessShield(req, res, reason = 'policy_blocked') {
+  const message = getAdminShieldDenyMessage(req);
+  const requestPath = `${String(req.baseUrl || '')}${String(req.path || '')}`;
+  const acceptHeader = String(req.get('accept') || '').toLowerCase();
+  if (requestPath.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
+    return res.status(403).json({ ok: false, error: 'admin_access_blocked', reason, message });
+  }
+  return res.status(403).render('simple-error', { title: 'Forbidden', message });
+}
+
+function detectSuspiciousAdminRequest(req) {
+  const method = String(req.method || '').toUpperCase();
+  if (!['GET', 'HEAD', 'POST'].includes(method)) {
+    return {
+      blocked: true,
+      reason: 'method_block',
+      detail: `method=${method}`
+    };
+  }
+
+  const userAgent = String(req.get('user-agent') || '');
+  if (isSuspiciousAdminUserAgent(userAgent)) {
+    return {
+      blocked: true,
+      reason: 'bot_signature',
+      detail: `ua=${userAgent.slice(0, 180)}`
+    };
+  }
+
+  let requestUri = String(req.originalUrl || '').toLowerCase();
+  try {
+    requestUri = decodeURIComponent(requestUri);
+  } catch {
+    requestUri = String(req.originalUrl || '').toLowerCase();
+  }
+  const blockedFragments = ['../', '..%2f', '%2e%2e', '<script', 'union select', 'sleep(', 'benchmark('];
+  if (blockedFragments.some((fragment) => requestUri.includes(fragment))) {
+    return {
+      blocked: true,
+      reason: 'payload_signature',
+      detail: `uri=${String(req.originalUrl || '').slice(0, 200)}`
+    };
+  }
+
+  return { blocked: false, reason: '', detail: '' };
+}
+
+async function evaluateAdminAccessShield(req) {
+  const requestPath = `${String(req.baseUrl || '')}${String(req.path || '')}`;
+  if (!ADMIN_WAF_ENABLED) {
+    return { allowed: true, reason: '', detail: '' };
+  }
+  if (!requestPath.startsWith('/admin') && !requestPath.startsWith('/api/admin')) {
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  const clientIp = getClientIp(req);
+  if (isAdminIpAllowlisted(clientIp)) {
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  if (ADMIN_WAF_BOT_BLOCK_ENABLED) {
+    const suspicious = detectSuspiciousAdminRequest(req);
+    if (suspicious.blocked) {
+      return {
+        allowed: false,
+        reason: suspicious.reason,
+        detail: suspicious.detail
+      };
+    }
+  }
+
+  if (!ADMIN_WAF_GEO_BLOCK_ENABLED && !ADMIN_WAF_ASN_BLOCK_ENABLED) {
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  if (!isPublicIpAddress(clientIp)) {
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  const profile = await resolveAdminNetworkProfile(clientIp);
+  if (!profile) {
+    if (ADMIN_WAF_FAIL_CLOSED_ON_LOOKUP_ERROR) {
+      return { allowed: false, reason: 'network_profile_unavailable', detail: `ip=${clientIp}` };
+    }
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  if (ADMIN_WAF_GEO_BLOCK_ENABLED && ADMIN_WAF_ALLOWED_COUNTRY_CODES.size > 0) {
+    const countryCode = normalizeCountryCode(profile.countryCode || '');
+    if (countryCode && !ADMIN_WAF_ALLOWED_COUNTRY_CODES.has(countryCode)) {
+      return {
+        allowed: false,
+        reason: 'country_block',
+        detail: `ip=${clientIp}, country=${countryCode}, source=${profile.source || 'unknown'}`
+      };
+    }
+  }
+
+  if (ADMIN_WAF_ASN_BLOCK_ENABLED && ADMIN_WAF_BLOCKED_ASNS.size > 0) {
+    const asn = normalizeAsnNumber(profile.asn);
+    if (asn && ADMIN_WAF_BLOCKED_ASNS.has(asn)) {
+      return {
+        allowed: false,
+        reason: 'asn_block',
+        detail: `ip=${clientIp}, asn=AS${asn}, source=${profile.source || 'unknown'}`
+      };
+    }
+  }
+
+  return { allowed: true, reason: '', detail: '' };
+}
+
 function logAdminActivity(req, actionType, detail = '') {
   if (!req.user?.isAdmin) {
     return;
@@ -5424,6 +5931,16 @@ function recordSecurityAlert(req, reason, detail = '') {
     String(detail || '').slice(0, 300)
   );
   queueIpGeolocationLookup(clientIp);
+  queueSecurityAlertNotification({
+    reason: String(reason || '').slice(0, 120),
+    detail: String(detail || '').slice(0, 300),
+    ipAddress: clientIp,
+    method: String(req.method || '').slice(0, 16),
+    path: `${req.path}${req.url.includes('?') ? req.url.slice(req.path.length) : ''}`.slice(0, 300),
+    actor: String(actorName || 'unknown'),
+    role: String(actorRole || ''),
+    requestId: String(req.requestId || '').slice(0, 120)
+  });
 }
 
 function appendOrderStatusLog(orderId, orderNo, fromStatus, toStatus, eventNote = '') {
@@ -9733,13 +10250,26 @@ function authAttemptGuard({
   redirectPath,
   limit = DEFAULT_AUTH_MAX_ATTEMPTS,
   windowMs = AUTH_ATTEMPT_WINDOW_MS,
-  identifierResolver = null
+  identifierResolver = null,
+  onBlocked = null
 }) {
   return (req, res, next) => {
     const identifier = typeof identifierResolver === 'function' ? identifierResolver(req) : '';
     const result = consumeAuthAttempt(req, key, limit, windowMs, { identifier });
     if (!result.allowed) {
       const waitSeconds = Math.max(1, Math.ceil(Number(result.retryAfterMs || 0) / 1000));
+      if (typeof onBlocked === 'function') {
+        try {
+          onBlocked(req, {
+            key: String(key || ''),
+            identifier: String(identifier || ''),
+            retryAfterMs: Number(result.retryAfterMs || 0),
+            waitSeconds
+          });
+        } catch {
+          // noop
+        }
+      }
       const message = `시도가 너무 많습니다. ${waitSeconds}초 후 다시 시도해 주세요.`;
       const acceptHeader = String(req.get('accept') || '').toLowerCase();
       if (req.path.startsWith('/api/') || req.xhr || acceptHeader.includes('application/json')) {
@@ -9882,6 +10412,38 @@ function loadUser(req, res, next) {
 }
 
 app.use(loadUser);
+
+app.use('/admin', (req, res, next) => {
+  evaluateAdminAccessShield(req)
+    .then((result) => {
+      if (!result || result.allowed) {
+        return next();
+      }
+      recordSecurityAlert(
+        req,
+        `security.admin_waf.${String(result.reason || 'blocked').slice(0, 60)}`,
+        String(result.detail || '').slice(0, 280)
+      );
+      return rejectAdminAccessShield(req, res, result.reason || 'policy_blocked');
+    })
+    .catch(() => next());
+});
+
+app.use('/api/admin', (req, res, next) => {
+  evaluateAdminAccessShield(req)
+    .then((result) => {
+      if (!result || result.allowed) {
+        return next();
+      }
+      recordSecurityAlert(
+        req,
+        `security.admin_waf.${String(result.reason || 'blocked').slice(0, 60)}`,
+        String(result.detail || '').slice(0, 280)
+      );
+      return rejectAdminAccessShield(req, res, result.reason || 'policy_blocked');
+    })
+    .catch(() => next());
+});
 
 app.use((req, res, next) => {
   if (!shouldEnforceOriginValidation(req)) {
@@ -10149,6 +10711,11 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.user?.isAdmin) {
+    recordSecurityAlert(
+      req,
+      'security.admin.auth_required',
+      req.user ? 'non-admin user attempted admin route access' : 'anonymous admin route access'
+    );
     if (!req.session.flash) {
       setFlash(
         req,
@@ -13983,7 +14550,15 @@ app.post(
     key: 'admin-login',
     redirectPath: '/admin/login',
     limit: 10,
-    identifierResolver: (req) => String(req.body?.account || req.body?.username || '').trim().toLowerCase()
+    identifierResolver: (req) => String(req.body?.account || req.body?.username || '').trim().toLowerCase(),
+    onBlocked: (req, context) => {
+      const identifier = String(context?.identifier || '').slice(0, 120);
+      recordSecurityAlert(
+        req,
+        'auth.admin.login_throttled',
+        `retry_after=${Number(context?.waitSeconds || 0)}s, account=${identifier || 'unknown'}`
+      );
+    }
   }),
   asyncRoute(async (req, res) => {
   const account = String(req.body.account || req.body.username || '').trim();
@@ -14012,11 +14587,21 @@ app.post(
 
   const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
   if (!user || Number(user.is_admin) !== 1 || !valid) {
+    recordSecurityAlert(
+      req,
+      'auth.admin.login_failed',
+      `account=${String(account || '').slice(0, 120) || 'unknown'}`
+    );
     setFlash(req, 'error', '로그인 정보가 올바르지 않습니다.');
     return res.redirect('/admin/login');
   }
 
   if (Number(user.is_blocked) === 1) {
+    recordSecurityAlert(
+      req,
+      'auth.admin.login_blocked_account',
+      `account=${String(account || '').slice(0, 120)}, reason=${String(user.blocked_reason || '').slice(0, 120)}`
+    );
     setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return res.redirect('/admin/login');
   }
@@ -14066,17 +14651,26 @@ app.post(
     identifierResolver: (req) => {
       const pending = readAdminOtpPending(req);
       return pending ? `uid:${pending.userId}` : '';
+    },
+    onBlocked: (req, context) => {
+      recordSecurityAlert(
+        req,
+        'auth.admin.otp_throttled',
+        `retry_after=${Number(context?.waitSeconds || 0)}s, identifier=${String(context?.identifier || '').slice(0, 120) || 'unknown'}`
+      );
     }
   }),
   asyncRoute(async (req, res) => {
     const pending = readAdminOtpPending(req);
     if (!pending) {
+      recordSecurityAlert(req, 'auth.admin.otp_missing_pending', 'otp verify requested without pending session');
       setFlash(req, 'error', 'OTP 인증이 만료되었습니다. 다시 로그인해 주세요.');
       return res.redirect('/admin/login');
     }
 
     const code = normalizeAdminOtpCode(req.body.code || '');
     if (code.length !== ADMIN_OTP_DIGITS) {
+      recordSecurityAlert(req, 'auth.admin.otp_invalid_format', `uid=${pending.userId}`);
       setFlash(req, 'error', '6자리 OTP 인증번호를 입력해 주세요.');
       return res.redirect('/admin/otp/verify');
     }
@@ -14101,12 +14695,14 @@ app.post(
       .get(pending.userId);
 
     if (!user || Number(user.is_admin || 0) !== 1) {
+      recordSecurityAlert(req, 'auth.admin.otp_user_missing', `uid=${pending.userId}`);
       clearAdminOtpPending(req);
       setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다. 다시 로그인해 주세요.');
       return res.redirect('/admin/login');
     }
 
     if (Number(user.is_blocked || 0) === 1) {
+      recordSecurityAlert(req, 'auth.admin.otp_blocked_account', `uid=${pending.userId}`);
       clearAdminOtpPending(req);
       setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
       return res.redirect('/admin/login');
@@ -14115,6 +14711,7 @@ app.post(
     const secret = normalizeBase32Secret(user.admin_otp_secret || '');
     const isOtpEnabled = Number(user.admin_otp_enabled || 0) === 1 && secret.length >= 16;
     if (!isOtpEnabled) {
+      recordSecurityAlert(req, 'auth.admin.otp_secret_missing', `uid=${pending.userId}`);
       clearAdminOtpPending(req);
       setFlash(req, 'error', 'OTP 설정을 찾을 수 없습니다. 다시 로그인해 주세요.');
       return res.redirect('/admin/login');
@@ -14122,6 +14719,7 @@ app.post(
 
     const verified = verifyTotpCode(secret, code);
     if (!verified) {
+      recordSecurityAlert(req, 'auth.admin.otp_failed', `uid=${pending.userId}`);
       setFlash(req, 'error', 'OTP 인증번호가 올바르지 않습니다.');
       return res.redirect('/admin/otp/verify');
     }

@@ -41,11 +41,11 @@
       <div class="form-grid">
         <label>
           <%= isEn ? 'Setup Key (secret)' : '설정 키 (Secret)' %>
-          <input type="text" value="<%= otpState.setupSecret %>" readonly onclick="this.select();" />
+          <input type="text" value="<%= otpState.setupSecret %>" readonly data-select-on-focus />
         </label>
         <label>
           <%= isEn ? 'OTP URI (optional)' : 'OTP URI (선택)' %>
-          <input type="text" value="<%= otpState.setupUri %>" readonly onclick="this.select();" />
+          <input type="text" value="<%= otpState.setupUri %>" readonly data-select-on-focus />
         </label>
       </div>
 
@@ -85,5 +85,15 @@
     <% } %>
   </div>
 </section>
+
+<script>
+  (() => {
+    const selectTargets = document.querySelectorAll('[data-select-on-focus]');
+    selectTargets.forEach((input) => {
+      input.addEventListener('click', () => input.select());
+      input.addEventListener('focus', () => input.select());
+    });
+  })();
+</script>
 
 <%- include('partials/layout-end') %>
