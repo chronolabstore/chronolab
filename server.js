@@ -127,7 +127,9 @@ const ADMIN_IDLE_TIMEOUT_MS = resolveIdleTimeoutMs({
   minMinutes: 5,
   maxMinutes: 60 * 24 * 30
 });
-const AUTH_PERSIST_COOKIE_NAME = 'cl_auth';
+const AUTH_PERSIST_MEMBER_COOKIE_NAME = 'cl_member_auth';
+const AUTH_PERSIST_ADMIN_COOKIE_NAME = 'cl_admin_auth';
+const AUTH_PERSIST_LEGACY_COOKIE_NAME = 'cl_auth';
 const AUTH_PERSIST_COOKIE_MAX_AGE_MS = SESSION_DEFAULT_MAX_AGE_MS;
 const AUTH_PERSIST_HMAC_KEY = crypto
   .createHash('sha256')
@@ -362,15 +364,165 @@ function parsePersistAuthToken(rawToken = '') {
   };
 }
 
-function clearPersistAuthCookie(res) {
+function resolveAuthScope(rawScope = 'member') {
+  return String(rawScope || '').trim().toLowerCase() === 'admin' ? 'admin' : 'member';
+}
+
+function resolveAuthScopeFromRequest(req) {
+  const requestPath = String(req?.path || '').trim().toLowerCase();
+  if (requestPath.startsWith('/admin') || requestPath.startsWith('/api/admin/')) {
+    return 'admin';
+  }
+  return 'member';
+}
+
+function resolvePersistCookieName(authScope = 'member') {
+  return resolveAuthScope(authScope) === 'admin'
+    ? AUTH_PERSIST_ADMIN_COOKIE_NAME
+    : AUTH_PERSIST_MEMBER_COOKIE_NAME;
+}
+
+function normalizeSessionUserId(rawValue = 0) {
+  const normalizedUserId = Number(rawValue || 0);
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+    return 0;
+  }
+  return normalizedUserId;
+}
+
+function normalizeSessionTimestamp(rawValue = 0, fallbackValue = 0) {
+  const normalizedTimestamp = Number(rawValue || 0);
+  if (Number.isFinite(normalizedTimestamp) && normalizedTimestamp > 0) {
+    return normalizedTimestamp;
+  }
+  return Number.isFinite(Number(fallbackValue)) && Number(fallbackValue) > 0
+    ? Number(fallbackValue)
+    : Date.now();
+}
+
+function getScopedSessionUserId(sessionState = {}, authScope = 'member') {
+  const scope = resolveAuthScope(authScope);
+  if (scope === 'admin') {
+    return normalizeSessionUserId(sessionState?.adminUserId);
+  }
+  return normalizeSessionUserId(sessionState?.memberUserId);
+}
+
+function getScopedSessionLastActivityAt(sessionState = {}, authScope = 'member') {
+  const scope = resolveAuthScope(authScope);
+  if (scope === 'admin') {
+    return normalizeSessionTimestamp(sessionState?.adminLastActivityAt, 0);
+  }
+  return normalizeSessionTimestamp(sessionState?.memberLastActivityAt, 0);
+}
+
+function setScopedSessionAuthState(req, authScope = 'member', options = {}) {
+  if (!req?.session) {
+    return;
+  }
+
+  const scope = resolveAuthScope(authScope);
+  const userId = normalizeSessionUserId(options.userId);
+  const lastActivityAt = normalizeSessionTimestamp(options.lastActivityAt, Date.now());
+
+  if (scope === 'admin') {
+    req.session.adminUserId = userId || null;
+    req.session.adminLastActivityAt = userId > 0 ? lastActivityAt : 0;
+    req.session.adminRole = userId > 0 ? normalizeAdminRole(options.adminRole || req.session.adminRole) : '';
+  } else {
+    req.session.memberUserId = userId || null;
+    req.session.memberLastActivityAt = userId > 0 ? lastActivityAt : 0;
+  }
+
+  // Legacy keys cleanup after auth-state split rollout.
+  req.session.userId = null;
+  req.session.isAdmin = false;
+  req.session.lastActivityAt = 0;
+}
+
+function clearScopedSessionAuthState(req, authScope = 'member', options = {}) {
+  if (!req?.session) {
+    return;
+  }
+
+  const scope = resolveAuthScope(authScope);
+  if (scope === 'admin') {
+    req.session.adminUserId = null;
+    req.session.adminRole = '';
+    req.session.adminLastActivityAt = 0;
+    if (options.keepOtpPending !== true) {
+      clearAdminOtpPending(req);
+    }
+    if (options.clearOtpSetup === true) {
+      clearAdminOtpSetup(req);
+    }
+  } else {
+    req.session.memberUserId = null;
+    req.session.memberLastActivityAt = 0;
+  }
+
+  // Legacy keys cleanup after auth-state split rollout.
+  req.session.userId = null;
+  req.session.isAdmin = false;
+  req.session.lastActivityAt = 0;
+}
+
+function migrateLegacySessionAuthState(req) {
+  if (!req?.session) {
+    return;
+  }
+
+  const legacyUserId = normalizeSessionUserId(req.session.userId);
+  if (legacyUserId <= 0) {
+    return;
+  }
+
+  const legacyScope = req.session.isAdmin === true ? 'admin' : 'member';
+  const hasScopedUser =
+    legacyScope === 'admin'
+      ? getScopedSessionUserId(req.session, 'admin') > 0
+      : getScopedSessionUserId(req.session, 'member') > 0;
+  if (!hasScopedUser) {
+    setScopedSessionAuthState(req, legacyScope, {
+      userId: legacyUserId,
+      lastActivityAt: normalizeSessionTimestamp(req.session.lastActivityAt, Date.now()),
+      adminRole: legacyScope === 'admin' ? normalizeAdminRole(req.session.adminRole || '') : ''
+    });
+  } else {
+    req.session.userId = null;
+    req.session.isAdmin = false;
+    req.session.lastActivityAt = 0;
+  }
+}
+
+function clearPersistAuthCookie(res, options = {}) {
   if (!res || typeof res.clearCookie !== 'function') {
     return;
   }
-  res.clearCookie(AUTH_PERSIST_COOKIE_NAME, {
-    path: '/',
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: mustEnforceSecurity
+
+  const scope = String(options.scope || 'all').trim().toLowerCase();
+  const cookieNames = [];
+  if (scope === 'member') {
+    cookieNames.push(AUTH_PERSIST_MEMBER_COOKIE_NAME);
+  } else if (scope === 'admin') {
+    cookieNames.push(AUTH_PERSIST_ADMIN_COOKIE_NAME);
+  } else if (scope === 'legacy') {
+    cookieNames.push(AUTH_PERSIST_LEGACY_COOKIE_NAME);
+  } else {
+    cookieNames.push(
+      AUTH_PERSIST_MEMBER_COOKIE_NAME,
+      AUTH_PERSIST_ADMIN_COOKIE_NAME,
+      AUTH_PERSIST_LEGACY_COOKIE_NAME
+    );
+  }
+
+  cookieNames.forEach((cookieName) => {
+    res.clearCookie(cookieName, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: mustEnforceSecurity
+    });
   });
 }
 
@@ -378,18 +530,21 @@ function setPersistAuthCookie(res, userId, options = {}) {
   if (!res || typeof res.cookie !== 'function') {
     return;
   }
+  const authScope = resolveAuthScope(options.scope || (options.isAdmin === true ? 'admin' : 'member'));
+  const cookieName = resolvePersistCookieName(authScope);
   const token = createPersistAuthToken(userId, options);
   if (!token) {
-    clearPersistAuthCookie(res);
+    clearPersistAuthCookie(res, { scope: authScope });
     return;
   }
-  res.cookie(AUTH_PERSIST_COOKIE_NAME, token, {
+  res.cookie(cookieName, token, {
     path: '/',
     maxAge: AUTH_PERSIST_COOKIE_MAX_AGE_MS,
     httpOnly: true,
     sameSite: 'lax',
     secure: mustEnforceSecurity
   });
+  clearPersistAuthCookie(res, { scope: 'legacy' });
 }
 
 function normalizeCsrfTokenValue(rawValue = '') {
@@ -439,39 +594,62 @@ function isCsrfTokenEqual(expectedToken = '', providedToken = '') {
   return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
-function tryRestoreSessionFromPersistCookie(req, res) {
-  if (req?.session?.userId) {
+function tryRestoreSessionFromPersistCookie(req, res, requestedScope = resolveAuthScopeFromRequest(req)) {
+  if (!req?.session) {
+    return false;
+  }
+
+  migrateLegacySessionAuthState(req);
+  const authScope = resolveAuthScope(requestedScope);
+  if (getScopedSessionUserId(req.session, authScope) > 0) {
     return true;
   }
 
-  const token = String(req?.cookies?.[AUTH_PERSIST_COOKIE_NAME] || '').trim();
-  if (!token) {
-    return false;
+  const scopedCookieName = resolvePersistCookieName(authScope);
+  const candidateCookieNames = [scopedCookieName, AUTH_PERSIST_LEGACY_COOKIE_NAME];
+
+  for (const cookieName of candidateCookieNames) {
+    const token = String(req?.cookies?.[cookieName] || '').trim();
+    if (!token) {
+      continue;
+    }
+
+    const parsed = parsePersistAuthToken(token);
+    if (!parsed) {
+      if (cookieName === AUTH_PERSIST_LEGACY_COOKIE_NAME) {
+        clearPersistAuthCookie(res, { scope: 'legacy' });
+      } else {
+        clearPersistAuthCookie(res, { scope: authScope });
+      }
+      continue;
+    }
+
+    const parsedScope = parsed.isAdmin ? 'admin' : 'member';
+    if (parsedScope !== authScope) {
+      continue;
+    }
+
+    setScopedSessionAuthState(req, authScope, {
+      userId: parsed.userId,
+      lastActivityAt: parsed.lastActivityAt,
+      adminRole: authScope === 'admin' ? normalizeAdminRole(req.session.adminRole || '') : ''
+    });
+    if (cookieName === AUTH_PERSIST_LEGACY_COOKIE_NAME) {
+      setPersistAuthCookie(res, parsed.userId, {
+        scope: authScope,
+        isAdmin: parsed.isAdmin,
+        lastActivityAt: parsed.lastActivityAt
+      });
+      clearPersistAuthCookie(res, { scope: 'legacy' });
+    }
+    return true;
   }
 
-  const parsed = parsePersistAuthToken(token);
-  if (!parsed) {
-    clearPersistAuthCookie(res);
-    return false;
-  }
-
-  if (!req?.session) {
-    clearPersistAuthCookie(res);
-    return false;
-  }
-
-  req.session.userId = parsed.userId;
-  req.session.isAdmin = parsed.isAdmin;
-  req.session.lastActivityAt = parsed.lastActivityAt;
-  return true;
+  return false;
 }
 
-function getSessionIdleTimeoutMs(sessionState = {}) {
-  const isAdminSession =
-    Boolean(sessionState?.isAdmin) ||
-    normalizeAdminRole(String(sessionState?.adminRole || '')) === ADMIN_ROLE.PRIMARY ||
-    normalizeAdminRole(String(sessionState?.adminRole || '')) === ADMIN_ROLE.SUB;
-  return isAdminSession ? ADMIN_IDLE_TIMEOUT_MS : MEMBER_IDLE_TIMEOUT_MS;
+function getSessionIdleTimeoutMs(authScope = 'member') {
+  return resolveAuthScope(authScope) === 'admin' ? ADMIN_IDLE_TIMEOUT_MS : MEMBER_IDLE_TIMEOUT_MS;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3512,18 +3690,100 @@ function regenerateSessionAsync(req) {
   });
 }
 
+function snapshotAuthSessionState(req, options = {}) {
+  const snapshot = {};
+  if (!req?.session) {
+    return snapshot;
+  }
+
+  const preserveMember = options.preserveMember === true;
+  const preserveAdmin = options.preserveAdmin === true;
+
+  if (preserveMember) {
+    const memberUserId = getScopedSessionUserId(req.session, 'member');
+    if (memberUserId > 0) {
+      snapshot.member = {
+        userId: memberUserId,
+        lastActivityAt: getScopedSessionLastActivityAt(req.session, 'member')
+      };
+    }
+  }
+
+  if (preserveAdmin) {
+    const adminUserId = getScopedSessionUserId(req.session, 'admin');
+    if (adminUserId > 0) {
+      snapshot.admin = {
+        userId: adminUserId,
+        lastActivityAt: getScopedSessionLastActivityAt(req.session, 'admin'),
+        adminRole: normalizeAdminRole(req.session.adminRole || '')
+      };
+    }
+  }
+
+  if (preserveAdmin && options.preserveAdminOtpState !== false) {
+    const otpPending = req.session.adminOtpPending;
+    if (otpPending && typeof otpPending === 'object') {
+      snapshot.adminOtpPending = { ...otpPending };
+    }
+    const otpSetup = req.session.adminOtpSetup;
+    if (otpSetup && typeof otpSetup === 'object') {
+      snapshot.adminOtpSetup = { ...otpSetup };
+    }
+  }
+
+  const csrfToken = normalizeCsrfTokenValue(req.session.csrfToken || '');
+  if (csrfToken) {
+    snapshot.csrfToken = csrfToken;
+  }
+
+  return snapshot;
+}
+
+function restoreAuthSessionState(req, snapshot = {}) {
+  if (!req?.session || !snapshot || typeof snapshot !== 'object') {
+    return;
+  }
+
+  if (snapshot.member && typeof snapshot.member === 'object') {
+    setScopedSessionAuthState(req, 'member', snapshot.member);
+  }
+  if (snapshot.admin && typeof snapshot.admin === 'object') {
+    setScopedSessionAuthState(req, 'admin', snapshot.admin);
+  }
+
+  if (snapshot.adminOtpPending && typeof snapshot.adminOtpPending === 'object') {
+    req.session.adminOtpPending = { ...snapshot.adminOtpPending };
+  }
+  if (snapshot.adminOtpSetup && typeof snapshot.adminOtpSetup === 'object') {
+    req.session.adminOtpSetup = { ...snapshot.adminOtpSetup };
+  }
+
+  if (snapshot.csrfToken) {
+    req.session.csrfToken = snapshot.csrfToken;
+  }
+}
+
+async function regenerateSessionWithPreservedAuth(req, options = {}) {
+  const snapshot = snapshotAuthSessionState(req, options);
+  await regenerateSessionAsync(req);
+  restoreAuthSessionState(req, snapshot);
+}
+
 async function setAdminAuthSession(req, res, userRow) {
   if (!req?.session || !userRow) {
     return;
   }
-  await regenerateSessionAsync(req);
-  req.session.userId = Number(userRow.id);
-  req.session.isAdmin = true;
-  req.session.adminRole = normalizeAdminRole(userRow.admin_role);
-  req.session.lastActivityAt = Date.now();
+  await regenerateSessionWithPreservedAuth(req, { preserveMember: true });
+  const nowMs = Date.now();
+  setScopedSessionAuthState(req, 'admin', {
+    userId: Number(userRow.id),
+    adminRole: normalizeAdminRole(userRow.admin_role),
+    lastActivityAt: nowMs
+  });
   setPersistAuthCookie(res, Number(userRow.id), {
+    scope: 'admin',
     isAdmin: true,
-    lastActivityAt: req.session.lastActivityAt
+    lastActivityAt: nowMs
   });
   clearAdminOtpPending(req);
 }
@@ -9295,21 +9555,28 @@ function asyncRoute(handler) {
 }
 
 function loadUser(req, res, next) {
-  if (!req.session.userId && !tryRestoreSessionFromPersistCookie(req, res)) {
+  migrateLegacySessionAuthState(req);
+  const authScope = resolveAuthScopeFromRequest(req);
+  const hasScopedSession = getScopedSessionUserId(req?.session, authScope) > 0;
+  if (!hasScopedSession && !tryRestoreSessionFromPersistCookie(req, res, authScope)) {
+    req.user = null;
+    return next();
+  }
+
+  const activeUserId = getScopedSessionUserId(req?.session, authScope);
+  if (activeUserId <= 0) {
     req.user = null;
     return next();
   }
 
   const nowMs = Date.now();
-  const lastActivityAt = Number(req.session.lastActivityAt || 0);
-  const idleTimeoutMs = getSessionIdleTimeoutMs(req.session);
+  const lastActivityAt = getScopedSessionLastActivityAt(req.session, authScope);
+  const idleTimeoutMs = getSessionIdleTimeoutMs(authScope);
   if (lastActivityAt > 0 && nowMs - lastActivityAt > idleTimeoutMs) {
-    req.session.userId = null;
-    req.session.isAdmin = false;
-    req.session.adminRole = '';
-    req.session.lastActivityAt = 0;
-    clearAdminOtpPending(req);
-    clearPersistAuthCookie(res);
+    clearScopedSessionAuthState(req, authScope, {
+      clearOtpSetup: authScope === 'admin'
+    });
+    clearPersistAuthCookie(res, { scope: authScope });
     req.user = null;
     return next();
   }
@@ -9343,22 +9610,28 @@ function loadUser(req, res, next) {
         LIMIT 1
       `
     )
-    .get(req.session.userId);
+    .get(activeUserId);
 
   if (!user) {
-    req.session.userId = null;
-    req.session.isAdmin = false;
-    req.session.adminRole = '';
-    clearPersistAuthCookie(res);
+    clearScopedSessionAuthState(req, authScope);
+    clearPersistAuthCookie(res, { scope: authScope });
+    req.user = null;
+    return next();
+  }
+
+  const isAdminUser = Number(user.is_admin) === 1;
+  if ((authScope === 'admin' && !isAdminUser) || (authScope === 'member' && isAdminUser)) {
+    clearScopedSessionAuthState(req, authScope);
+    clearPersistAuthCookie(res, { scope: authScope });
     req.user = null;
     return next();
   }
 
   if (Number(user.is_blocked) === 1) {
-    req.session.userId = null;
-    req.session.isAdmin = false;
-    req.session.adminRole = '';
-    clearPersistAuthCookie(res);
+    clearScopedSessionAuthState(req, authScope, {
+      clearOtpSetup: authScope === 'admin'
+    });
+    clearPersistAuthCookie(res, { scope: authScope });
     req.user = null;
     setFlash(req, 'error', BLOCKED_ACCOUNT_NOTICE);
     return next();
@@ -9389,10 +9662,14 @@ function loadUser(req, res, next) {
     createdAt: user.created_at
   };
 
-  req.session.isAdmin = req.user.isAdmin;
-  req.session.lastActivityAt = nowMs;
+  setScopedSessionAuthState(req, authScope, {
+    userId: req.user.id,
+    adminRole: req.user.adminRole,
+    lastActivityAt: nowMs
+  });
   ensureSessionCsrfToken(req);
   setPersistAuthCookie(res, req.user.id, {
+    scope: authScope,
     isAdmin: req.user.isAdmin,
     lastActivityAt: nowMs
   });
@@ -11589,10 +11866,8 @@ app.get('/mypage', requireAuth, (req, res) => {
     .get(req.user.id);
 
   if (!profile) {
-    req.session.userId = null;
-    req.session.isAdmin = false;
-    req.session.adminRole = '';
-    clearPersistAuthCookie(res);
+    clearScopedSessionAuthState(req, 'member');
+    clearPersistAuthCookie(res, { scope: 'member' });
     setFlash(req, 'error', '사용자 정보를 확인할 수 없어 다시 로그인해 주세요.');
     return res.redirect('/login');
   }
@@ -12077,10 +12352,8 @@ app.post(
 
     const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ? LIMIT 1').get(req.user.id);
     if (!user) {
-      req.session.userId = null;
-      req.session.isAdmin = false;
-      req.session.adminRole = '';
-      clearPersistAuthCookie(res);
+      clearScopedSessionAuthState(req, 'member');
+      clearPersistAuthCookie(res, { scope: 'member' });
       setFlash(req, 'error', '사용자 정보를 찾을 수 없습니다. 다시 로그인해 주세요.');
       return res.redirect('/login');
     }
@@ -12928,13 +13201,19 @@ app.post(
 
     const createdUserId = createMember(email, account, nickname, phone, hash, signupBonusPoints);
 
-    await regenerateSessionAsync(req);
-    req.session.userId = createdUserId;
-    req.session.isAdmin = false;
-    req.session.lastActivityAt = Date.now();
+    await regenerateSessionWithPreservedAuth(req, {
+      preserveAdmin: true,
+      preserveAdminOtpState: true
+    });
+    const nowMs = Date.now();
+    setScopedSessionAuthState(req, 'member', {
+      userId: createdUserId,
+      lastActivityAt: nowMs
+    });
     setPersistAuthCookie(res, createdUserId, {
+      scope: 'member',
       isAdmin: false,
-      lastActivityAt: req.session.lastActivityAt
+      lastActivityAt: nowMs
     });
     clearSignupCaptcha(req);
     resetAuthAttempt(req, 'signup', {
@@ -13458,14 +13737,19 @@ app.post(
     return res.redirect('/login');
   }
 
-  await regenerateSessionAsync(req);
-  req.session.userId = Number(user.id);
-  req.session.isAdmin = Number(user.is_admin) === 1;
-  req.session.adminRole = Number(user.is_admin) === 1 ? normalizeAdminRole(user.admin_role) : '';
-  req.session.lastActivityAt = Date.now();
+  await regenerateSessionWithPreservedAuth(req, {
+    preserveAdmin: true,
+    preserveAdminOtpState: true
+  });
+  const nowMs = Date.now();
+  setScopedSessionAuthState(req, 'member', {
+    userId: Number(user.id),
+    lastActivityAt: nowMs
+  });
   setPersistAuthCookie(res, Number(user.id), {
-    isAdmin: req.session.isAdmin === true,
-    lastActivityAt: req.session.lastActivityAt
+    scope: 'member',
+    isAdmin: false,
+    lastActivityAt: nowMs
   });
   resetAuthAttempt(req, 'login', { identifier: account.toLowerCase() });
 
@@ -13474,10 +13758,9 @@ app.post(
 );
 
 app.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    clearPersistAuthCookie(res);
-    res.redirect('/main');
-  });
+  clearScopedSessionAuthState(req, 'member');
+  clearPersistAuthCookie(res, { scope: 'member' });
+  res.redirect('/main');
 });
 
 app.get('/admin/login', (req, res) => {
@@ -13696,10 +13979,9 @@ app.get('/admin/logout', requireAdmin, (req, res) => {
 });
 
 app.post('/admin/logout', requireAdmin, (req, res) => {
-  req.session.destroy(() => {
-    clearPersistAuthCookie(res);
-    res.redirect('/admin/login');
-  });
+  clearScopedSessionAuthState(req, 'admin', { clearOtpSetup: true });
+  clearPersistAuthCookie(res, { scope: 'admin' });
+  res.redirect('/admin/login');
 });
 
 function getVisitRangeSummary(baseDate, columnName) {
@@ -15777,11 +16059,8 @@ app.get('/admin/otp', requireAdmin, (req, res) => {
     .get(req.user.id);
 
   if (!adminRow) {
-    req.session.userId = null;
-    req.session.isAdmin = false;
-    req.session.adminRole = '';
-    clearPersistAuthCookie(res);
-    clearAdminOtpSetup(req);
+    clearScopedSessionAuthState(req, 'admin', { clearOtpSetup: true });
+    clearPersistAuthCookie(res, { scope: 'admin' });
     setFlash(req, 'error', '관리자 계정을 찾을 수 없습니다.');
     return res.redirect('/admin/login');
   }
