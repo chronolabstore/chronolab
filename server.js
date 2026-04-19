@@ -4245,17 +4245,58 @@ function canNotifySecurityAlert(payload = {}) {
 }
 
 function buildSecurityAlertMessage(payload = {}) {
+  const rawReason = String(payload.reason || '').trim();
+  const resolveReasonKo = (reason) => {
+    if (!reason) return '알 수 없는 사유';
+    if (reason === 'security.admin.auth_required') return '관리자 인증 필요 접근 차단';
+    if (reason === 'security.primary_only.route' || reason === 'security.primary_only.denied') {
+      return '메인관리자 전용 영역 접근 차단';
+    }
+    if (reason.startsWith('security.admin_waf.')) {
+      if (reason.includes('country_block')) return '관리자 WAF 국가 정책 차단';
+      if (reason.includes('asn_block')) return '관리자 WAF ASN 정책 차단';
+      if (reason.includes('bot_signature')) return '관리자 WAF 봇 시그니처 차단';
+      if (reason.includes('payload_signature')) return '관리자 WAF 요청 시그니처 차단';
+      if (reason.includes('method_block')) return '관리자 WAF 메서드 정책 차단';
+      if (reason.includes('network_profile_unavailable')) return '관리자 WAF 네트워크 프로필 조회 실패 차단';
+      return '관리자 WAF 정책 차단';
+    }
+    if (reason.startsWith('auth.admin.login_')) {
+      if (reason.includes('failed')) return '관리자 로그인 실패';
+      if (reason.includes('blocked_account')) return '차단 계정 로그인 시도';
+      if (reason.includes('throttled')) return '관리자 로그인 시도 횟수 초과 차단';
+      return '관리자 로그인 보안 이벤트';
+    }
+    if (reason.startsWith('auth.admin.otp_')) {
+      if (reason.includes('failed')) return '관리자 OTP 인증 실패';
+      if (reason.includes('throttled')) return '관리자 OTP 시도 횟수 초과 차단';
+      if (reason.includes('invalid_format')) return '관리자 OTP 형식 오류';
+      if (reason.includes('missing_pending')) return '관리자 OTP 세션 만료/누락';
+      if (reason.includes('blocked_account')) return '차단 계정 OTP 시도';
+      if (reason.includes('user_missing')) return '관리자 OTP 대상 계정 누락';
+      if (reason.includes('secret_missing')) return '관리자 OTP 비밀키 누락';
+      return '관리자 OTP 보안 이벤트';
+    }
+    return reason;
+  };
+
+  const nowKst = new Date().toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour12: false
+  });
+  const reasonKo = resolveReasonKo(rawReason);
   const lines = [
-    '[Chrono Lab] Security Alert',
-    `time: ${new Date().toISOString()}`,
-    `reason: ${String(payload.reason || '').trim()}`,
-    `detail: ${String(payload.detail || '').trim()}`,
-    `ip: ${String(payload.ipAddress || '').trim() || 'unknown'}`,
-    `method: ${String(payload.method || '').trim() || 'unknown'}`,
-    `path: ${String(payload.path || '').trim() || 'unknown'}`,
-    `actor: ${String(payload.actor || '').trim() || 'unknown'}`,
-    `role: ${String(payload.role || '').trim() || 'unknown'}`,
-    `requestId: ${String(payload.requestId || '').trim() || 'unknown'}`
+    '[Chrono Lab] 보안 경보',
+    `발생시각(KST): ${nowKst}`,
+    `경보유형: ${reasonKo}`,
+    `경보코드: ${rawReason || 'unknown'}`,
+    `상세내용: ${String(payload.detail || '').trim() || '-'}`,
+    `IP: ${String(payload.ipAddress || '').trim() || 'unknown'}`,
+    `요청메서드: ${String(payload.method || '').trim() || 'unknown'}`,
+    `요청경로: ${String(payload.path || '').trim() || 'unknown'}`,
+    `행위자: ${String(payload.actor || '').trim() || 'unknown'}`,
+    `권한: ${String(payload.role || '').trim() || 'unknown'}`,
+    `요청ID: ${String(payload.requestId || '').trim() || 'unknown'}`
   ];
   return lines.join('\n');
 }
@@ -4304,7 +4345,7 @@ async function dispatchSecurityAlertEmail(payload = {}) {
     return { ok: false, reason: 'smtp_not_configured' };
   }
 
-  const subject = `[Chrono Lab][SECURITY] ${String(payload.reason || 'alert').slice(0, 120)}`;
+  const subject = `[Chrono Lab][보안경보] ${String(payload.reason || 'alert').slice(0, 120)}`;
   try {
     await transporter.sendMail({
       from: String(process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@chronolab.local').trim(),
