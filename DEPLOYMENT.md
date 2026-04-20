@@ -60,6 +60,7 @@ ADMIN_WAF_ALLOWED_COUNTRY_CODES=KR
 ADMIN_WAF_ASN_BLOCK_ENABLED=0
 ADMIN_WAF_BLOCKED_ASNS=
 ADMIN_WAF_IP_ALLOWLIST=
+ADMIN_WAF_IP_ALLOWLIST_ENFORCED=0
 SECURITY_ALERT_NOTIFY_ENABLED=1
 SECURITY_ALERT_NOTIFY_WEBHOOK_URL=
 SECURITY_ALERT_NOTIFY_EMAIL_TO=
@@ -228,6 +229,12 @@ cd /var/www/chronolab
   - 설정 후 기존 `/admin` 직접 접근은 `404`로 차단됨
 - 관리자 OTP 강제 권장:
   - `ADMIN_OTP_ENFORCED=1` (OTP 미설정 관리자 로그인 차단)
+- 관리자 IP 고정(강제) 권장:
+  - `ADMIN_WAF_IP_ALLOWLIST=<VPN_고정_IP>` (쉼표로 다중 IP 가능)
+  - `ADMIN_WAF_IP_ALLOWLIST_ENFORCED=1` 설정 시, 허용 목록 외 관리자 접근은 즉시 차단
+- 운영 중 잠금 방지:
+  - 먼저 `ADMIN_WAF_IP_ALLOWLIST`에 현재 운영자 IP를 넣고,
+  - 접속 확인 후 `ADMIN_WAF_IP_ALLOWLIST_ENFORCED=1` 활성화 권장
 - `/admin` 경로(내부 canonical)는 서버에서 Bot 시그니처/Geo/ASN 정책을 함께 검사합니다.
 - 기본 권장:
   - `ADMIN_WAF_ENABLED=1`
