@@ -186,6 +186,82 @@ const SUPPORT_CHAT_PRIMARY_ADMIN_USERNAME = 'admin1';
 const SUPPORT_CHAT_MAX_MESSAGE_LENGTH = 1000;
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('ChronoLab.Auth.Dummy.Password.2026', 10);
 const ADMIN_WAF_ENABLED = parseEnvFlag(process.env.ADMIN_WAF_ENABLED, mustEnforceSecurity);
+const ADMIN_OTP_ENFORCED = parseEnvFlag(process.env.ADMIN_OTP_ENFORCED, true);
+
+function normalizeAdminEntryPath(rawPath = '') {
+  const fallback = '/admin';
+  const trimmed = String(rawPath || '').trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  let normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  normalized = normalized.replace(/\/{2,}/g, '/');
+  if (normalized.length > 1) {
+    normalized = normalized.replace(/\/+$/g, '');
+  }
+  normalized = normalized.toLowerCase();
+  if (!normalized || normalized === '/' || normalized.startsWith('/api') || normalized.startsWith('/assets') || normalized.startsWith('/uploads')) {
+    return fallback;
+  }
+  return normalized;
+}
+
+const ADMIN_CANONICAL_PATH_PREFIX = '/admin';
+const ADMIN_ENTRY_PATH_PREFIX = normalizeAdminEntryPath(
+  process.env.ADMIN_ENTRY_PATH || process.env.ADMIN_ROUTE_PATH || '/admin'
+);
+const ADMIN_ROUTE_RANDOMIZED = ADMIN_ENTRY_PATH_PREFIX !== ADMIN_CANONICAL_PATH_PREFIX;
+
+function isCanonicalAdminPath(pathname = '') {
+  const safe = String(pathname || '').trim();
+  return safe === ADMIN_CANONICAL_PATH_PREFIX || safe.startsWith(`${ADMIN_CANONICAL_PATH_PREFIX}/`);
+}
+
+function isMappedAdminPath(pathname = '') {
+  const safe = String(pathname || '').trim();
+  return safe === ADMIN_ENTRY_PATH_PREFIX || safe.startsWith(`${ADMIN_ENTRY_PATH_PREFIX}/`);
+}
+
+function mapCanonicalAdminPathToEntry(value = '') {
+  const raw = String(value || '').trim();
+  if (!ADMIN_ROUTE_RANDOMIZED || !raw) {
+    return raw;
+  }
+  const mapLocalPath = (input = '') => {
+    const local = String(input || '');
+    if (isCanonicalAdminPath(local)) {
+      return `${ADMIN_ENTRY_PATH_PREFIX}${local.slice(ADMIN_CANONICAL_PATH_PREFIX.length)}`;
+    }
+    return local;
+  };
+
+  if (raw.startsWith('/') && !raw.startsWith('//')) {
+    return mapLocalPath(raw);
+  }
+
+  try {
+    const parsed = new URL(raw);
+    const mappedPathname = mapLocalPath(parsed.pathname);
+    if (mappedPathname === parsed.pathname) {
+      return raw;
+    }
+    parsed.pathname = mappedPathname;
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function rewriteAdminPathReferencesInHtml(html = '') {
+  const source = typeof html === 'string' ? html : '';
+  if (!ADMIN_ROUTE_RANDOMIZED || !source || !source.includes('/admin')) {
+    return html;
+  }
+  return source.replace(
+    /(^|["'=(\s])\/admin(?=(?:\/|\?|#|["')\s>]))/gm,
+    (_, prefix = '') => `${prefix}${ADMIN_ENTRY_PATH_PREFIX}`
+  );
+}
 const ADMIN_WAF_BOT_BLOCK_ENABLED = parseEnvFlag(
   process.env.ADMIN_WAF_BOT_BLOCK_ENABLED,
   ADMIN_WAF_ENABLED
@@ -523,7 +599,11 @@ function resolveAuthScope(rawScope = 'member') {
 
 function resolveAuthScopeFromRequest(req) {
   const requestPath = String(req?.path || '').trim().toLowerCase();
-  if (requestPath.startsWith('/admin') || requestPath.startsWith('/api/admin/')) {
+  if (
+    requestPath.startsWith('/admin') ||
+    requestPath.startsWith('/api/admin/') ||
+    (ADMIN_ROUTE_RANDOMIZED && requestPath.startsWith(ADMIN_ENTRY_PATH_PREFIX))
+  ) {
     return 'admin';
   }
   return 'member';
@@ -1191,6 +1271,34 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
+app.use((req, res, next) => {
+  if (!ADMIN_ROUTE_RANDOMIZED) {
+    return next();
+  }
+  const currentUrl = String(req.url || '');
+  if (!currentUrl.startsWith('/')) {
+    return next();
+  }
+
+  const queryStartIndex = currentUrl.indexOf('?');
+  const pathname = queryStartIndex >= 0 ? currentUrl.slice(0, queryStartIndex) : currentUrl;
+  const queryString = queryStartIndex >= 0 ? currentUrl.slice(queryStartIndex) : '';
+
+  if (isMappedAdminPath(pathname)) {
+    const suffix = pathname.slice(ADMIN_ENTRY_PATH_PREFIX.length);
+    const rewrittenPath = `${ADMIN_CANONICAL_PATH_PREFIX}${suffix}`;
+    req.url = `${rewrittenPath || ADMIN_CANONICAL_PATH_PREFIX}${queryString}`;
+    return next();
+  }
+
+  if (isCanonicalAdminPath(pathname)) {
+    recordSecurityAlert(req, 'security.admin.hidden_route_blocked', `direct_path=${pathname.slice(0, 160)}`);
+    return res.status(404).type('text/plain; charset=utf-8').send('Not Found');
+  }
+
+  return next();
+});
+
 app.use('/assets', express.static(path.join(__dirname, 'public')));
 app.use('/uploads', (req, res, next) => {
   const requestedPath = String(req.path || '');
@@ -1238,6 +1346,30 @@ app.use(
     }
   })
 );
+
+app.use((req, res, next) => {
+  if (!ADMIN_ROUTE_RANDOMIZED) {
+    return next();
+  }
+  const originalRedirect = res.redirect.bind(res);
+  const originalSetHeader = res.setHeader.bind(res);
+
+  res.redirect = (statusOrUrl, urlMaybe) => {
+    if (typeof statusOrUrl === 'number') {
+      return originalRedirect(statusOrUrl, mapCanonicalAdminPathToEntry(urlMaybe));
+    }
+    return originalRedirect(mapCanonicalAdminPathToEntry(statusOrUrl));
+  };
+
+  res.setHeader = (name, value) => {
+    if (String(name || '').trim().toLowerCase() === 'location' && typeof value === 'string') {
+      return originalSetHeader(name, mapCanonicalAdminPathToEntry(value));
+    }
+    return originalSetHeader(name, value);
+  };
+  return next();
+});
+
 app.use((req, res, next) => {
   const incomingRequestId = String(req.get('x-request-id') || '').trim();
   const requestId = incomingRequestId && incomingRequestId.length <= 120 ? incomingRequestId : crypto.randomUUID();
@@ -1308,7 +1440,9 @@ app.use((req, res, next) => {
       if (!isHtmlResponse) {
         return originalSend(body);
       }
-      return originalSend(injectNonceIntoScriptTags(body, cspNonce));
+      const htmlWithNonce = injectNonceIntoScriptTags(body, cspNonce);
+      const htmlWithAdminPathRewrite = rewriteAdminPathReferencesInHtml(htmlWithNonce);
+      return originalSend(htmlWithAdminPathRewrite);
     } catch {
       return originalSend(body);
     }
@@ -10884,6 +11018,13 @@ function requireAdmin(req, res, next) {
     }
     return res.redirect('/admin/login');
   }
+  if (ADMIN_OTP_ENFORCED && !req.user.isAdminOtpEnabled) {
+    recordSecurityAlert(req, 'security.admin.otp_required', `uid=${Number(req.user?.id || 0) || 'unknown'}`);
+    clearScopedSessionAuthState(req, 'admin', { clearOtpSetup: true });
+    clearPersistAuthCookie(res, { scope: 'admin' });
+    setFlash(req, 'error', '관리자 OTP 설정이 필수입니다. 다시 로그인해 주세요.');
+    return res.redirect('/admin/login');
+  }
   return next();
 }
 
@@ -14694,6 +14835,12 @@ app.post('/logout', (req, res) => {
 });
 
 app.get('/admin/login', (req, res) => {
+  if (req.user?.isAdmin && ADMIN_OTP_ENFORCED && !req.user.isAdminOtpEnabled) {
+    clearScopedSessionAuthState(req, 'admin', { clearOtpSetup: true });
+    clearPersistAuthCookie(res, { scope: 'admin' });
+    setFlash(req, 'error', '관리자 OTP 필수 정책이 적용되어 다시 로그인해야 합니다.');
+    return res.redirect('/admin/login');
+  }
   if (req.user?.isAdmin) {
     return res.redirect('/admin/dashboard');
   }
@@ -14768,6 +14915,11 @@ app.post(
   const hasOtpEnabled =
     Number(user.admin_otp_enabled || 0) === 1 &&
     normalizeBase32Secret(user.admin_otp_secret || '').length >= 16;
+  if (ADMIN_OTP_ENFORCED && !hasOtpEnabled) {
+    recordSecurityAlert(req, 'auth.admin.otp_required', `account=${String(account || '').slice(0, 120)}`);
+    setFlash(req, 'error', '관리자 계정은 OTP 설정이 필수입니다. 메인관리자에게 OTP 설정 상태를 확인해 주세요.');
+    return res.redirect('/admin/login');
+  }
   if (hasOtpEnabled) {
     setAdminOtpPending(req, user);
     logAdminActivityByUser(user, req, 'LOGIN_OTP_PENDING', 'password verified; otp required');

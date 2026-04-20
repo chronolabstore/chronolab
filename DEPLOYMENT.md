@@ -51,6 +51,8 @@ SMTP_USER=
 SMTP_PASS=
 SMTP_FROM=
 ADMIN_OTP_ISSUER=Chrono LAB
+ADMIN_OTP_ENFORCED=1
+ADMIN_ENTRY_PATH=/admin-your-random-key
 ADMIN_WAF_ENABLED=1
 ADMIN_WAF_BOT_BLOCK_ENABLED=1
 ADMIN_WAF_GEO_BLOCK_ENABLED=1
@@ -221,7 +223,12 @@ cd /var/www/chronolab
 이동 환경(카페/테더링 등)에서 작업 시에는 Cafe24 방화벽에서 SSH를 특정 IP로 묶지 말고, 서버 내부는 `key-only + fail2ban`으로 방어하는 방식을 권장합니다.
 
 ## 8-2) 어드민 접근 보안 권장값
-- `/admin` 경로는 서버에서 Bot 시그니처/Geo/ASN 정책을 함께 검사합니다.
+- 관리자 경로 랜덤화 권장:
+  - `ADMIN_ENTRY_PATH=/admin-your-random-key` 처럼 추측 어려운 경로를 설정
+  - 설정 후 기존 `/admin` 직접 접근은 `404`로 차단됨
+- 관리자 OTP 강제 권장:
+  - `ADMIN_OTP_ENFORCED=1` (OTP 미설정 관리자 로그인 차단)
+- `/admin` 경로(내부 canonical)는 서버에서 Bot 시그니처/Geo/ASN 정책을 함께 검사합니다.
 - 기본 권장:
   - `ADMIN_WAF_ENABLED=1`
   - `ADMIN_WAF_BOT_BLOCK_ENABLED=1`
