@@ -364,7 +364,7 @@ const SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS = Math.max(
 );
 const SECURITY_ALERT_NOTIFY_BURST_THRESHOLD = Math.max(
   3,
-  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_BURST_THRESHOLD || ''), 10) || 20
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_BURST_THRESHOLD || ''), 10) || 10
 );
 const SECURITY_ALERT_NOTIFY_BURST_COOLDOWN_MS = Math.max(
   60 * 1000,
