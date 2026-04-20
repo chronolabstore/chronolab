@@ -8600,7 +8600,7 @@ async function pollTrackingAndAutoCompleteOrders(force = false) {
           UPDATE orders
           SET
             tracking_last_event = ?,
-            tracking_last_checked_at = datetime('now')
+            tracking_last_checked_at = datetime('now', '+9 hours')
           WHERE id = ?
         `
       ).run(latestEvent, item.id);
@@ -8613,7 +8613,7 @@ async function pollTrackingAndAutoCompleteOrders(force = false) {
               status = ?,
               delivered_at = COALESCE(delivered_at, datetime('now')),
               tracking_last_event = ?,
-              tracking_last_checked_at = datetime('now')
+              tracking_last_checked_at = datetime('now', '+9 hours')
             WHERE id = ? AND status = ?
           `
         ).run(ORDER_STATUS.DELIVERED, latestEvent || 'Delivered', item.id, ORDER_STATUS.SHIPPING);
@@ -20607,7 +20607,7 @@ app.post('/admin/order/:id/mark-delivered', requireAdmin, (req, res) => {
       SET
         status = ?,
         delivered_at = datetime('now'),
-        tracking_last_checked_at = datetime('now'),
+        tracking_last_checked_at = datetime('now', '+9 hours'),
         tracking_last_event = CASE
           WHEN COALESCE(tracking_last_event, '') = '' THEN '관리자 수동 배송완료 처리'
           ELSE tracking_last_event
