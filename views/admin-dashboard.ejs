@@ -4247,9 +4247,25 @@
               </td>
               <td>
                 <% if (item.tracking_number) { %>
+                  <%
+                    const trackingEventRaw = String(item.tracking_last_event || '').trim();
+                    const parseTrackingLabel = (label) => {
+                      const matched = trackingEventRaw.match(new RegExp(`${label}:\\s*([^·]+)`));
+                      return matched ? String(matched[1] || '').trim() : '';
+                    };
+                    const trackingStatus = parseTrackingLabel('상태');
+                    const trackingLocation = parseTrackingLabel('위치');
+                    const trackingDate = parseTrackingLabel('날짜');
+                    const trackingTime = parseTrackingLabel('시간');
+                    const statusLine = [trackingStatus ? `${isEn ? 'Status' : '상태'}: ${trackingStatus}` : '', trackingLocation ? `${isEn ? 'Location' : '위치'}: ${trackingLocation}` : '']
+                      .filter(Boolean)
+                      .join(' · ');
+                    const eventTimeValue = [trackingDate, trackingTime].filter((value) => value && value !== '-').join(' ');
+                  %>
                   <small><strong><%= item.tracking_carrier_label %></strong></small><br />
                   <small><%= item.tracking_number %></small><br />
-                  <small><%= item.tracking_last_event || (isEn ? 'Tracking pending' : '조회 대기중') %></small><br />
+                  <small><%= statusLine || trackingEventRaw || (isEn ? 'Tracking pending' : '조회 대기중') %></small><br />
+                  <small><%= isEn ? 'Time' : '시간' %>: <%= eventTimeValue || '-' %></small><br />
                   <small><%= isEn ? 'Last Synced At' : '조회시각' %>: <%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
                 <% } else { %>
                   <small>-</small>

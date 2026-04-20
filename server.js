@@ -8523,11 +8523,11 @@ function buildTrackingLatestEventSummary(payload) {
 
   const chunks = [];
   chunks.push(`상태: ${statusText}`);
-  chunks.push(`날짜: ${dateText}`);
-  chunks.push(`시간: ${timeText}`);
   if (locationText) {
     chunks.push(`위치: ${locationText}`);
   }
+  chunks.push(`날짜: ${dateText}`);
+  chunks.push(`시간: ${timeText}`);
   return chunks.join(' · ').slice(0, 260);
 }
 
