@@ -38,6 +38,21 @@
           ? 'Open Google Authenticator -> Add account -> Enter a setup key, then paste the key below.'
           : 'Google Authenticator 앱에서 계정 추가 -> 설정 키 입력을 선택한 뒤 아래 키를 입력하세요.' %>
       </p>
+      <% if (otpState?.setupQrDataUrl) { %>
+        <div class="otp-qr-wrap">
+          <img
+            src="<%= otpState.setupQrDataUrl %>"
+            alt="<%= isEn ? 'OTP QR code' : 'OTP QR 코드' %>"
+            class="otp-qr-image"
+            loading="lazy"
+          />
+          <p class="muted-label otp-qr-caption">
+            <%= isEn
+              ? 'You can also scan this QR in Google Authenticator: Add account -> Scan a QR code.'
+              : '또는 Google Authenticator 앱에서 계정 추가 -> QR 코드 스캔으로 바로 등록할 수 있습니다.' %>
+          </p>
+        </div>
+      <% } %>
       <div class="form-grid">
         <label>
           <%= isEn ? 'Setup Key (secret)' : '설정 키 (Secret)' %>

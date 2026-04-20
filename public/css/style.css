@@ -2092,6 +2092,30 @@ textarea {
   margin: 0;
 }
 
+.otp-qr-wrap {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--chip);
+  padding: 12px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.otp-qr-image {
+  width: min(100%, 224px);
+  height: auto;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+
+.otp-qr-caption {
+  margin: 0;
+  text-align: center;
+}
+
 .auth-found-account {
   margin: 0;
   font-size: 1rem;

@@ -13,6 +13,7 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import sharp from 'sharp';
+import QRCode from 'qrcode';
 import {
   db,
   initDb,
@@ -17225,7 +17226,7 @@ app.post('/admin/security/alert/:id/resolve', requirePrimaryAdmin, (req, res) =>
   return res.redirect(backPath);
 });
 
-app.get('/admin/otp', requireAdmin, (req, res) => {
+app.get('/admin/otp', requireAdmin, asyncRoute(async (req, res) => {
   const setupState = readAdminOtpSetup(req);
   const adminRow = db
     .prepare(
@@ -17260,6 +17261,18 @@ app.get('/admin/otp', requireAdmin, (req, res) => {
   const otpAuthUri = activeSetup
     ? buildAdminOtpAuthUri({ username: adminRow.username, secret: activeSetup.secret })
     : '';
+  let otpSetupQrDataUrl = '';
+  if (otpAuthUri) {
+    try {
+      otpSetupQrDataUrl = await QRCode.toDataURL(otpAuthUri, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 224
+      });
+    } catch {
+      otpSetupQrDataUrl = '';
+    }
+  }
 
   return res.render('admin-otp', {
     title: 'Admin OTP',
@@ -17267,10 +17280,11 @@ app.get('/admin/otp', requireAdmin, (req, res) => {
       enabled: otpEnabled,
       enabledAt: adminRow.admin_otp_enabled_at || '',
       setupSecret: activeSetup?.secret || '',
-      setupUri: otpAuthUri
+      setupUri: otpAuthUri,
+      setupQrDataUrl: otpSetupQrDataUrl
     }
   });
-});
+}));
 
 app.post('/admin/otp/setup/start', requireAdmin, (req, res) => {
   const backPath = '/admin/otp';
