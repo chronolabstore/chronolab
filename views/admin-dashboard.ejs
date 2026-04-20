@@ -4326,6 +4326,8 @@
                       <button type="submit" class="chip"><%= isEn ? 'Mark Delivered' : '수동 배송완료' %></button>
                     </form>
                     <small class="muted-label"><%= isEn ? 'Auto delivery sync enabled.' : '배송완료 자동 반영 활성화됨' %></small>
+                  <% } else if (item.status_code === 'CANCELLED') { %>
+                    <span class="chip danger order-cancelled-chip"><%= isEn ? 'Cancelled' : '주문취소' %></span>
                   <% } else { %>
                     <span class="muted-label"><%= isEn ? 'Done' : '완료' %></span>
                   <% } %>

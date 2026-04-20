@@ -593,6 +593,18 @@ img {
   color: var(--header-fg);
 }
 
+.chip.danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.chip.danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
 .header-actions .chip {
   background: var(--header-ui-bg);
   border-color: var(--header-ui-border);
@@ -6362,6 +6374,23 @@ body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.me
   border-color: var(--member-level-border);
   background: var(--member-level-bg);
   color: var(--member-level-text);
+}
+
+body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+body.admin-page .order-cancelled-chip {
+  cursor: default;
+  pointer-events: none;
 }
 
 /* Exception: notice/news/qc/inquiry list accordions
