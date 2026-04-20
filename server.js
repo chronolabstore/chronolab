@@ -8446,6 +8446,18 @@ function formatTrackingEventDateTime(rawValue) {
   return formatted.slice(0, 16).replace('T', ' ');
 }
 
+function splitTrackingEventDateTime(rawValue) {
+  const dateTime = formatTrackingEventDateTime(rawValue);
+  if (!dateTime) {
+    return { dateText: '-', timeText: '-' };
+  }
+  const [dateText = '-', timeText = '-'] = dateTime.split(' ');
+  return {
+    dateText: String(dateText || '-').trim() || '-',
+    timeText: String(timeText || '-').trim() || '-'
+  };
+}
+
 function getLatestTrackingProgress(payload) {
   const progresses = Array.isArray(payload?.progresses) ? payload.progresses : [];
   if (progresses.length === 0) {
@@ -8471,28 +8483,52 @@ function getLatestTrackingProgress(payload) {
   return latest || progresses[progresses.length - 1] || null;
 }
 
+function pickFirstTrackingText(values = []) {
+  for (let i = 0; i < values.length; i += 1) {
+    const value = String(values[i] || '').trim();
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
 function buildTrackingLatestEventSummary(payload) {
   if (!payload || typeof payload !== 'object') {
     return '';
   }
   const latestProgress = getLatestTrackingProgress(payload);
-  const statusText = String(
-    latestProgress?.status?.text || payload?.state?.text || payload?.state?.name || latestProgress?.description || ''
-  ).trim();
-  const locationText = String(latestProgress?.location?.name || '').trim();
-  const eventAt = formatTrackingEventDateTime(latestProgress?.time);
+  const statusText =
+    pickFirstTrackingText([
+      latestProgress?.status?.text,
+      latestProgress?.status?.name,
+      latestProgress?.status?.id,
+      latestProgress?.state?.text,
+      latestProgress?.description,
+      payload?.state?.text,
+      payload?.state?.name,
+      payload?.state?.id
+    ]) || '조회대기중';
+  const locationText = pickFirstTrackingText([
+    latestProgress?.location?.name,
+    latestProgress?.location?.address,
+    latestProgress?.location?.text,
+    latestProgress?.locationName,
+    latestProgress?.location,
+    payload?.from?.name
+  ]);
+  const { dateText, timeText } = splitTrackingEventDateTime(
+    pickFirstTrackingText([latestProgress?.time, latestProgress?.dateTime, latestProgress?.datetime, payload?.state?.time])
+  );
 
   const chunks = [];
-  if (statusText) {
-    chunks.push(`상태: ${statusText}`);
-  }
+  chunks.push(`상태: ${statusText}`);
+  chunks.push(`날짜: ${dateText}`);
+  chunks.push(`시간: ${timeText}`);
   if (locationText) {
     chunks.push(`위치: ${locationText}`);
   }
-  if (eventAt) {
-    chunks.push(`일시: ${eventAt}`);
-  }
-  return chunks.join(' · ').slice(0, 200);
+  return chunks.join(' · ').slice(0, 260);
 }
 
 async function fetchTrackingPayload(carrierId, trackingNumber) {

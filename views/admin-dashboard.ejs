@@ -4250,7 +4250,7 @@
                   <small><strong><%= item.tracking_carrier_label %></strong></small><br />
                   <small><%= item.tracking_number %></small><br />
                   <small><%= item.tracking_last_event || (isEn ? 'Tracking pending' : '조회 대기중') %></small><br />
-                  <small><%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
+                  <small><%= isEn ? 'Last Synced At' : '조회시각' %>: <%= item.tracking_last_checked_at ? item.tracking_last_checked_at.slice(0, 16) : '-' %></small>
                 <% } else { %>
                   <small>-</small>
                 <% } %>
