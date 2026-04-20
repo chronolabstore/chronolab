@@ -4777,7 +4777,7 @@ function getOrderStatusMeta(rawStatus, lang = 'ko', audience = 'admin') {
   if (status === ORDER_STATUS.CANCELLED) {
     return {
       code: status,
-      label: isEn ? 'Cancelled' : '주문취소',
+      label: isEn ? 'Cancelled' : '주문취소 완료',
       detail: ''
     };
   }

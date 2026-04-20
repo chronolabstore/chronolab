@@ -594,14 +594,14 @@ img {
 }
 
 .chip.danger {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: #991b1b;
+  border-color: #991b1b;
   color: #ffffff;
 }
 
 .chip.danger:hover {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: #7f1d1d;
+  border-color: #7f1d1d;
   color: #ffffff;
 }
 
@@ -3936,6 +3936,13 @@ body.admin-page select[size]:not([size='1']) {
   display: inline-flex;
 }
 
+.admin-order-actions .inline-form .chip,
+.admin-order-actions > .chip {
+  min-width: 132px;
+  min-height: 38px;
+  justify-content: center;
+}
+
 .admin-order-actions .form-grid.compact {
   gap: 6px;
 }
@@ -6377,14 +6384,14 @@ body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.me
 }
 
 body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.danger {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: #991b1b;
+  border-color: #991b1b;
   color: #ffffff;
 }
 
 body.admin-page :is(.table-wrap, .admin-list-item, .inquiry-admin-item) .chip.danger:hover {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: #7f1d1d;
+  border-color: #7f1d1d;
   color: #ffffff;
 }
 

@@ -78,7 +78,7 @@
     { key: 'READY_TO_SHIP', labelKo: '출고완료', labelEn: 'Shipment Complete' },
     { key: 'SHIPPING', labelKo: '배송중', labelEn: 'Shipping' },
     { key: 'DELIVERED', labelKo: '배송완료', labelEn: 'Delivered' },
-    { key: 'CANCELLED', labelKo: '주문취소', labelEn: 'Cancelled' }
+    { key: 'CANCELLED', labelKo: '주문취소 완료', labelEn: 'Cancelled' }
   ];
 
   const stats = dashboardStats || {
@@ -4327,7 +4327,7 @@
                     </form>
                     <small class="muted-label"><%= isEn ? 'Auto delivery sync enabled.' : '배송완료 자동 반영 활성화됨' %></small>
                   <% } else if (item.status_code === 'CANCELLED') { %>
-                    <span class="chip danger order-cancelled-chip"><%= isEn ? 'Cancelled' : '주문취소' %></span>
+                    <span class="chip danger order-cancelled-chip"><%= isEn ? 'Cancelled' : '주문취소 완료' %></span>
                   <% } else { %>
                     <span class="muted-label"><%= isEn ? 'Done' : '완료' %></span>
                   <% } %>
