@@ -8430,6 +8430,71 @@ function isDeliveredState(payload) {
   return progressText.includes('delivered') || progressText.includes('배송완료');
 }
 
+function formatTrackingEventDateTime(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    return '';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+  const formatted = parsed.toLocaleString('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    hour12: false
+  });
+  return formatted.slice(0, 16).replace('T', ' ');
+}
+
+function getLatestTrackingProgress(payload) {
+  const progresses = Array.isArray(payload?.progresses) ? payload.progresses : [];
+  if (progresses.length === 0) {
+    return null;
+  }
+
+  let latest = null;
+  let latestMs = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < progresses.length; i += 1) {
+    const item = progresses[i];
+    const timeMs = Date.parse(String(item?.time || '').trim());
+    if (Number.isFinite(timeMs)) {
+      if (!Number.isFinite(latestMs) || timeMs > latestMs) {
+        latest = item;
+        latestMs = timeMs;
+      }
+      continue;
+    }
+    if (!latest) {
+      latest = item;
+    }
+  }
+  return latest || progresses[progresses.length - 1] || null;
+}
+
+function buildTrackingLatestEventSummary(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return '';
+  }
+  const latestProgress = getLatestTrackingProgress(payload);
+  const statusText = String(
+    latestProgress?.status?.text || payload?.state?.text || payload?.state?.name || latestProgress?.description || ''
+  ).trim();
+  const locationText = String(latestProgress?.location?.name || '').trim();
+  const eventAt = formatTrackingEventDateTime(latestProgress?.time);
+
+  const chunks = [];
+  if (statusText) {
+    chunks.push(`상태: ${statusText}`);
+  }
+  if (locationText) {
+    chunks.push(`위치: ${locationText}`);
+  }
+  if (eventAt) {
+    chunks.push(`일시: ${eventAt}`);
+  }
+  return chunks.join(' · ').slice(0, 200);
+}
+
 async function fetchTrackingPayload(carrierId, trackingNumber) {
   if (typeof fetch !== 'function') {
     return null;
@@ -8492,9 +8557,7 @@ async function pollTrackingAndAutoCompleteOrders(force = false) {
       }
 
       const payload = await fetchTrackingPayload(carrierId, trackingNumber);
-      const latestEvent = String(
-        payload?.state?.text || payload?.state?.name || payload?.progresses?.[0]?.status?.text || ''
-      ).slice(0, 200);
+      const latestEvent = buildTrackingLatestEventSummary(payload);
 
       db.prepare(
         `
