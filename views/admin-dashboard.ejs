@@ -67,7 +67,7 @@
   })();
   const activeOrderStatusFilterKey = (() => {
     const candidate = String(orderStatusFilter || 'all').toUpperCase();
-    const supported = ['PENDING_REVIEW', 'ORDER_CONFIRMED', 'READY_TO_SHIP', 'SHIPPING', 'DELIVERED'];
+    const supported = ['PENDING_REVIEW', 'ORDER_CONFIRMED', 'READY_TO_SHIP', 'SHIPPING', 'DELIVERED', 'CANCELLED'];
     if (!candidate || candidate === 'ALL') return 'all';
     return supported.includes(candidate) ? candidate : 'all';
   })();
@@ -77,7 +77,8 @@
     { key: 'ORDER_CONFIRMED', labelKo: '입금확인', labelEn: 'Payment Confirmed' },
     { key: 'READY_TO_SHIP', labelKo: '출고완료', labelEn: 'Shipment Complete' },
     { key: 'SHIPPING', labelKo: '배송중', labelEn: 'Shipping' },
-    { key: 'DELIVERED', labelKo: '배송완료', labelEn: 'Delivered' }
+    { key: 'DELIVERED', labelKo: '배송완료', labelEn: 'Delivered' },
+    { key: 'CANCELLED', labelKo: '주문취소', labelEn: 'Cancelled' }
   ];
 
   const stats = dashboardStats || {
@@ -4260,9 +4261,31 @@
                     <form method="post" action="/admin/order/<%= item.id %>/confirm" class="inline-form">
                       <button type="submit" class="chip dark"><%= isEn ? 'Confirm Payment' : '입금확인' %></button>
                     </form>
+                    <form
+                      method="post"
+                      action="/admin/order/<%= item.id %>/cancel"
+                      class="inline-form"
+                      data-confirm-title="<%= isEn ? 'Cancel Order' : '주문취소' %>"
+                      data-confirm-message="<%= isEn ? 'Cancel this order? It will be excluded from sales aggregates.' : '이 주문을 취소할까요? 매출 집계에서 제외됩니다.' %>"
+                      data-confirm-ok-label="<%= isEn ? 'Cancel Order' : '주문취소' %>"
+                      data-confirm-cancel-label="<%= isEn ? 'Close' : '닫기' %>"
+                    >
+                      <button type="submit" class="chip"><%= isEn ? 'Cancel Order' : '주문취소' %></button>
+                    </form>
                   <% } else if (item.status_code === 'ORDER_CONFIRMED') { %>
                     <form method="post" action="/admin/order/<%= item.id %>/ready" class="inline-form">
                       <button type="submit" class="chip dark"><%= isEn ? 'Mark Shipment Complete' : '출고완료 처리' %></button>
+                    </form>
+                    <form
+                      method="post"
+                      action="/admin/order/<%= item.id %>/cancel"
+                      class="inline-form"
+                      data-confirm-title="<%= isEn ? 'Cancel Order' : '주문취소' %>"
+                      data-confirm-message="<%= isEn ? 'Cancel this confirmed order? Sales aggregates and sheet rows will be removed.' : '입금확인된 주문을 취소할까요? 매출 집계 및 시트 반영 내역이 제거됩니다.' %>"
+                      data-confirm-ok-label="<%= isEn ? 'Cancel Order' : '주문취소' %>"
+                      data-confirm-cancel-label="<%= isEn ? 'Close' : '닫기' %>"
+                    >
+                      <button type="submit" class="chip"><%= isEn ? 'Cancel Order' : '주문취소' %></button>
                     </form>
                   <% } else if (item.status_code === 'READY_TO_SHIP') { %>
                     <form method="post" action="/admin/order/<%= item.id %>/start-shipping" class="form-grid compact">

@@ -828,7 +828,8 @@ const ORDER_STATUS = Object.freeze({
   ORDER_CONFIRMED: 'ORDER_CONFIRMED',
   READY_TO_SHIP: 'READY_TO_SHIP',
   SHIPPING: 'SHIPPING',
-  DELIVERED: 'DELIVERED'
+  DELIVERED: 'DELIVERED',
+  CANCELLED: 'CANCELLED'
 });
 
 const FUNNEL_EVENT = Object.freeze({
@@ -4708,6 +4709,9 @@ function normalizeOrderStatus(rawStatus = '') {
   if (status === 'READY_TO_SHIP' || status === 'PACKING' || status === 'PRE_SHIPPING') return ORDER_STATUS.READY_TO_SHIP;
   if (status === 'SHIPPING' || status === 'SHIPPED') return ORDER_STATUS.SHIPPING;
   if (status === 'DELIVERED' || status === 'DONE') return ORDER_STATUS.DELIVERED;
+  if (status === 'CANCELLED' || status === 'CANCELED' || status === 'ORDER_CANCELLED' || status === 'ORDER_CANCELED') {
+    return ORDER_STATUS.CANCELLED;
+  }
 
   return ORDER_STATUS.PENDING_REVIEW;
 }
@@ -4766,6 +4770,14 @@ function getOrderStatusMeta(rawStatus, lang = 'ko', audience = 'admin') {
     return {
       code: status,
       label: isEn ? 'Shipping' : '배송중',
+      detail: ''
+    };
+  }
+
+  if (status === ORDER_STATUS.CANCELLED) {
+    return {
+      code: status,
+      label: isEn ? 'Cancelled' : '주문취소',
       detail: ''
     };
   }
@@ -5012,7 +5024,11 @@ function normalizeAdminOrderStatusFilter(rawStatus = '') {
     shipping: ORDER_STATUS.SHIPPING,
     shipped: ORDER_STATUS.SHIPPING,
     delivered: ORDER_STATUS.DELIVERED,
-    done: ORDER_STATUS.DELIVERED
+    done: ORDER_STATUS.DELIVERED,
+    cancelled: ORDER_STATUS.CANCELLED,
+    canceled: ORDER_STATUS.CANCELLED,
+    order_cancelled: ORDER_STATUS.CANCELLED,
+    order_canceled: ORDER_STATUS.CANCELLED
   };
 
   if (aliasMap[lower]) {
@@ -5025,7 +5041,8 @@ function normalizeAdminOrderStatusFilter(rawStatus = '') {
     ORDER_STATUS.ORDER_CONFIRMED,
     ORDER_STATUS.READY_TO_SHIP,
     ORDER_STATUS.SHIPPING,
-    ORDER_STATUS.DELIVERED
+    ORDER_STATUS.DELIVERED,
+    ORDER_STATUS.CANCELLED
   ]);
   if (supported.has(normalized)) {
     return normalized;
@@ -5054,6 +5071,9 @@ function getOrderStatusFilterDbValues(statusFilter = 'all') {
   }
   if (normalized === ORDER_STATUS.DELIVERED) {
     return ['DELIVERED', 'DONE'];
+  }
+  if (normalized === ORDER_STATUS.CANCELLED) {
+    return ['CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED'];
   }
   return [];
 }
@@ -7558,7 +7578,7 @@ function syncPaidOrdersToSalesWorkbook(options = {}) {
   const workbookTabs = workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs : {};
 
   const whereParts = [
-    "UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED')"
+    "UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')"
   ];
   const params = [];
   if (targetOrderIds.length > 0) {
@@ -7771,6 +7791,87 @@ function syncPaidOrdersToSalesWorkbookSafely(options = {}) {
     return syncPaidOrdersToSalesWorkbook(options);
   } catch (error) {
     console.error('[sales] paid order workbook sync failed:', error);
+    return null;
+  }
+}
+
+function removeOrdersFromSalesWorkbook(options = {}) {
+  const targetOrderIds = [...new Set(
+    (Array.isArray(options?.orderIds) ? options.orderIds : [])
+      .map((value) => Number.parseInt(String(value ?? ''), 10))
+      .filter((value) => Number.isInteger(value) && value > 0)
+  )];
+  if (targetOrderIds.length === 0) {
+    return {
+      changed: false,
+      workbook: getSalesWorkbook(),
+      stats: { removedRows: 0, syncedIdsChanged: false }
+    };
+  }
+
+  const tokenList = targetOrderIds
+    .map((orderId) => buildSalesOrderSyncMemoToken(orderId))
+    .filter(Boolean);
+  if (tokenList.length === 0) {
+    return {
+      changed: false,
+      workbook: getSalesWorkbook(),
+      stats: { removedRows: 0, syncedIdsChanged: false }
+    };
+  }
+
+  const workbook = getSalesWorkbook();
+  const workbookTabs = workbook?.tabs && typeof workbook.tabs === 'object' ? workbook.tabs : {};
+
+  let removedRows = 0;
+  Object.values(workbookTabs).forEach((tab) => {
+    if (!tab || typeof tab !== 'object' || !Array.isArray(tab.rounds)) {
+      return;
+    }
+    tab.rounds.forEach((scope) => {
+      if (!scope || typeof scope !== 'object' || !Array.isArray(scope.rows) || scope.rows.length === 0) {
+        return;
+      }
+      const beforeLength = scope.rows.length;
+      scope.rows = scope.rows.filter((row) => {
+        const memo = String(row?.memo || '');
+        return !tokenList.some((token) => memo.includes(token));
+      });
+      removedRows += Math.max(0, beforeLength - scope.rows.length);
+    });
+  });
+
+  const syncedOrderIdSet = new Set(getSalesWorkbookSyncedOrderIds());
+  let syncedIdsChanged = false;
+  targetOrderIds.forEach((orderId) => {
+    if (syncedOrderIdSet.delete(orderId)) {
+      syncedIdsChanged = true;
+    }
+  });
+  if (syncedIdsChanged) {
+    setSalesWorkbookSyncedOrderIds([...syncedOrderIdSet]);
+  }
+
+  const workbookChanged = removedRows > 0;
+  const savedWorkbook = workbookChanged
+    ? saveSalesWorkbook(workbook, { importedFrom: 'local-workbook' })
+    : workbook;
+
+  return {
+    changed: workbookChanged || syncedIdsChanged,
+    workbook: savedWorkbook,
+    stats: {
+      removedRows,
+      syncedIdsChanged
+    }
+  };
+}
+
+function removeOrdersFromSalesWorkbookSafely(options = {}) {
+  try {
+    return removeOrdersFromSalesWorkbook(options);
+  } catch (error) {
+    console.error('[sales] paid order workbook remove failed:', error);
     return null;
   }
 }
@@ -9777,11 +9878,11 @@ function getMemberAccumulatedPurchaseAmount(userId, includedGroups = []) {
         FROM orders o
         JOIN products p ON p.id = o.product_id
         WHERE o.created_by_user_id = ?
-          AND UPPER(TRIM(o.status)) != ?
+          AND UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
           AND p.category_group IN (${placeholders})
       `
     )
-    .get(targetUserId, ORDER_STATUS.PENDING_REVIEW, ...includedGroups);
+    .get(targetUserId, ...includedGroups);
 
   return Number(row?.total_amount || 0);
 }
@@ -9807,12 +9908,12 @@ function getMemberAccumulatedTotalsMap(userIds = [], includedGroups = []) {
         FROM orders o
         JOIN products p ON p.id = o.product_id
         WHERE o.created_by_user_id IN (${userPlaceholders})
-          AND UPPER(TRIM(o.status)) != ?
+          AND UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
           AND p.category_group IN (${groupPlaceholders})
         GROUP BY o.created_by_user_id
       `
     )
-    .all(...uniqueUserIds, ORDER_STATUS.PENDING_REVIEW, ...includedGroups);
+    .all(...uniqueUserIds, ...includedGroups);
 
   rows.forEach((row) => {
     resultMap.set(Number(row.user_id), Number(row.total_amount || 0));
@@ -15146,11 +15247,23 @@ function buildAdminDashboardStats() {
     .prepare(
       `
         SELECT
-          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS total_count,
-          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN total_price ELSE 0 END) AS total_amount,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
+              THEN 1
+              ELSE 0
+            END
+          ) AS total_count,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
+              THEN total_price
+              ELSE 0
+            END
+          ) AS total_amount,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) = date(?)
               THEN 1
               ELSE 0
@@ -15158,7 +15271,7 @@ function buildAdminDashboardStats() {
           ) AS today_count,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) = date(?)
               THEN total_price
               ELSE 0
@@ -15166,7 +15279,7 @@ function buildAdminDashboardStats() {
           ) AS today_amount,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-6 day') AND date(?)
               THEN 1
               ELSE 0
@@ -15174,7 +15287,7 @@ function buildAdminDashboardStats() {
           ) AS week_count,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-6 day') AND date(?)
               THEN total_price
               ELSE 0
@@ -15182,7 +15295,7 @@ function buildAdminDashboardStats() {
           ) AS week_amount,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
               THEN 1
               ELSE 0
@@ -15190,7 +15303,7 @@ function buildAdminDashboardStats() {
           ) AS month_count,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
               THEN total_price
               ELSE 0
@@ -15264,10 +15377,16 @@ function buildAdminDashboardStats() {
               ELSE 0
             END
           ) AS order_created_window,
-          SUM(CASE WHEN status != 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS payment_confirmed_total,
           SUM(
             CASE
-              WHEN status != 'PENDING_REVIEW'
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
+              THEN 1
+              ELSE 0
+            END
+          ) AS payment_confirmed_total,
+          SUM(
+            CASE
+              WHEN UPPER(TRIM(status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')
                 AND date(datetime(COALESCE(checked_at, created_at), '+9 hours')) BETWEEN date(?, '-29 day') AND date(?)
               THEN 1
               ELSE 0
@@ -16064,7 +16183,7 @@ function buildAdminSalesDailyData(lang = 'ko', options = {}) {
   const dateTo = normalizeDateInput(options.dateTo || '');
 
   const whereParts = [
-    "UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED')"
+    "UPPER(TRIM(o.status)) NOT IN ('PENDING_REVIEW', 'UNPAID', 'PENDING_TRANSFER', 'UNCHECKED', 'CANCELLED', 'CANCELED', 'ORDER_CANCELLED', 'ORDER_CANCELED')"
   ];
   const params = [];
 
@@ -20099,6 +20218,89 @@ app.post('/admin/order/:id/confirm', requireAdmin, (req, res) => {
       ? '입금확인 처리되었습니다. 포인트는 배송완료 후 자동 적립됩니다.'
       : '입금확인 처리되었습니다.'
   );
+  return res.redirect(backPath);
+});
+
+app.post('/admin/order/:id/cancel', requireAdmin, (req, res) => {
+  const backPath = safeBackPath(req, '/admin/orders');
+  const id = Number(req.params.id);
+  const order = db
+    .prepare(
+      `
+        SELECT
+          id,
+          order_no,
+          status,
+          created_by_user_id,
+          used_points
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+      `
+    )
+    .get(id);
+
+  if (!order) {
+    setFlash(req, 'error', '주문을 찾을 수 없습니다.');
+    return res.redirect(backPath);
+  }
+
+  const currentStatus = normalizeOrderStatus(order.status);
+  const cancellableStatuses = new Set([ORDER_STATUS.PENDING_REVIEW, ORDER_STATUS.ORDER_CONFIRMED]);
+  if (!cancellableStatuses.has(currentStatus)) {
+    setFlash(req, 'error', '입금확인중/입금확인 상태에서만 주문취소가 가능합니다.');
+    return res.redirect(backPath);
+  }
+
+  const statusDbValues = getOrderStatusFilterDbValues(currentStatus);
+  if (!Array.isArray(statusDbValues) || statusDbValues.length === 0) {
+    setFlash(req, 'error', '주문 상태 확인 중 오류가 발생했습니다.');
+    return res.redirect(backPath);
+  }
+
+  const usedPoints = parseNonNegativeInt(order.used_points, 0);
+  const memberUserId = Number(order.created_by_user_id || 0);
+
+  const cancelResult = db.transaction(() => {
+    const updated = db
+      .prepare(
+        `
+          UPDATE orders
+          SET status = ?
+          WHERE id = ? AND UPPER(TRIM(status)) IN (${statusDbValues.map(() => '?').join(', ')})
+        `
+      )
+      .run(ORDER_STATUS.CANCELLED, id, ...statusDbValues);
+
+    if (updated.changes === 0) {
+      return { updated: 0, refundedPoints: 0 };
+    }
+
+    let refundedPoints = 0;
+    if (memberUserId > 0 && usedPoints > 0) {
+      const pointRefunded = db
+        .prepare('UPDATE users SET reward_points = reward_points + ? WHERE id = ? AND is_admin = 0')
+        .run(usedPoints, memberUserId);
+      if (pointRefunded.changes > 0) {
+        refundedPoints = usedPoints;
+      }
+    }
+
+    return { updated: updated.changes, refundedPoints };
+  })();
+
+  if (cancelResult.updated === 0) {
+    setFlash(req, 'error', '이미 처리된 주문입니다. 페이지를 새로고침해 주세요.');
+    return res.redirect(backPath);
+  }
+
+  appendOrderStatusLog(order.id, order.order_no, currentStatus, ORDER_STATUS.CANCELLED, 'admin:cancel');
+  removeOrdersFromSalesWorkbookSafely({ orderIds: [id] });
+
+  const refundedPointText = cancelResult.refundedPoints > 0
+    ? ` 사용 포인트 ${formatPrice(cancelResult.refundedPoints)}P가 환급되었습니다.`
+    : '';
+  setFlash(req, 'success', `주문취소 처리되었습니다.${refundedPointText}`.trim());
   return res.redirect(backPath);
 });
 
