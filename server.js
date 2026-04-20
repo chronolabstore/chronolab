@@ -11119,6 +11119,13 @@ function requireAuth(req, res, next) {
   return next();
 }
 
+function respondAdminNotFound(req, res) {
+  if (String(req.path || '').startsWith('/api/admin')) {
+    return res.status(404).json({ ok: false, message: 'Not Found' });
+  }
+  return res.status(404).type('text/plain; charset=utf-8').send('Not Found');
+}
+
 function requireAdmin(req, res, next) {
   if (!req.user?.isAdmin) {
     recordSecurityAlert(
@@ -11126,14 +11133,7 @@ function requireAdmin(req, res, next) {
       'security.admin.auth_required',
       req.user ? 'non-admin user attempted admin route access' : 'anonymous admin route access'
     );
-    if (!req.session.flash) {
-      setFlash(
-        req,
-        'error',
-        req.user ? '관리자 계정으로 로그인해 주세요.' : '관리자 로그인이 필요합니다.'
-      );
-    }
-    return res.redirect('/admin/login');
+    return respondAdminNotFound(req, res);
   }
   if (ADMIN_OTP_ENFORCED && !req.user.isAdminOtpEnabled) {
     recordSecurityAlert(req, 'security.admin.otp_required', `uid=${Number(req.user?.id || 0) || 'unknown'}`);
@@ -11147,8 +11147,12 @@ function requireAdmin(req, res, next) {
 
 function requirePrimaryAdmin(req, res, next) {
   if (!req.user?.isAdmin) {
-    setFlash(req, 'error', req.user ? '관리자 계정으로 로그인해 주세요.' : '관리자 로그인이 필요합니다.');
-    return res.redirect('/admin/login');
+    recordSecurityAlert(
+      req,
+      'security.admin.auth_required',
+      req.user ? 'non-admin user attempted primary-only admin route access' : 'anonymous primary-only admin route access'
+    );
+    return respondAdminNotFound(req, res);
   }
 
   if (!req.user.isPrimaryAdmin) {
