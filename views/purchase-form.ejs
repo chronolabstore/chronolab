@@ -107,15 +107,18 @@
         </label>
 
         <label><%= isEn ? 'Use Points' : '포인트 사용' %>
-          <input
-            type="number"
-            name="useRewardPoints"
-            id="purchaseUseRewardPoints"
-            min="0"
-            step="1000"
-            inputmode="numeric"
-            value="<%= formData.useRewardPoints || 0 %>"
-          />
+          <div class="field-inline">
+            <input
+              type="number"
+              name="useRewardPoints"
+              id="purchaseUseRewardPoints"
+              min="0"
+              step="1000"
+              inputmode="numeric"
+              value="<%= formData.useRewardPoints || 0 %>"
+            />
+            <button type="button" class="chip field-inline-btn" id="purchaseUseMaxPointsBtn"><%= isEn ? 'Use Max' : '최대 사용' %></button>
+          </div>
         </label>
 
         <p class="muted-label purchase-field-span-2 purchase-form-help-text">
@@ -169,6 +172,8 @@
     const searchBtn = document.getElementById('buyerAddressSearchBtn');
     const quantityInput = document.querySelector('input[name="quantity"]');
     const useRewardPointsInput = document.getElementById('purchaseUseRewardPoints');
+    const useMaxPointsBtn = document.getElementById('purchaseUseMaxPointsBtn');
+    const purchaseForm = document.querySelector('.purchase-request-form');
     const subtotalText = document.getElementById('purchaseSubtotalText');
     const usedPointsText = document.getElementById('purchaseUsedPointsText');
     const payableText = document.getElementById('purchasePayableText');
@@ -182,6 +187,13 @@
     const pointUnit = 1000;
     const daumPostcodeScriptSrc = 'https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
     const notSetRewardLabel = <%- JSON.stringify(isEn ? 'Not set' : '미설정') %>;
+    let latestPaymentPreview = {
+      quantity: 1,
+      subtotal: 0,
+      usingPoints: 0,
+      maxUsable: 0,
+      payable: 0
+    };
 
     const normalizePositiveInt = (rawValue, fallback = 1) => {
       const parsed = Number.parseInt(String(rawValue ?? ''), 10);
@@ -319,6 +331,13 @@
       }
       const payable = Math.max(0, subtotal - usingPoints);
       const expectedRewardPoints = pointRate > 0 ? Math.max(0, Math.floor((payable * pointRate) / 100)) : 0;
+      latestPaymentPreview = {
+        quantity,
+        subtotal,
+        usingPoints,
+        maxUsable,
+        payable
+      };
 
       if (subtotalText) subtotalText.textContent = `₩${formatNumber(subtotal)}`;
       if (usedPointsText) usedPointsText.textContent = `${usingPoints > 0 ? '-' : ''}${formatNumber(usingPoints)}P`;
@@ -405,6 +424,48 @@
     if (useRewardPointsInput) {
       useRewardPointsInput.addEventListener('input', refreshPaymentPreview);
       useRewardPointsInput.addEventListener('change', refreshPaymentPreview);
+    }
+    if (useMaxPointsBtn && useRewardPointsInput) {
+      useMaxPointsBtn.addEventListener('click', () => {
+        useRewardPointsInput.value = String(latestPaymentPreview.maxUsable || 0);
+        refreshPaymentPreview();
+      });
+    }
+    if (purchaseForm) {
+      purchaseForm.addEventListener('submit', (event) => {
+        if (purchaseForm.dataset.confirmedSubmit === '1') {
+          return;
+        }
+        refreshPaymentPreview();
+        const summaryMessage = isEn
+          ? `Please confirm your order.\nOrder amount: ₩${formatNumber(latestPaymentPreview.subtotal)}\nUsed points: ${latestPaymentPreview.usingPoints > 0 ? '-' : ''}${formatNumber(latestPaymentPreview.usingPoints)}P\nFinal payment: ₩${formatNumber(latestPaymentPreview.payable)}`
+          : `주문 금액을 확인해 주세요.\n주문금액: ₩${formatNumber(latestPaymentPreview.subtotal)}\n사용 포인트: ${latestPaymentPreview.usingPoints > 0 ? '-' : ''}${formatNumber(latestPaymentPreview.usingPoints)}P\n최종 결제금액: ₩${formatNumber(latestPaymentPreview.payable)}`;
+
+        event.preventDefault();
+
+        const submitConfirmed = () => {
+          purchaseForm.dataset.confirmedSubmit = '1';
+          purchaseForm.submit();
+        };
+
+        if (window.ChronoPopup && typeof window.ChronoPopup.confirm === 'function') {
+          window.ChronoPopup.confirm({
+            title: isEn ? 'Purchase Confirmation' : '구매 확인',
+            message: summaryMessage,
+            confirmLabel: isEn ? 'Submit Purchase' : '구매 신청하기',
+            cancelLabel: isEn ? 'Cancel' : '취소'
+          }).then((confirmed) => {
+            if (confirmed) {
+              submitConfirmed();
+            }
+          });
+          return;
+        }
+
+        if (window.confirm(summaryMessage)) {
+          submitConfirmed();
+        }
+      });
     }
     refreshPaymentPreview();
   })();

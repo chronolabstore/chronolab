@@ -12469,6 +12469,12 @@ app.get('/shop/item/:id/purchase', requireAuth, (req, res) => {
   const memberPointProfile = getMemberPointProfile(req.user.id, res.locals.ctx.lang);
   const purchasePointRate = memberPointProfile.pointRate;
   const availableRewardPoints = parseNonNegativeInt(req.user.rewardPoints, 0);
+  const pointUseUnit = 1000;
+  const defaultUseRewardPoints = Math.max(
+    0,
+    Math.floor(Math.min(availableRewardPoints, Number(product.price || 0)) / pointUseUnit) * pointUseUnit
+  );
+  formData.useRewardPoints = String(defaultUseRewardPoints);
   return res.render('purchase-form', {
     title: 'Purchase',
     product,
