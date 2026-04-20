@@ -8437,7 +8437,7 @@ async function fetchTrackingPayload(carrierId, trackingNumber) {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TRACKING_REQUEST_TIMEOUT_MS);
-  const url = `${TRACKING_API_BASE}/trackers/${encodeURIComponent(carrierId)}/${encodeURIComponent(
+  const url = `${TRACKING_API_BASE}/carriers/${encodeURIComponent(carrierId)}/tracks/${encodeURIComponent(
     trackingNumber
   )}`;
 
@@ -20453,7 +20453,7 @@ app.post('/admin/order/:id/update-tracking', requireAdmin, (req, res) => {
   return res.redirect(backPath);
 });
 
-app.post('/admin/order/:id/sync-tracking', requireAdmin, (req, res) => {
+app.post('/admin/order/:id/sync-tracking', requireAdmin, asyncRoute(async (req, res) => {
   const backPath = safeBackPath(req, '/admin/orders');
   const id = Number(req.params.id);
   const order = db
@@ -20482,10 +20482,10 @@ app.post('/admin/order/:id/sync-tracking', requireAdmin, (req, res) => {
     ORDER_STATUS.SHIPPING,
     'admin:tracking-sync'
   );
-  void pollTrackingAndAutoCompleteOrders(true);
+  await pollTrackingAndAutoCompleteOrders(true);
   setFlash(req, 'success', '송장 상태 조회를 요청했습니다.');
   return res.redirect(backPath);
-});
+}));
 
 app.post('/admin/order/:id/mark-delivered', requireAdmin, (req, res) => {
   const backPath = safeBackPath(req, '/admin/orders');

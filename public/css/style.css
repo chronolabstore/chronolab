@@ -3944,6 +3944,14 @@ body.admin-page select[size]:not([size='1']) {
   justify-content: center;
 }
 
+.admin-order-actions .form-grid.compact > button.chip {
+  width: 132px;
+  min-width: 132px;
+  min-height: 38px;
+  justify-self: start;
+  justify-content: center;
+}
+
 .admin-order-actions .form-grid.compact {
   gap: 6px;
 }
