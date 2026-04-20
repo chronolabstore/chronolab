@@ -354,6 +354,35 @@ const SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS = Math.max(
   SECURITY_ALERT_NOTIFY_THROTTLE_MS,
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS || ''), 10) || 10 * 60 * 1000
 );
+const SECURITY_ALERT_NOTIFY_BURST_ENABLED = parseEnvFlag(
+  process.env.SECURITY_ALERT_NOTIFY_BURST_ENABLED,
+  mustEnforceSecurity
+);
+const SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS = Math.max(
+  60 * 1000,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS || ''), 10) || 5 * 60 * 1000
+);
+const SECURITY_ALERT_NOTIFY_BURST_THRESHOLD = Math.max(
+  3,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_BURST_THRESHOLD || ''), 10) || 20
+);
+const SECURITY_ALERT_NOTIFY_BURST_COOLDOWN_MS = Math.max(
+  60 * 1000,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_BURST_COOLDOWN_MS || ''), 10) || 30 * 60 * 1000
+);
+const SECURITY_ALERT_NOTIFY_BURST_REASON_SET = (() => {
+  const raw = String(process.env.SECURITY_ALERT_NOTIFY_BURST_REASONS || '').trim();
+  const normalize = (value = '') => String(value || '').trim().toLowerCase();
+  const defaults = ['security.admin.hidden_route_blocked', 'security.admin.auth_required'];
+  if (!raw) {
+    return new Set(defaults);
+  }
+  const fromEnv = Array.from(parseCsvStringSet(raw))
+    .map((item) => normalize(item))
+    .filter(Boolean)
+    .filter((item) => item !== 'none' && item !== 'off');
+  return new Set(fromEnv);
+})();
 const SECURITY_ALERT_NOTIFY_SUPPRESS_REASON_SET = (() => {
   const raw = String(process.env.SECURITY_ALERT_NOTIFY_SUPPRESS_REASONS || '').trim();
   const normalize = (value = '') => String(value || '').trim().toLowerCase();
@@ -378,6 +407,7 @@ const SECURITY_ALERT_NOTIFY_TIMEOUT_MS = Math.max(
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_TIMEOUT_MS || ''), 10) || 5000
 );
 const securityAlertNotifyState = new Map();
+const securityAlertBurstState = new Map();
 const ADMIN_WAF_BLOCKED_USER_AGENT_PATTERNS = [
   /sqlmap/i,
   /acunetix/i,
@@ -4379,6 +4409,19 @@ function cleanupSecurityAlertNotifyState(nowMs = Date.now()) {
   }
 }
 
+function cleanupSecurityAlertBurstState(nowMs = Date.now()) {
+  if (securityAlertBurstState.size <= 5000) {
+    return;
+  }
+  const maxAgeMs = Math.max(SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS, SECURITY_ALERT_NOTIFY_BURST_COOLDOWN_MS) * 6;
+  for (const [key, state] of securityAlertBurstState.entries()) {
+    const lastSeenAt = Number(state?.lastSeenAt || 0);
+    if (!lastSeenAt || nowMs - lastSeenAt > maxAgeMs) {
+      securityAlertBurstState.delete(key);
+    }
+  }
+}
+
 function normalizeSecurityAlertPathForDedupe(pathValue = '') {
   const rawPath = String(pathValue || '').trim().toLowerCase();
   if (!rawPath) {
@@ -4391,6 +4434,82 @@ function normalizeSecurityAlertPathForDedupe(pathValue = '') {
     return '/api/admin/*';
   }
   return rawPath;
+}
+
+function normalizeSecurityAlertPathForBurstSample(pathValue = '') {
+  const rawPath = String(pathValue || '').trim().toLowerCase();
+  if (!rawPath) {
+    return '';
+  }
+  const [pathnameOnly] = rawPath.split('?');
+  return pathnameOnly.slice(0, 180);
+}
+
+function buildSecurityAlertBurstPayload(payload = {}, state = {}, normalizedReason = '') {
+  const sourceReason = String(normalizedReason || '').trim().toLowerCase();
+  const pathGroup = String(state.pathGroup || normalizeSecurityAlertPathForDedupe(payload.path) || '').trim();
+  const samplePath = String(state.samplePath || normalizeSecurityAlertPathForBurstSample(payload.path) || '').trim();
+  const detailParts = [
+    `source_reason=${sourceReason || 'unknown'}`,
+    `count=${Number(state.count || 0)}`,
+    `window_ms=${SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS}`,
+    `path_group=${pathGroup || '-'}`,
+    `sample_path=${samplePath || '-'}`
+  ];
+  return {
+    reason: 'security.alert.burst_detected',
+    detail: detailParts.join(';'),
+    ipAddress: String(payload.ipAddress || '').trim() || 'unknown',
+    method: String(payload.method || '').trim() || 'GET',
+    path: pathGroup || samplePath || String(payload.path || '').trim() || 'unknown',
+    actor: String(payload.actor || '').trim() || 'unknown',
+    role: String(payload.role || '').trim() || 'unknown',
+    requestId: String(payload.requestId || '').trim() || 'unknown'
+  };
+}
+
+function evaluateSecurityAlertBurst(payload = {}) {
+  if (!SECURITY_ALERT_NOTIFY_BURST_ENABLED) {
+    return null;
+  }
+  const normalizedReason = String(payload.reason || '').trim().toLowerCase();
+  if (!normalizedReason || !SECURITY_ALERT_NOTIFY_BURST_REASON_SET.has(normalizedReason)) {
+    return null;
+  }
+  const ipAddress = String(payload.ipAddress || '').trim().toLowerCase() || 'unknown';
+  const pathGroup = normalizeSecurityAlertPathForDedupe(payload.path) || 'unknown';
+  const samplePath = normalizeSecurityAlertPathForBurstSample(payload.path) || pathGroup;
+  const key = [normalizedReason, ipAddress, pathGroup].join('|');
+  const nowMs = Date.now();
+  cleanupSecurityAlertBurstState(nowMs);
+
+  let state = securityAlertBurstState.get(key);
+  if (!state || nowMs - Number(state.windowStartedAt || 0) > SECURITY_ALERT_NOTIFY_BURST_WINDOW_MS) {
+    state = {
+      windowStartedAt: nowMs,
+      lastSeenAt: nowMs,
+      lastNotifiedAt: 0,
+      count: 0,
+      pathGroup,
+      samplePath
+    };
+  }
+
+  state.count = Number(state.count || 0) + 1;
+  state.lastSeenAt = nowMs;
+  state.pathGroup = pathGroup;
+  state.samplePath = samplePath;
+  securityAlertBurstState.set(key, state);
+
+  if (state.count < SECURITY_ALERT_NOTIFY_BURST_THRESHOLD) {
+    return null;
+  }
+  if (state.lastNotifiedAt > 0 && nowMs - state.lastNotifiedAt < SECURITY_ALERT_NOTIFY_BURST_COOLDOWN_MS) {
+    return null;
+  }
+  state.lastNotifiedAt = nowMs;
+  securityAlertBurstState.set(key, state);
+  return buildSecurityAlertBurstPayload(payload, state, normalizedReason);
 }
 
 function getSecurityAlertThrottleMs(payload = {}) {
@@ -4467,6 +4586,7 @@ function buildSecurityAlertMessage(payload = {}) {
   };
   const resolveReasonKo = (reason) => {
     if (!reason) return '알 수 없는 사유';
+    if (reason === 'security.alert.burst_detected') return '반복 차단 시도 급증 감지';
     if (reason === 'security.admin.hidden_route_blocked') return '숨김 관리자 경로 직접 접근 차단';
     if (reason === 'security.admin.auth_required') return '관리자 인증 필요 접근 차단';
     if (reason === 'security.primary_only.route' || reason === 'security.primary_only.denied') {
@@ -4504,6 +4624,33 @@ function buildSecurityAlertMessage(payload = {}) {
     const normalizedReason = String(reason || '').trim().toLowerCase();
     const rawDetail = String(detail || '').trim();
     const decodedPath = safeDecodePath(path || '');
+    if (normalizedReason === 'security.alert.burst_detected') {
+      const meta = {};
+      rawDetail.split(';').forEach((chunk) => {
+        const part = String(chunk || '').trim();
+        if (!part) return;
+        const idx = part.indexOf('=');
+        if (idx <= 0) return;
+        const key = part.slice(0, idx).trim().toLowerCase();
+        const value = part.slice(idx + 1).trim();
+        if (!key) return;
+        meta[key] = value;
+      });
+      const sourceReasonRaw = String(meta.source_reason || '').trim().toLowerCase();
+      const sourceReasonKo = resolveReasonKo(sourceReasonRaw || '알 수 없는 사유');
+      const count = Math.max(0, Number.parseInt(String(meta.count || ''), 10) || 0);
+      const windowMs = Math.max(0, Number.parseInt(String(meta.window_ms || ''), 10) || 0);
+      const windowLabel =
+        windowMs >= 60 * 1000
+          ? `${Math.max(1, Math.round(windowMs / (60 * 1000)))}분`
+          : `${Math.max(1, Math.round(windowMs / 1000))}초`;
+      const pathGroup = safeDecodePath(String(meta.path_group || '').trim() || decodedPath || '-');
+      const samplePath = safeDecodePath(String(meta.sample_path || '').trim());
+      const pathSummary = samplePath && samplePath !== '-' && samplePath !== pathGroup
+        ? `${pathGroup}, 대표경로 ${samplePath}`
+        : pathGroup;
+      return `짧은 시간 반복 차단 감지 (${windowLabel} 동안 ${count}회, 원인: ${sourceReasonKo}, 경로: ${pathSummary})`;
+    }
     if (normalizedReason === 'security.admin.hidden_route_blocked') {
       const matched = rawDetail.match(/^direct_path=(.+)$/i);
       const rawBlockedPath = matched ? matched[1] : decodedPath;
@@ -4683,6 +4830,16 @@ async function dispatchSecurityAlertTelegram(payload = {}) {
 }
 
 function queueSecurityAlertNotification(payload = {}) {
+  const burstPayload = evaluateSecurityAlertBurst(payload);
+  if (burstPayload && canNotifySecurityAlert(burstPayload)) {
+    setImmediate(() => {
+      Promise.allSettled([
+        dispatchSecurityAlertWebhook(burstPayload),
+        dispatchSecurityAlertEmail(burstPayload),
+        dispatchSecurityAlertTelegram(burstPayload)
+      ]).catch(() => {});
+    });
+  }
   if (!canNotifySecurityAlert(payload)) {
     return;
   }
