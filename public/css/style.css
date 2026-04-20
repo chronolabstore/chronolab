@@ -3938,6 +3938,7 @@ body.admin-page select[size]:not([size='1']) {
 
 .admin-order-actions .inline-form .chip,
 .admin-order-actions > .chip {
+  width: 132px;
   min-width: 132px;
   min-height: 38px;
   justify-content: center;

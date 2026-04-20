@@ -4227,7 +4227,7 @@
                   <small><%= isEn ? 'Shop Category' : '쇼핑몰 분류' %>: <%= item.category_group_label || item.category_group || '-' %></small>
                   <small><%= isEn ? 'Post Title' : '쇼핑몰 게시글 타이틀' %>: <%= item.product_title || `${item.brand || ''} ${item.model || ''} ${item.sub_model || ''}`.trim() || '-' %></small>
                   <small><%= isEn ? 'Sale / Used Points / Payable' : '판매가격 / 사용 포인트 / 결제 가격' %>: <%= formatKrw(salePrice) %> / <%= formatPoint(usedPoints) %> / <%= formatKrw(payablePrice) %></small>
-                  <small><%= isEn ? 'Phone / Customs No.' : '전화번호 / 통관번호' %>: <%= item.buyer_contact || '-' %> / <%= item.customs_clearance_no || '-' %></small>
+                  <small><%= isEn ? 'Name / Phone / Customs No.' : '이름 / 전화번호 / 통관번호' %>: <%= item.buyer_name || '-' %> / <%= item.buyer_contact || '-' %> / <%= item.customs_clearance_no || '-' %></small>
                   <small><%= isEn ? 'Address' : '주소' %>: <%= item.buyer_address || '-' %></small>
                   <small><%= isEn ? 'Depositor' : '입금자명' %>: <%= item.bank_depositor_name || '-' %></small>
                 </div>
