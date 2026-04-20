@@ -287,6 +287,12 @@ const ADMIN_WAF_BLOCKED_ASNS = parseCsvAsnSet(process.env.ADMIN_WAF_BLOCKED_ASNS
 const ADMIN_WAF_IP_ALLOWLIST = parseCsvIpSet(
   process.env.ADMIN_WAF_IP_ALLOWLIST || process.env.ADMIN_ALLOWLIST_IPS || ''
 );
+const ADMIN_WAF_IP_ALLOWLIST_ENFORCED = parseEnvFlag(
+  process.env.ADMIN_WAF_IP_ALLOWLIST_ENFORCED ||
+    process.env.ADMIN_ALLOWLIST_IPS_ENFORCED ||
+    process.env.ADMIN_IP_LOCK_ENABLED,
+  false
+);
 const ADMIN_WAF_PROFILE_CACHE_TTL_MS = Math.max(
   5 * 60 * 1000,
   Number.parseInt(String(process.env.ADMIN_WAF_PROFILE_CACHE_TTL_MS || ''), 10) || 6 * 60 * 60 * 1000
@@ -6089,7 +6095,26 @@ async function evaluateAdminAccessShield(req) {
   }
 
   const clientIp = getClientIp(req);
-  if (isAdminIpAllowlisted(clientIp)) {
+  const allowlisted = isAdminIpAllowlisted(clientIp);
+  if (ADMIN_WAF_IP_ALLOWLIST_ENFORCED) {
+    if (ADMIN_WAF_IP_ALLOWLIST.size === 0) {
+      return {
+        allowed: false,
+        reason: 'allowlist_empty',
+        detail: 'ADMIN_WAF_IP_ALLOWLIST is empty while enforcement is enabled'
+      };
+    }
+    if (!allowlisted) {
+      return {
+        allowed: false,
+        reason: 'ip_not_allowlisted',
+        detail: `ip=${clientIp}`
+      };
+    }
+    return { allowed: true, reason: '', detail: '' };
+  }
+
+  if (allowlisted) {
     return { allowed: true, reason: '', detail: '' };
   }
 
