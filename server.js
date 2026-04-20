@@ -351,6 +351,14 @@ const SECURITY_ALERT_NOTIFY_THROTTLE_MS = Math.max(
   10 * 1000,
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_THROTTLE_MS || ''), 10) || 60 * 1000
 );
+const SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS = Math.max(
+  SECURITY_ALERT_NOTIFY_THROTTLE_MS,
+  Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS || ''), 10) || 10 * 60 * 1000
+);
+const SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE = parseEnvFlag(
+  process.env.SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE,
+  false
+);
 const SECURITY_ALERT_NOTIFY_TIMEOUT_MS = Math.max(
   1000,
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_TIMEOUT_MS || ''), 10) || 5000
@@ -4349,11 +4357,47 @@ function cleanupSecurityAlertNotifyState(nowMs = Date.now()) {
   if (securityAlertNotifyState.size <= 5000) {
     return;
   }
+  const cleanupThresholdMs =
+    Math.max(SECURITY_ALERT_NOTIFY_THROTTLE_MS, SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS) * 10;
   for (const [key, timestamp] of securityAlertNotifyState.entries()) {
-    if (nowMs - Number(timestamp || 0) > SECURITY_ALERT_NOTIFY_THROTTLE_MS * 10) {
+    if (nowMs - Number(timestamp || 0) > cleanupThresholdMs) {
       securityAlertNotifyState.delete(key);
     }
   }
+}
+
+function normalizeSecurityAlertPathForDedupe(pathValue = '') {
+  const rawPath = String(pathValue || '').trim().toLowerCase();
+  if (!rawPath) {
+    return '';
+  }
+  if (rawPath.startsWith('/admin')) {
+    return '/admin/*';
+  }
+  if (rawPath.startsWith('/api/admin')) {
+    return '/api/admin/*';
+  }
+  return rawPath;
+}
+
+function getSecurityAlertThrottleMs(payload = {}) {
+  const reason = String(payload.reason || '').trim().toLowerCase();
+  if (
+    reason === 'security.admin.hidden_route_blocked' ||
+    reason === 'security.admin.auth_required' ||
+    reason === 'security.admin_waf.bot_signature' ||
+    reason === 'security.admin_waf.payload_signature'
+  ) {
+    return SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS;
+  }
+  return SECURITY_ALERT_NOTIFY_THROTTLE_MS;
+}
+
+function getSecurityAlertDedupeKey(payload = {}) {
+  const reason = String(payload.reason || '').trim().toLowerCase();
+  const ipAddress = String(payload.ipAddress || '').trim().toLowerCase();
+  const pathValue = normalizeSecurityAlertPathForDedupe(payload.path);
+  return [reason, ipAddress, pathValue].join('|');
 }
 
 function canNotifySecurityAlert(payload = {}) {
@@ -4371,15 +4415,12 @@ function canNotifySecurityAlert(payload = {}) {
   ) {
     return false;
   }
-  const dedupeKey = [
-    String(payload.reason || '').trim().toLowerCase(),
-    String(payload.ipAddress || '').trim().toLowerCase(),
-    String(payload.path || '').trim().toLowerCase()
-  ].join('|');
+  const dedupeKey = getSecurityAlertDedupeKey(payload);
+  const throttleMs = getSecurityAlertThrottleMs(payload);
   const nowMs = Date.now();
   cleanupSecurityAlertNotifyState(nowMs);
   const lastNotifiedAt = Number(securityAlertNotifyState.get(dedupeKey) || 0);
-  if (lastNotifiedAt > 0 && nowMs - lastNotifiedAt < SECURITY_ALERT_NOTIFY_THROTTLE_MS) {
+  if (lastNotifiedAt > 0 && nowMs - lastNotifiedAt < throttleMs) {
     return false;
   }
   securityAlertNotifyState.set(dedupeKey, nowMs);
@@ -4388,8 +4429,28 @@ function canNotifySecurityAlert(payload = {}) {
 
 function buildSecurityAlertMessage(payload = {}) {
   const rawReason = String(payload.reason || '').trim();
+  const safeDecodePath = (value = '') => {
+    const rawValue = String(value || '').trim();
+    if (!rawValue) {
+      return '';
+    }
+    let decoded = rawValue;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const next = decodeURIComponent(decoded);
+        if (!next || next === decoded) {
+          break;
+        }
+        decoded = next;
+      } catch {
+        break;
+      }
+    }
+    return decoded;
+  };
   const resolveReasonKo = (reason) => {
     if (!reason) return '알 수 없는 사유';
+    if (reason === 'security.admin.hidden_route_blocked') return '숨김 관리자 경로 직접 접근 차단';
     if (reason === 'security.admin.auth_required') return '관리자 인증 필요 접근 차단';
     if (reason === 'security.primary_only.route' || reason === 'security.primary_only.denied') {
       return '메인관리자 전용 영역 접근 차단';
@@ -4412,6 +4473,7 @@ function buildSecurityAlertMessage(payload = {}) {
     if (reason.startsWith('auth.admin.otp_')) {
       if (reason.includes('failed')) return '관리자 OTP 인증 실패';
       if (reason.includes('throttled')) return '관리자 OTP 시도 횟수 초과 차단';
+      if (reason.includes('required')) return '관리자 OTP 미설정 계정 로그인 차단';
       if (reason.includes('invalid_format')) return '관리자 OTP 형식 오류';
       if (reason.includes('missing_pending')) return '관리자 OTP 세션 만료/누락';
       if (reason.includes('blocked_account')) return '차단 계정 OTP 시도';
@@ -4421,21 +4483,51 @@ function buildSecurityAlertMessage(payload = {}) {
     }
     return reason;
   };
+  const translateDetailKo = (reason, detail, path) => {
+    const normalizedReason = String(reason || '').trim().toLowerCase();
+    const rawDetail = String(detail || '').trim();
+    const decodedPath = safeDecodePath(path || '');
+    if (normalizedReason === 'security.admin.hidden_route_blocked') {
+      const matched = rawDetail.match(/^direct_path=(.+)$/i);
+      const rawBlockedPath = matched ? matched[1] : decodedPath;
+      const blockedPath = safeDecodePath(rawBlockedPath || '');
+      return blockedPath
+        ? `숨김 관리자 경로로 직접 접근 시도 (${blockedPath})`
+        : '숨김 관리자 경로로 직접 접근 시도';
+    }
+    if (normalizedReason === 'security.admin.auth_required') {
+      return '인증 없이 관리자 영역 또는 관리자 API 접근 시도';
+    }
+    if (normalizedReason === 'security.admin_waf.bot_signature') {
+      const uaMatched = rawDetail.match(/^ua=(.+)$/i);
+      const uaValue = uaMatched ? uaMatched[1] : rawDetail;
+      return uaValue ? `관리자 WAF 봇 시그니처 차단 (UA: ${uaValue})` : '관리자 WAF 봇 시그니처 차단';
+    }
+    if (normalizedReason === 'security.admin_waf.payload_signature') {
+      return '관리자 WAF 요청 시그니처 차단';
+    }
+    if (normalizedReason === 'security.admin_waf.method_block') {
+      return '관리자 WAF 메서드 정책 차단';
+    }
+    return rawDetail || '-';
+  };
 
   const nowKst = new Date().toLocaleString('ko-KR', {
     timeZone: 'Asia/Seoul',
     hour12: false
   });
   const reasonKo = resolveReasonKo(rawReason);
+  const decodedPath = safeDecodePath(String(payload.path || '').trim() || 'unknown');
+  const detailKo = translateDetailKo(rawReason, payload.detail, decodedPath);
   const lines = [
     '[Chrono Lab] 보안 경보',
     `발생시각(KST): ${nowKst}`,
     `경보유형: ${reasonKo}`,
-    `경보코드: ${rawReason || 'unknown'}`,
-    `상세내용: ${String(payload.detail || '').trim() || '-'}`,
+    ...(SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE ? [`경보코드: ${rawReason || 'unknown'}`] : []),
+    `상세내용: ${detailKo}`,
     `IP: ${String(payload.ipAddress || '').trim() || 'unknown'}`,
     `요청메서드: ${String(payload.method || '').trim() || 'unknown'}`,
-    `요청경로: ${String(payload.path || '').trim() || 'unknown'}`,
+    `요청경로: ${decodedPath}`,
     `행위자: ${String(payload.actor || '').trim() || 'unknown'}`,
     `권한: ${String(payload.role || '').trim() || 'unknown'}`,
     `요청ID: ${String(payload.requestId || '').trim() || 'unknown'}`
