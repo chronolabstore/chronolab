@@ -71,6 +71,7 @@ SECURITY_ALERT_NOTIFY_TELEGRAM_THREAD_ID=
 SECURITY_ALERT_NOTIFY_TELEGRAM_SILENT=0
 SECURITY_ALERT_NOTIFY_THROTTLE_MS=60000
 SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS=600000
+SECURITY_ALERT_NOTIFY_SUPPRESS_REASONS=security.admin.hidden_route_blocked,security.admin.auth_required
 SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE=0
 ENV
 
@@ -255,6 +256,7 @@ cd /var/www/chronolab
 - 알림 폭주 완화/표시 포맷:
   - `SECURITY_ALERT_NOTIFY_THROTTLE_MS` (기본 60초)
   - `SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS` (기본 10분, 봇/숨김경로 차단 이벤트)
+  - `SECURITY_ALERT_NOTIFY_SUPPRESS_REASONS` (기본: `security.admin.hidden_route_blocked,security.admin.auth_required` 알림만 무음 처리, DB 로그는 유지)
   - `SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE=0` (기본: 내부 영문 코드 비노출)
 
 Telegram 설정(권장):

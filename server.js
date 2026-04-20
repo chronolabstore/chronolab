@@ -354,6 +354,21 @@ const SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS = Math.max(
   SECURITY_ALERT_NOTIFY_THROTTLE_MS,
   Number.parseInt(String(process.env.SECURITY_ALERT_NOTIFY_NOISY_THROTTLE_MS || ''), 10) || 10 * 60 * 1000
 );
+const SECURITY_ALERT_NOTIFY_SUPPRESS_REASON_SET = (() => {
+  const raw = String(process.env.SECURITY_ALERT_NOTIFY_SUPPRESS_REASONS || '').trim();
+  const normalize = (value = '') => String(value || '').trim().toLowerCase();
+  const defaults = mustEnforceSecurity
+    ? ['security.admin.hidden_route_blocked', 'security.admin.auth_required']
+    : [];
+  if (!raw) {
+    return new Set(defaults);
+  }
+  const fromEnv = Array.from(parseCsvStringSet(raw))
+    .map((item) => normalize(item))
+    .filter(Boolean)
+    .filter((item) => item !== 'none' && item !== 'off');
+  return new Set(fromEnv);
+})();
 const SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE = parseEnvFlag(
   process.env.SECURITY_ALERT_NOTIFY_INCLUDE_RAW_CODE,
   false
@@ -4400,6 +4415,10 @@ function getSecurityAlertDedupeKey(payload = {}) {
 
 function canNotifySecurityAlert(payload = {}) {
   if (!SECURITY_ALERT_NOTIFY_ENABLED) {
+    return false;
+  }
+  const reason = String(payload.reason || '').trim().toLowerCase();
+  if (reason && SECURITY_ALERT_NOTIFY_SUPPRESS_REASON_SET.has(reason)) {
     return false;
   }
   const hasTelegramTarget =
