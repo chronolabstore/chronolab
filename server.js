@@ -1015,6 +1015,10 @@ const SALES_DEFAULT_EXCHANGE_RATE = 229;
 const SALES_DEFAULT_SHIPPING_FEE_KRW = 23000;
 const SALES_CNY_NAVER_SEARCH_URL =
   'https://search.naver.com/search.naver?where=nexearch&query=%EC%9C%84%EC%95%88%ED%99%94+%ED%99%98%EC%9C%A8';
+const SALES_CNY_NAVER_DAILY_URL =
+  'https://finance.naver.com/marketindex/exchangeDailyQuote.nhn?marketindexCd=FX_CNYKRW&page=';
+const SALES_CNY_NAVER_DAILY_MAX_PAGES = 40;
+const SALES_CNY_NAVER_DAILY_CACHE_TTL_MS = 1000 * 60 * 30;
 
 const SECURITY_SECTIONS = Object.freeze(['profile', 'admins', 'logs', 'alerts']);
 const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels']);
@@ -6595,11 +6599,7 @@ function normalizeSalesText(value, maxLength = 120) {
 }
 
 function getTodayDateString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toKstDate();
 }
 
 function normalizeSalesDate(value = '') {
@@ -8697,7 +8697,57 @@ async function syncSalesWorkbookFromLegacySheetOnce() {
   }
 }
 
-async function fetchCnyKrwExchangeRate() {
+const salesFxDailyCache = new Map();
+
+function parseNaverCnyDailyRows(html = '') {
+  const source = String(html || '');
+  const rows = [];
+  const rowRegex = /<tr[^>]*>[\s\S]*?<td class="date">([^<]+)<\/td>\s*<td class="num">([^<]+)<\/td>[\s\S]*?<\/tr>/gi;
+  let match = rowRegex.exec(source);
+  while (match) {
+    const rawDate = String(match[1] || '').trim().replace(/\./g, '-');
+    const normalizedDate = normalizeSalesDate(rawDate);
+    const rate = parseNonNegativeNumber(match[2] || '', NaN);
+    if (normalizedDate && Number.isFinite(rate) && rate > 0) {
+      rows.push({
+        date: normalizedDate,
+        exchangeRate: Number(rate.toFixed(4))
+      });
+    }
+    match = rowRegex.exec(source);
+  }
+  return rows;
+}
+
+async function fetchNaverCnyDailyPage(page = 1) {
+  if (typeof fetch !== 'function') {
+    throw new Error('fetch unavailable');
+  }
+
+  const safePage = Math.max(1, Math.floor(parseNonNegativeNumber(page, 1) || 1));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${SALES_CNY_NAVER_DAILY_URL}${safePage}`, {
+      method: 'GET',
+      headers: {
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'user-agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`naver daily fx fetch failed(${response.status})`);
+    }
+    const html = await response.text();
+    return parseNaverCnyDailyRows(html);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchCnyKrwLiveSearchRate() {
   if (typeof fetch !== 'function') {
     throw new Error('fetch unavailable');
   }
@@ -8729,16 +8779,78 @@ async function fetchCnyKrwExchangeRate() {
       throw new Error('invalid naver hana cash-buy rate');
     }
 
-    const updatedAt = new Date().toISOString();
-
     return {
       exchangeRate: Number(krwRate.toFixed(4)),
-      updatedAt,
       provider: 'naver-hanabank-cash-buy'
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchCnyKrwExchangeRate(targetDate = '') {
+  const normalizedTargetDate = normalizeSalesDate(targetDate || '') || toKstDate();
+  const cached = salesFxDailyCache.get(normalizedTargetDate);
+  const nowMs = Date.now();
+  if (cached && nowMs - Number(cached.cachedAt || 0) < SALES_CNY_NAVER_DAILY_CACHE_TTL_MS) {
+    return {
+      ...cached.value
+    };
+  }
+
+  let exactMatch = null;
+  let latestBefore = null;
+
+  for (let page = 1; page <= SALES_CNY_NAVER_DAILY_MAX_PAGES; page += 1) {
+    const rows = await fetchNaverCnyDailyPage(page);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      break;
+    }
+
+    rows.forEach((row) => {
+      const rowDate = normalizeSalesDate(row?.date || '');
+      if (!rowDate) return;
+      if (!exactMatch && rowDate === normalizedTargetDate) {
+        exactMatch = row;
+      }
+      if (rowDate <= normalizedTargetDate) {
+        if (!latestBefore || rowDate > latestBefore.date) {
+          latestBefore = row;
+        }
+      }
+    });
+
+    if (exactMatch) {
+      break;
+    }
+    const oldestDateInPage = normalizeSalesDate(rows[rows.length - 1]?.date || '');
+    if (oldestDateInPage && oldestDateInPage < normalizedTargetDate) {
+      break;
+    }
+  }
+
+  const matched = exactMatch || latestBefore;
+  if (matched && Number.isFinite(matched.exchangeRate) && matched.exchangeRate > 0) {
+    const result = {
+      exchangeRate: Number(matched.exchangeRate.toFixed(4)),
+      updatedAt: new Date().toISOString(),
+      provider: 'naver-marketindex-daily',
+      rateDate: matched.date
+    };
+    salesFxDailyCache.set(normalizedTargetDate, {
+      cachedAt: nowMs,
+      value: result
+    });
+    return result;
+  }
+
+  const fallback = await fetchCnyKrwLiveSearchRate();
+  return {
+    exchangeRate: Number(fallback.exchangeRate.toFixed(4)),
+    updatedAt: new Date().toISOString(),
+    provider: fallback.provider,
+    rateDate: normalizedTargetDate
+  };
 }
 
 function isDeliveredState(payload) {
@@ -18173,12 +18285,31 @@ app.post(
   '/admin/sales/fx-sync',
   requireAdmin,
   asyncRoute(async (req, res) => {
-    const fx = await fetchCnyKrwExchangeRate();
     const workbook = getSalesWorkbook();
     const tabKey = normalizeSalesText(req.body?.tabKey, 40);
     const scopeId = normalizeSalesText(req.body?.scopeId, 120);
     const requestedScopeDate = normalizeSalesDate(req.body?.scopeDate || '');
     const targetTab = workbook.tabs && tabKey ? workbook.tabs[tabKey] : null;
+    let targetScope = null;
+    if (targetTab && getSalesScopeMode(tabKey) !== 'factory') {
+      const scopes = getSalesScopeList(targetTab);
+      targetScope =
+        scopes.find((scope) => String(scope.id || '') === scopeId) ||
+        scopes.find((scope) =>
+          normalizeSalesDate(scope?.settings?.baseDate || scope?.date || scope?.name || '') === requestedScopeDate
+        ) ||
+        null;
+      if (!targetScope && getSalesScopeMode(tabKey) === 'date' && requestedScopeDate) {
+        targetScope = ensureSalesDateScopeForOrderSync(targetTab, requestedScopeDate, workbook.globals || {});
+      }
+    }
+
+    const fxTargetDate =
+      requestedScopeDate ||
+      normalizeSalesDate(targetScope?.settings?.baseDate || targetScope?.date || targetScope?.name || '') ||
+      toKstDate();
+    const fx = await fetchCnyKrwExchangeRate(fxTargetDate);
+
     const applyToGlobalFallback = () => {
       workbook.globals = normalizeSalesSettingValues(
         {
@@ -18206,13 +18337,6 @@ app.post(
         workbook.globals || {}
       );
     } else {
-      const scopes = getSalesScopeList(targetTab);
-      const targetScope =
-        scopes.find((scope) => String(scope.id || '') === scopeId) ||
-        scopes.find((scope) =>
-          normalizeSalesDate(scope?.settings?.baseDate || scope?.date || scope?.name || '') === requestedScopeDate
-        ) ||
-        null;
       if (!targetScope) {
         applyToGlobalFallback();
       } else {
@@ -18228,7 +18352,8 @@ app.post(
         );
         const nextScopeDate =
           requestedScopeDate ||
-          normalizeSalesDate(targetScope?.settings?.baseDate || targetScope?.date || targetScope?.name || '');
+          normalizeSalesDate(targetScope?.settings?.baseDate || targetScope?.date || targetScope?.name || '') ||
+          normalizeSalesDate(fx.rateDate || '');
         if (nextScopeDate) {
           targetScope.settings.baseDate = nextScopeDate;
           targetScope.date = nextScopeDate;
@@ -18240,7 +18365,11 @@ app.post(
     }
     const savedWorkbook = saveSalesWorkbook(workbook);
 
-    logAdminActivity(req, 'SALES_FX_SYNC', `tab:${tabKey || 'global'} scope:${scopeId || '-'} CNY/KRW=${fx.exchangeRate}`);
+    logAdminActivity(
+      req,
+      'SALES_FX_SYNC',
+      `tab:${tabKey || 'global'} scope:${scopeId || '-'} date:${fx.rateDate || fxTargetDate} CNY/KRW=${fx.exchangeRate}`
+    );
     return res.json({
       ok: true,
       mainTabs: getSalesMainTabs(),
