@@ -4541,6 +4541,10 @@
           String(tabDef?.aggregateType || '').trim().toLowerCase() === 'all'
         );
       };
+      const isAggregateAllTab = (tabKey = activeTabKey) => {
+        const tabDef = tabDefs.find((item) => item.key === tabKey) || null;
+        return String(tabDef?.aggregateType || '').trim().toLowerCase() === 'all';
+      };
 
       const normalizePriceSheetName = (value, maxLength = 80) =>
         String(value || '')
@@ -4776,6 +4780,7 @@
 
       const ensureTodayScopeForDateTab = () => {
         if (getScopeMode(activeTabKey) !== 'date') return false;
+        if (isReadOnlyTab(activeTabKey) || isAggregateAllTab(activeTabKey)) return false;
         const tab = getTabData();
         if (!tab) return false;
         if (!Array.isArray(tab.rounds)) tab.rounds = [];
@@ -4840,6 +4845,9 @@
 
       const getScopeDisplayName = (scope) => {
         if (!scope) return '-';
+        if (isAggregateAllTab()) {
+          return isEn ? 'All dates' : '전체(모든 날짜)';
+        }
         const mode = getScopeMode(activeTabKey);
         if (mode === 'factory' && activePriceScopeAll) {
           return isEn ? 'All Factory Sheets' : '전체 공장 시트';
@@ -4955,11 +4963,18 @@
       };
 
       const getVisibleRowEntries = () => {
+        const mode = getScopeMode(activeTabKey);
+        if (mode !== 'factory' && isAggregateAllTab()) {
+          return getScopes().flatMap((sourceScope) => {
+            const rows = Array.isArray(sourceScope?.rows) ? sourceScope.rows : [];
+            return rows.map((row) => ({ scope: sourceScope, row }));
+          });
+        }
+
         const scope = getActiveScope();
         if (!scope) {
           return [];
         }
-        const mode = getScopeMode(activeTabKey);
         if (mode !== 'factory') {
           const rows = Array.isArray(scope.rows) ? scope.rows : [];
           return rows.map((row) => ({ scope, row }));
@@ -6277,44 +6292,9 @@
         markDirty();
       };
 
-      exchangeRateInput?.addEventListener('input', () => {
-        applySettingsInputsToActiveScope();
-        renderGlobalFields();
-        renderTableRows();
-        renderSummary();
-        renderMeta();
-      });
-
-      shippingFeeInput?.addEventListener('input', () => {
-        applySettingsInputsToActiveScope();
-        renderGlobalFields();
-        renderTableRows();
-        renderSummary();
-        renderMeta();
-      });
-
-      scopeDateInput?.addEventListener('change', () => {
-        applySettingsInputsToActiveScope();
-        renderGlobalFields();
-        renderScopeControls();
-        renderTableRows();
-        renderSummary();
-        renderMeta();
-      });
-
-      applyGlobalBtn?.addEventListener('click', () => {
-        if (isReadOnlyTab()) return;
-        applySettingsInputsToActiveScope();
-        void saveWorkbook();
-      });
-
-      saveBtn?.addEventListener('click', () => {
-        if (isReadOnlyTab()) return;
-        void saveWorkbook();
-      });
-
-      fxSyncBtn?.addEventListener('click', async () => {
-        if (isReadOnlyTab()) return;
+      const syncFxForActiveScope = async (options = {}) => {
+        if (isReadOnlyTab()) return false;
+        const silent = options?.silent === true;
         clearError();
         try {
           const requestBody = {
@@ -6344,10 +6324,59 @@
           renderScopeControls();
           renderTableRows();
           renderSummary();
-          renderMeta(isEn ? 'Naver/Hana rate applied' : '네이버/하나은행 환율 반영됨');
+          renderMeta(
+            silent
+              ? (isEn ? 'historical date FX applied' : '선택 날짜 환율 반영됨')
+              : (isEn ? 'Naver rate applied' : '네이버 환율 반영됨')
+          );
+          return true;
         } catch (error) {
           showError(error instanceof Error ? error.message : (isEn ? 'Unknown error' : '알 수 없는 오류'));
+          return false;
         }
+      };
+
+      exchangeRateInput?.addEventListener('input', () => {
+        applySettingsInputsToActiveScope();
+        renderGlobalFields();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      shippingFeeInput?.addEventListener('input', () => {
+        applySettingsInputsToActiveScope();
+        renderGlobalFields();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+      });
+
+      scopeDateInput?.addEventListener('change', async () => {
+        applySettingsInputsToActiveScope();
+        renderGlobalFields();
+        renderScopeControls();
+        renderTableRows();
+        renderSummary();
+        renderMeta();
+        if (getScopeMode(activeTabKey) === 'date' && !isReadOnlyTab()) {
+          await syncFxForActiveScope({ silent: true });
+        }
+      });
+
+      applyGlobalBtn?.addEventListener('click', () => {
+        if (isReadOnlyTab()) return;
+        applySettingsInputsToActiveScope();
+        void saveWorkbook();
+      });
+
+      saveBtn?.addEventListener('click', () => {
+        if (isReadOnlyTab()) return;
+        void saveWorkbook();
+      });
+
+      fxSyncBtn?.addEventListener('click', async () => {
+        await syncFxForActiveScope({ silent: false });
       });
 
       window.addEventListener('pagehide', () => {
