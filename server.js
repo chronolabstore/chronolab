@@ -15226,7 +15226,6 @@ app.post(
   if (hasOtpEnabled) {
     setAdminOtpPending(req, user);
     logAdminActivityByUser(user, req, 'LOGIN_OTP_PENDING', 'password verified; otp required');
-    setFlash(req, 'success', '구글 OTP 인증번호를 입력해 주세요.');
     return res.redirect('/admin/otp/verify');
   }
 
