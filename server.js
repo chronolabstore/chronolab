@@ -1028,6 +1028,7 @@ const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'review', 'level-rates'])
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
 const ADMIN_PRODUCT_LIST_PAGE_SIZE = 30;
+const ADMIN_ORDER_LIST_PAGE_SIZE = 30;
 const DEFAULT_IP_GEO_CACHE_TTL_HOURS = 24 * 30;
 const DEFAULT_IP_GEO_LOOKUP_TIMEOUT_MS = 1800;
 const DEFAULT_IP_GEO_MAX_LOOKUP_PER_RENDER = 8;
@@ -5509,6 +5510,7 @@ function getOrderStatusFilterDbValues(statusFilter = 'all') {
 function parseAdminOrderManageQuery(query = {}, availableGroupKeys = []) {
   const orderGroupFilter = normalizeAdminOrderGroupFilter(query.orderGroup || '', availableGroupKeys);
   const orderStatusFilter = normalizeAdminOrderStatusFilter(query.orderStatus || '');
+  const orderPage = normalizePositivePage(query.orderPage || 1);
   let orderDateFrom = normalizeDateInput(query.orderDateFrom || '');
   let orderDateTo = normalizeDateInput(query.orderDateTo || '');
 
@@ -5521,6 +5523,7 @@ function parseAdminOrderManageQuery(query = {}, availableGroupKeys = []) {
   return {
     orderGroupFilter,
     orderStatusFilter,
+    orderPage,
     orderDateFrom,
     orderDateTo
   };
@@ -17080,6 +17083,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const salesDateTo = normalizeDateInput(salesOptions.dateTo || '');
   const orderGroupFilter = normalizeAdminOrderGroupFilter(options.orderGroupFilter || '', productGroupKeys);
   const orderStatusFilter = normalizeAdminOrderStatusFilter(options.orderStatusFilter || '');
+  const requestedOrderPage = normalizePositivePage(options.orderPage || 1);
   const orderDateFrom = normalizeDateInput(options.orderDateFrom || '');
   const orderDateTo = normalizeDateInput(options.orderDateTo || '');
   const productGroupMap = getProductGroupMap(productGroupConfigs);
@@ -17159,11 +17163,6 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
       };
     }
   }
-  const ordersQuery = [
-    'SELECT o.*, p.category_group, p.brand, p.model, p.sub_model',
-    'FROM orders o',
-    'JOIN products p ON p.id = o.product_id'
-  ];
   const orderParams = [];
   const orderWhereParts = [];
   if (orderGroupFilter !== 'all') {
@@ -17183,15 +17182,36 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     orderWhereParts.push("date(datetime(o.created_at, '+9 hours')) <= ?");
     orderParams.push(orderDateTo);
   }
-  if (orderWhereParts.length > 0) {
-    ordersQuery.push(`WHERE ${orderWhereParts.join(' AND ')}`);
-  }
-  ordersQuery.push('ORDER BY o.id DESC');
-  ordersQuery.push('LIMIT 100');
+  const orderWhereClause = orderWhereParts.length > 0 ? `WHERE ${orderWhereParts.join(' AND ')}` : '';
+  const orderTotalCount = Number(
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM orders o
+          JOIN products p ON p.id = o.product_id
+          ${orderWhereClause}
+        `
+      )
+      .get(...orderParams)?.count || 0
+  );
+  const orderTotalPages = Math.max(1, Math.ceil(orderTotalCount / ADMIN_ORDER_LIST_PAGE_SIZE));
+  const orderPage = clampPage(requestedOrderPage, orderTotalPages);
+  const orderOffset = (orderPage - 1) * ADMIN_ORDER_LIST_PAGE_SIZE;
 
   const orders = db
-    .prepare(ordersQuery.join('\n'))
-    .all(...orderParams)
+    .prepare(
+      `
+        SELECT o.*, p.category_group, p.brand, p.model, p.sub_model
+        FROM orders o
+        JOIN products p ON p.id = o.product_id
+        ${orderWhereClause}
+        ORDER BY o.id DESC
+        LIMIT ?
+        OFFSET ?
+      `
+    )
+    .all(...orderParams, ADMIN_ORDER_LIST_PAGE_SIZE, orderOffset)
     .map((order) => {
       const normalizedStatus = normalizeOrderStatus(order.status);
       const statusMeta = getOrderStatusMeta(normalizedStatus, lang);
@@ -17295,6 +17315,12 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
       pageSize: ADMIN_PRODUCT_LIST_PAGE_SIZE
     },
     orders: ordersWithTimeline,
+    orderListPagination: {
+      page: orderPage,
+      totalPages: orderTotalPages,
+      totalCount: orderTotalCount,
+      pageSize: ADMIN_ORDER_LIST_PAGE_SIZE
+    },
     orderGroupFilter,
     orderStatusFilter,
     orderDateFrom,
@@ -17331,6 +17357,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     {
       orderGroup: extraData.orderGroupFilter || req.query.orderGroup || '',
       orderStatus: extraData.orderStatusFilter || req.query.orderStatus || '',
+      orderPage: extraData.orderPage || req.query.orderPage || '',
       orderDateFrom: extraData.orderDateFrom || req.query.orderDateFrom || '',
       orderDateTo: extraData.orderDateTo || req.query.orderDateTo || ''
     },
@@ -17367,6 +17394,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
       },
       orderGroupFilter: orderFilters.orderGroupFilter,
       orderStatusFilter: orderFilters.orderStatusFilter,
+      orderPage: orderFilters.orderPage,
       orderDateFrom: orderFilters.orderDateFrom,
       orderDateTo: orderFilters.orderDateTo,
       salesOptions: {
@@ -17393,6 +17421,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     menuFieldGroupFilter,
     orderGroupFilter: orderFilters.orderGroupFilter,
     orderStatusFilter: orderFilters.orderStatusFilter,
+    orderPage: orderFilters.orderPage,
     orderDateFrom: orderFilters.orderDateFrom,
     orderDateTo: orderFilters.orderDateTo,
     salesGroupFilter: salesFilters.salesGroupFilter,
@@ -18500,6 +18529,7 @@ app.get('/admin/orders', requireAdmin, (req, res) =>
   renderAdminDashboard(req, res, 'orders', {
     orderGroupFilter: req.query.orderGroup || 'all',
     orderStatusFilter: req.query.orderStatus || 'all',
+    orderPage: req.query.orderPage || '',
     orderDateFrom: req.query.orderDateFrom || '',
     orderDateTo: req.query.orderDateTo || ''
   })
