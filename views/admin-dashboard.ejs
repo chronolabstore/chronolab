@@ -3731,6 +3731,13 @@
       <% const productListPager = productListPagination || { page: 1, totalPages: 1, totalCount: products.length, pageSize: 30 }; %>
       <% const productListGroup = productListGroupFilter || 'all'; %>
       <% const productListGroupQuery = productListGroup !== 'all' ? `&group=${encodeURIComponent(productListGroup)}` : ''; %>
+      <% const productRowStartNumber = Math.max(0, productListPager.totalCount - ((productListPager.page - 1) * productListPager.pageSize)); %>
+      <% const productPageWindowSize = 7; %>
+      <% let productPageStart = Math.max(1, productListPager.page - Math.floor(productPageWindowSize / 2)); %>
+      <% let productPageEnd = Math.min(productListPager.totalPages, productPageStart + productPageWindowSize - 1); %>
+      <% if ((productPageEnd - productPageStart + 1) < productPageWindowSize) { %>
+        <% productPageStart = Math.max(1, productPageEnd - productPageWindowSize + 1); %>
+      <% } %>
       <div class="kpi-head-row">
         <div class="chip-row" data-admin-product-filter-wrap>
           <a
@@ -3763,9 +3770,12 @@
             </tr>
           </thead>
           <tbody>
-            <% products.forEach((item) => { %>
+            <% products.forEach((item, index) => { %>
               <tr data-admin-product-row data-group="<%= item.category_group %>">
-                <td><%= item.id %></td>
+                <td>
+                  <strong><%= Math.max(1, productRowStartNumber - index) %></strong>
+                  <small class="muted-label">ID <%= item.id %></small>
+                </td>
                 <td><%= groupLabelByKey[item.category_group] || item.category_group || '-' %></td>
                 <td>
                   <strong><%= item.display_title || `${item.brand || ''} ${item.model || ''}`.trim() %></strong>
@@ -3821,11 +3831,23 @@
 
       <div class="admin-pagination">
         <% if (productListPager.page > 1) { %>
+          <a class="chip" href="/admin/products?section=list&page=1<%= productListGroupQuery %>"><%= isEn ? 'First' : '처음' %></a>
+        <% } %>
+        <% if (productListPager.page > 1) { %>
           <a class="chip" href="/admin/products?section=list&page=<%= productListPager.page - 1 %><%= productListGroupQuery %>"><%= isEn ? 'Prev' : '이전' %></a>
         <% } %>
         <span class="chip muted"><%= productListPager.page %> / <%= productListPager.totalPages %></span>
+        <% for (let pageNo = productPageStart; pageNo <= productPageEnd; pageNo += 1) { %>
+          <a
+            class="chip <%= productListPager.page === pageNo ? 'dark' : '' %>"
+            href="/admin/products?section=list&page=<%= pageNo %><%= productListGroupQuery %>"
+          ><%= pageNo %></a>
+        <% } %>
         <% if (productListPager.page < productListPager.totalPages) { %>
           <a class="chip" href="/admin/products?section=list&page=<%= productListPager.page + 1 %><%= productListGroupQuery %>"><%= isEn ? 'Next' : '다음' %></a>
+        <% } %>
+        <% if (productListPager.page < productListPager.totalPages) { %>
+          <a class="chip" href="/admin/products?section=list&page=<%= productListPager.totalPages %><%= productListGroupQuery %>"><%= isEn ? 'Last' : '마지막' %></a>
         <% } %>
       </div>
     <% } %>
