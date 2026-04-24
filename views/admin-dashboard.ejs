@@ -316,6 +316,15 @@
   const activeOrderDateFrom = String(orderDateFrom || '');
   const activeOrderDateTo = String(orderDateTo || '');
   const orderDateQuerySuffix = `${activeOrderDateFrom ? `&orderDateFrom=${encodeURIComponent(activeOrderDateFrom)}` : ''}${activeOrderDateTo ? `&orderDateTo=${encodeURIComponent(activeOrderDateTo)}` : ''}`;
+  const orderListPager = orderListPagination || { page: 1, totalPages: 1, totalCount: Array.isArray(orders) ? orders.length : 0, pageSize: 30 };
+  const activeOrderPage = Math.max(1, Number(orderListPager.page || 1));
+  const orderPaginationBaseQuery = `orderGroup=${encodeURIComponent(activeOrderFilterKey)}&orderStatus=${encodeURIComponent(activeOrderStatusFilterKey)}${activeOrderDateFrom ? `&orderDateFrom=${encodeURIComponent(activeOrderDateFrom)}` : ''}${activeOrderDateTo ? `&orderDateTo=${encodeURIComponent(activeOrderDateTo)}` : ''}`;
+  const orderPageWindowSize = 7;
+  let orderPageStart = Math.max(1, activeOrderPage - Math.floor(orderPageWindowSize / 2));
+  let orderPageEnd = Math.min(orderListPager.totalPages, orderPageStart + orderPageWindowSize - 1);
+  if ((orderPageEnd - orderPageStart + 1) < orderPageWindowSize) {
+    orderPageStart = Math.max(1, orderPageEnd - orderPageWindowSize + 1);
+  }
   const activeSalesGroupFilter = String(salesGroupFilter || salesDaily.filters?.groupFilter || 'all');
   const activeSalesDateFrom = String(salesDateFrom || salesDaily.filters?.dateFrom || '');
   const activeSalesDateTo = String(salesDateTo || salesDaily.filters?.dateTo || '');
@@ -3835,7 +3844,6 @@
         <% if (productListPager.page > 1) { %>
           <a class="chip" href="/admin/products?section=list&page=<%= productListPager.page - 1 %><%= productListGroupQuery %>"><%= isEn ? 'Prev' : '이전' %></a>
         <% } %>
-        <span class="chip muted"><%= productListPager.page %> / <%= productListPager.totalPages %></span>
         <% for (let pageNo = productPageStart; pageNo <= productPageEnd; pageNo += 1) { %>
           <a
             class="chip <%= productListPager.page === pageNo ? 'dark' : '' %>"
@@ -4183,9 +4191,9 @@
     <div class="admin-order-toolbar">
       <span class="muted-label"><%= isEn ? 'Category Filter' : '쇼핑몰 분류' %></span>
       <div class="chip-row admin-order-filter-row">
-        <a href="/admin/orders?orderGroup=all&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
+        <a href="/admin/orders?orderGroup=all&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>&orderPage=1" class="chip <%= activeOrderFilterKey === 'all' ? 'dark' : '' %>"><%= isEn ? 'All' : '전체' %></a>
         <% productGroupKeys.forEach((groupName) => { %>
-          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
+          <a href="/admin/orders?orderGroup=<%= encodeURIComponent(groupName) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %><%= orderDateQuerySuffix %>&orderPage=1" class="chip <%= activeOrderFilterKey === groupName ? 'dark' : '' %>"><%= groupLabelByKey[groupName] || groupName %></a>
         <% }) %>
       </div>
     </div>
@@ -4194,7 +4202,7 @@
       <div class="chip-row admin-order-filter-row">
         <% orderStatusFilterOptions.forEach((statusFilter) => { %>
           <a
-            href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(statusFilter.key) %><%= orderDateQuerySuffix %>"
+            href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(statusFilter.key) %><%= orderDateQuerySuffix %>&orderPage=1"
             class="chip <%= activeOrderStatusFilterKey === statusFilter.key ? 'dark' : '' %>"
           >
             <%= isEn ? statusFilter.labelEn : statusFilter.labelKo %>
@@ -4205,6 +4213,7 @@
     <form method="get" action="/admin/orders" class="admin-filter-row">
       <input type="hidden" name="orderGroup" value="<%= activeOrderFilterKey %>" />
       <input type="hidden" name="orderStatus" value="<%= activeOrderStatusFilterKey %>" />
+      <input type="hidden" name="orderPage" value="1" />
       <label class="admin-filter-item">
         <span><%= isEn ? 'From Date' : '시작일' %></span>
         <input type="date" name="orderDateFrom" value="<%= activeOrderDateFrom %>" />
@@ -4215,9 +4224,10 @@
       </label>
       <div class="admin-filter-actions">
         <button type="submit" class="chip dark"><%= isEn ? 'Apply' : '조회' %></button>
-        <a href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>" class="chip"><%= isEn ? 'Reset Date' : '날짜 초기화' %></a>
+        <a href="/admin/orders?orderGroup=<%= encodeURIComponent(activeOrderFilterKey) %>&orderStatus=<%= encodeURIComponent(activeOrderStatusFilterKey) %>&orderPage=1" class="chip"><%= isEn ? 'Reset Date' : '날짜 초기화' %></a>
       </div>
     </form>
+    <p class="muted-label"><%= isEn ? `Total ${orderListPager.totalCount} orders · Page ${activeOrderPage}/${orderListPager.totalPages}` : `총 ${orderListPager.totalCount}건 · ${activeOrderPage}/${orderListPager.totalPages} 페이지` %></p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -4334,6 +4344,26 @@
           <% } %>
         </tbody>
       </table>
+    </div>
+    <div class="admin-pagination">
+      <% if (activeOrderPage > 1) { %>
+        <a class="chip" href="/admin/orders?<%= orderPaginationBaseQuery %>&orderPage=1"><%= isEn ? 'First' : '처음' %></a>
+      <% } %>
+      <% if (activeOrderPage > 1) { %>
+        <a class="chip" href="/admin/orders?<%= orderPaginationBaseQuery %>&orderPage=<%= activeOrderPage - 1 %>"><%= isEn ? 'Prev' : '이전' %></a>
+      <% } %>
+      <% for (let pageNo = orderPageStart; pageNo <= orderPageEnd; pageNo += 1) { %>
+        <a
+          class="chip <%= activeOrderPage === pageNo ? 'dark' : '' %>"
+          href="/admin/orders?<%= orderPaginationBaseQuery %>&orderPage=<%= pageNo %>"
+        ><%= pageNo %></a>
+      <% } %>
+      <% if (activeOrderPage < orderListPager.totalPages) { %>
+        <a class="chip" href="/admin/orders?<%= orderPaginationBaseQuery %>&orderPage=<%= activeOrderPage + 1 %>"><%= isEn ? 'Next' : '다음' %></a>
+      <% } %>
+      <% if (activeOrderPage < orderListPager.totalPages) { %>
+        <a class="chip" href="/admin/orders?<%= orderPaginationBaseQuery %>&orderPage=<%= orderListPager.totalPages %>"><%= isEn ? 'Last' : '마지막' %></a>
+      <% } %>
     </div>
   </article>
   <% } %>
