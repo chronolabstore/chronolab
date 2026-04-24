@@ -3728,17 +3728,27 @@
     <% } %>
 
     <% if (productsTab === 'list') { %>
+      <% const productListPager = productListPagination || { page: 1, totalPages: 1, totalCount: products.length, pageSize: 30 }; %>
+      <% const productListGroup = productListGroupFilter || 'all'; %>
+      <% const productListGroupQuery = productListGroup !== 'all' ? `&group=${encodeURIComponent(productListGroup)}` : ''; %>
       <div class="kpi-head-row">
         <div class="chip-row" data-admin-product-filter-wrap>
-          <button type="button" class="chip dark" data-admin-product-filter="__ALL__"><%= isEn ? 'All' : '전체' %></button>
+          <a
+            href="/admin/products?section=list&group=all&page=1"
+            class="chip <%= productListGroup === 'all' ? 'dark' : '' %>"
+          ><%= isEn ? 'All' : '전체' %></a>
           <% productGroupKeys.forEach((groupName) => { %>
-            <button type="button" class="chip" data-admin-product-filter="<%= groupName %>"><%= groupLabelByKey[groupName] || groupName %></button>
+            <a
+              href="/admin/products?section=list&group=<%= encodeURIComponent(groupName) %>&page=1"
+              class="chip <%= productListGroup === groupName ? 'dark' : '' %>"
+            ><%= groupLabelByKey[groupName] || groupName %></a>
           <% }) %>
         </div>
         <form method="post" action="/admin/product/watermark/apply-all" class="inline-form">
           <button type="submit" class="chip dark"><%= isEn ? 'Apply Watermark to Existing Images' : '기존 상품 이미지 워터마크 일괄 적용' %></button>
         </form>
       </div>
+      <p class="muted-label"><%= isEn ? `Total ${productListPager.totalCount} products · Page ${productListPager.page}/${productListPager.totalPages}` : `총 ${productListPager.totalCount}개 · ${productListPager.page}/${productListPager.totalPages} 페이지` %></p>
 
       <div class="table-wrap">
         <table class="product-list-table">
@@ -3809,32 +3819,15 @@
         </table>
       </div>
 
-      <script>
-        (() => {
-          const wrap = document.querySelector('[data-admin-product-filter-wrap]');
-          if (!wrap) return;
-          const buttons = Array.from(wrap.querySelectorAll('[data-admin-product-filter]'));
-          const rows = Array.from(document.querySelectorAll('[data-admin-product-row]'));
-          if (buttons.length === 0 || rows.length === 0) return;
-
-          const applyFilter = (key) => {
-            rows.forEach((row) => {
-              const match = key === '__ALL__' || row.dataset.group === key;
-              row.hidden = !match;
-            });
-            buttons.forEach((button) => {
-              button.classList.toggle('dark', button.dataset.adminProductFilter === key);
-            });
-          };
-
-          buttons.forEach((button) => {
-            button.addEventListener('click', () => {
-              applyFilter(button.dataset.adminProductFilter || '__ALL__');
-            });
-          });
-          applyFilter('__ALL__');
-        })();
-      </script>
+      <div class="admin-pagination">
+        <% if (productListPager.page > 1) { %>
+          <a class="chip" href="/admin/products?section=list&page=<%= productListPager.page - 1 %><%= productListGroupQuery %>"><%= isEn ? 'Prev' : '이전' %></a>
+        <% } %>
+        <span class="chip muted"><%= productListPager.page %> / <%= productListPager.totalPages %></span>
+        <% if (productListPager.page < productListPager.totalPages) { %>
+          <a class="chip" href="/admin/products?section=list&page=<%= productListPager.page + 1 %><%= productListGroupQuery %>"><%= isEn ? 'Next' : '다음' %></a>
+        <% } %>
+      </div>
     <% } %>
 
     <% if (productsTab === 'badges') { %>
