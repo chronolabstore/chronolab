@@ -1025,6 +1025,7 @@ const MEMBER_MANAGE_SECTIONS = Object.freeze(['active', 'blocked', 'levels']);
 const POINT_MANAGE_SECTIONS = Object.freeze(['signup', 'review', 'level-rates']);
 const SECURITY_PAGE_SIZE = 20;
 const MEMBER_PAGE_SIZE = 20;
+const ADMIN_PRODUCT_LIST_PAGE_SIZE = 30;
 const DEFAULT_IP_GEO_CACHE_TTL_HOURS = 24 * 30;
 const DEFAULT_IP_GEO_LOOKUP_TIMEOUT_MS = 1800;
 const DEFAULT_IP_GEO_MAX_LOOKUP_PER_RENDER = 8;
@@ -5350,6 +5351,20 @@ function normalizeProductManageSection(rawSection = '') {
     return 'badges';
   }
   return 'upload';
+}
+
+function parseProductManageQuery(query = {}, availableGroupKeys = []) {
+  const section = normalizeProductManageSection(query.productSection || query.section || '');
+  const groupFilter = normalizeAdminOrderGroupFilter(
+    query.productGroupFilter || query.group || '',
+    availableGroupKeys
+  );
+  const page = normalizePositivePage(query.productPage || query.page || 1);
+  return {
+    section,
+    groupFilter,
+    page
+  };
 }
 
 function normalizeSalesManageSection(rawSection = '') {
@@ -16780,6 +16795,7 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const securityOptions = options.securityOptions || {};
   const memberOptions = options.memberOptions || {};
   const salesOptions = options.salesOptions || {};
+  const productOptions = options.productOptions || {};
   const includeDashboardStats = options.includeDashboardStats !== false;
   const editProductId = normalizeOptionalId(options.productEditId || 0);
   const publicMenus = parseMenus(getSetting('menus', JSON.stringify(getDefaultMenus())), { includeHidden: true });
@@ -16838,6 +16854,8 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
 
   const productGroupConfigs = getProductGroupConfigs();
   const productGroupKeys = productGroupConfigs.map((group) => group.key);
+  const productGroupFilter = normalizeAdminOrderGroupFilter(productOptions.groupFilter || '', productGroupKeys);
+  const requestedProductPage = normalizePositivePage(productOptions.page || 1);
   const salesGroupFilter = normalizeAdminOrderGroupFilter(salesOptions.groupFilter || '', productGroupKeys);
   const salesDateFrom = normalizeDateInput(salesOptions.dateFrom || '');
   const salesDateTo = normalizeDateInput(salesOptions.dateTo || '');
@@ -16849,10 +16867,34 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
   const groupLabelMap = getProductGroupLabels(productGroupConfigs, lang);
   const productBadgeDefinitions = getProductBadgeDefinitions();
   const productBadgeColorThemes = getProductBadgeColorThemeOptions();
+  const productWhereParts = [];
+  const productWhereParams = [];
+  if (productGroupFilter !== 'all') {
+    productWhereParts.push('category_group = ?');
+    productWhereParams.push(productGroupFilter);
+  }
+  const productWhereClause = productWhereParts.length > 0 ? `WHERE ${productWhereParts.join(' AND ')}` : '';
+  const productTotalCount = Number(
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM products ${productWhereClause}`)
+      .get(...productWhereParams)?.count || 0
+  );
+  const productTotalPages = Math.max(1, Math.ceil(productTotalCount / ADMIN_PRODUCT_LIST_PAGE_SIZE));
+  const productPage = clampPage(requestedProductPage, productTotalPages);
+  const productOffset = (productPage - 1) * ADMIN_PRODUCT_LIST_PAGE_SIZE;
   const products = attachProductBadges(
     db
-      .prepare('SELECT * FROM products ORDER BY id DESC LIMIT 100')
-      .all()
+      .prepare(
+        `
+          SELECT *
+          FROM products
+          ${productWhereClause}
+          ORDER BY id DESC
+          LIMIT ?
+          OFFSET ?
+        `
+      )
+      .all(...productWhereParams, ADMIN_PRODUCT_LIST_PAGE_SIZE, productOffset)
       .map((item) => decorateProductForView(item, productGroupMap.get(item.category_group)))
   );
 
@@ -17026,6 +17068,13 @@ function buildAdminDashboardViewData(lang = 'ko', options = {}) {
     editingProduct,
     productBadgeDefinitions,
     productBadgeColorThemes,
+    productListGroupFilter: productGroupFilter,
+    productListPagination: {
+      page: productPage,
+      totalPages: productTotalPages,
+      totalCount: productTotalCount,
+      pageSize: ADMIN_PRODUCT_LIST_PAGE_SIZE
+    },
     orders: ordersWithTimeline,
     orderGroupFilter,
     orderStatusFilter,
@@ -17068,6 +17117,14 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     },
     productGroupConfigs.map((group) => group.key)
   );
+  const productFilters = parseProductManageQuery(
+    {
+      productSection: extraData.productSection || req.query.section || '',
+      productGroupFilter: extraData.productGroupFilter || req.query.group || '',
+      productPage: extraData.productPage || req.query.page || ''
+    },
+    productGroupConfigs.map((group) => group.key)
+  );
   const salesFilters = parseSalesManageQuery(
     {
       salesSection: extraData.salesSection || req.query.section || '',
@@ -17085,6 +17142,10 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
       memberOptions: extraData.memberOptions || parseMemberManageQuery(req.query || {}),
       includeDashboardStats: activeTab === 'dashboard',
       productEditId: extraData.productEditId || 0,
+      productOptions: {
+        groupFilter: productFilters.groupFilter,
+        page: productFilters.page
+      },
       orderGroupFilter: orderFilters.orderGroupFilter,
       orderStatusFilter: orderFilters.orderStatusFilter,
       orderDateFrom: orderFilters.orderDateFrom,
@@ -17103,7 +17164,7 @@ function renderAdminDashboard(req, res, activeTab, extraData = {}) {
     securityAccessDenied: Boolean(extraData.securityAccessDenied),
     siteSection: normalizeSiteManageSection(extraData.siteSection || req.query.section || ''),
     menuSection: normalizeMenuManageSection(extraData.menuSection || ''),
-    productSection: normalizeProductManageSection(extraData.productSection || ''),
+    productSection: productFilters.section,
     salesSection: normalizeSalesManageSection(extraData.salesSection || req.query.section || ''),
     pointSection: normalizePointManageSection(extraData.pointSection || req.query.pointSection || req.query.section || ''),
     noticeSection: normalizeContentManageSection(extraData.noticeSection || req.query.section || ''),
