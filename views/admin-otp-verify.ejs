@@ -10,15 +10,24 @@
     <form method="post" action="/admin/otp/verify" class="form-grid">
       <label>
         <%= isEn ? '6-digit OTP Code' : '6자리 OTP 코드' %>
-        <input
-          type="text"
-          name="code"
-          inputmode="numeric"
-          pattern="[0-9]{6}"
-          maxlength="6"
-          autocomplete="one-time-code"
-          required
-        />
+        <span class="auth-otp-input-inline">
+          <input
+            type="text"
+            name="code"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            autocomplete="one-time-code"
+            required
+            data-admin-otp-code-input
+          />
+          <button
+            type="button"
+            class="chip"
+            data-admin-otp-paste-btn
+            data-prompt-message="<%= isEn ? 'Paste your 6-digit OTP code.' : '6자리 OTP 코드를 붙여넣어 주세요.' %>"
+          ><%= isEn ? 'Paste' : '붙여넣기' %></button>
+        </span>
       </label>
       <button type="submit" class="cta-main"><%= isEn ? 'Verify and Login' : '인증 후 로그인' %></button>
     </form>
@@ -27,5 +36,49 @@
     </p>
   </div>
 </section>
+
+<script>
+  (() => {
+    const codeInput = document.querySelector('[data-admin-otp-code-input]');
+    const pasteBtn = document.querySelector('[data-admin-otp-paste-btn]');
+    if (!codeInput || !pasteBtn) return;
+
+    const normalizeOtpCode = (value) => String(value || '').replace(/[^0-9]/g, '').slice(0, 6);
+
+    codeInput.addEventListener('input', () => {
+      const normalized = normalizeOtpCode(codeInput.value);
+      if (codeInput.value !== normalized) {
+        codeInput.value = normalized;
+      }
+    });
+
+    const applyCodeValue = (rawValue) => {
+      const normalized = normalizeOtpCode(rawValue);
+      if (!normalized) return;
+      codeInput.value = normalized;
+      codeInput.focus();
+    };
+
+    const fallbackPaste = () => {
+      const promptMessage = String(pasteBtn.dataset.promptMessage || '').trim();
+      const manualValue = window.prompt(promptMessage || 'OTP code');
+      if (manualValue == null) return;
+      applyCodeValue(manualValue);
+    };
+
+    pasteBtn.addEventListener('click', async () => {
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+          fallbackPaste();
+          return;
+        }
+        const clipboardValue = await navigator.clipboard.readText();
+        applyCodeValue(clipboardValue);
+      } catch (_) {
+        fallbackPaste();
+      }
+    });
+  })();
+</script>
 
 <%- include('partials/layout-end') %>
